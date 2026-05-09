@@ -1,9 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
-  ClaudeAgentEffort,
   EnvironmentId,
-  GitBranch,
   ModelSelection,
   ProviderInteractionMode,
   RuntimeMode,
@@ -17,19 +15,20 @@ import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { groupProjectsByRepository } from "../../lib/repositoryGroups";
 import { scopedProjectKey } from "../../lib/scopedEntities";
-import { gitBranchManager, useGitBranches } from "../../state/use-git-branches";
+import { vcsRefManager, useVcsRefs } from "../../state/use-vcs-refs";
 import { useRemoteCatalog } from "../../state/use-remote-catalog";
 import {
   setPendingConnectionError,
   useRemoteEnvironmentState,
 } from "../../state/use-remote-environment-registry";
-import { EnvironmentScopedProjectShell } from "@t3tools/client-runtime";
+import { EnvironmentScopedProjectShell, type VcsRef } from "@t3tools/client-runtime";
+import type { ClaudeAgentEffort } from "./claudeEffortOptions";
 
 type WorkspaceMode = "local" | "worktree";
 
 function normalizeSelectedWorktreePath(
   project: EnvironmentScopedProjectShell,
-  branch: GitBranch,
+  branch: VcsRef,
 ): string | null {
   if (!branch.worktreePath) {
     return null;
@@ -39,7 +38,7 @@ function normalizeSelectedWorktreePath(
 }
 
 export function branchBadgeLabel(input: {
-  readonly branch: GitBranch;
+  readonly branch: VcsRef;
   readonly project: EnvironmentScopedProjectShell | null;
 }): string | null {
   if (input.branch.current) {
@@ -73,7 +72,7 @@ type NewTaskFlowContextValue = {
   readonly submitting: boolean;
   readonly branchQuery: string;
   readonly branchesLoading: boolean;
-  readonly availableBranches: ReadonlyArray<GitBranch>;
+  readonly availableBranches: ReadonlyArray<VcsRef>;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly effort: ClaudeAgentEffort;
@@ -89,13 +88,13 @@ type NewTaskFlowContextValue = {
   readonly selectedModel: ModelSelection | null;
   readonly selectedModelOption: ModelOption | null;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
-  readonly filteredBranches: ReadonlyArray<GitBranch>;
+  readonly filteredBranches: ReadonlyArray<VcsRef>;
   readonly reset: () => void;
   readonly setProject: (project: EnvironmentScopedProjectShell) => void;
   readonly selectEnvironment: (environmentId: EnvironmentId) => void;
   readonly setSelectedModelKey: (key: string | null) => void;
   readonly setWorkspaceMode: (mode: WorkspaceMode) => void;
-  readonly selectBranch: (branch: GitBranch) => void;
+  readonly selectBranch: (branch: VcsRef) => void;
   readonly setPrompt: (value: string) => void;
   readonly replaceAttachments: (attachments: ReadonlyArray<DraftComposerImageAttachment>) => void;
   readonly appendAttachments: (attachments: ReadonlyArray<DraftComposerImageAttachment>) => void;
@@ -293,7 +292,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     modelOptions.find(
       (option) =>
         selectedModel &&
-        option.selection.provider === selectedModel.provider &&
+        option.selection.instanceId === selectedModel.instanceId &&
         option.selection.model === selectedModel.model,
     ) ?? null;
 
@@ -306,15 +305,15 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     }),
     [selectedProject?.environmentId, selectedProject?.workspaceRoot],
   );
-  const branchState = useGitBranches(branchTarget);
+  const branchState = useVcsRefs(branchTarget);
   const branchesLoading = branchState.isPending;
   const availableBranches = useMemo(
     () =>
       pipe(
-        branchState.data?.branches ?? [],
+        branchState.data?.refs ?? [],
         Arr.filter((branch) => !branch.isRemote),
       ),
-    [branchState.data?.branches],
+    [branchState.data?.refs],
   );
 
   const filteredBranches = useMemo(() => {
@@ -342,7 +341,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   }, []);
 
   const selectBranch = useCallback(
-    (branch: GitBranch) => {
+    (branch: VcsRef) => {
       setSelectedBranchName(branch.name);
       setSelectedWorktreePath(
         selectedProject ? normalizeSelectedWorktreePath(selectedProject, branch) : null,
@@ -357,14 +356,14 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     }
 
     try {
-      const result = await gitBranchManager.load({
+      const result = await vcsRefManager.load({
         environmentId: selectedProject.environmentId,
         cwd: selectedProject.workspaceRoot,
         query: null,
       });
       setPendingConnectionError(null);
       const branches = pipe(
-        result?.branches ?? [],
+        result?.refs ?? [],
         Arr.filter((branch) => !branch.isRemote),
       );
 

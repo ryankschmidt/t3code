@@ -1,59 +1,57 @@
 import type {
   EnvironmentId,
-  GitBranch,
-  GitListBranchesInput,
-  GitListBranchesResult,
+  VcsListRefsInput,
+  VcsListRefsResult,
+  VcsRef as ContractVcsRef,
 } from "@t3tools/contracts";
 import { Atom, type AtomRegistry } from "effect/unstable/reactivity";
 
 import type { WsRpcClient } from "./wsRpcClient.ts";
 
-export interface GitBranchTarget {
+export interface VcsRefTarget {
   readonly environmentId: EnvironmentId | null;
   readonly cwd: string | null;
   readonly query?: string | null;
 }
 
-export interface GitBranchState {
-  readonly data: GitListBranchesResult | null;
+export interface VcsRefState {
+  readonly data: VcsListRefsResult | null;
   readonly isPending: boolean;
   readonly error: string | null;
 }
 
-export type GitBranchClient = Pick<WsRpcClient["git"], "listBranches">;
+export type VcsRef = ContractVcsRef;
+export type VcsRefClient = Pick<WsRpcClient["vcs"], "listRefs">;
 
-export const EMPTY_GIT_BRANCH_STATE = Object.freeze<GitBranchState>({
+export const EMPTY_VCS_REF_STATE = Object.freeze<VcsRefState>({
   data: null,
   isPending: false,
   error: null,
 });
 
-const INITIAL_GIT_BRANCH_STATE = Object.freeze<GitBranchState>({
+const INITIAL_VCS_REF_STATE = Object.freeze<VcsRefState>({
   data: null,
   isPending: true,
   error: null,
 });
 
-const knownGitBranchKeys = new Set<string>();
+const knownVcsRefKeys = new Set<string>();
 
-export const gitBranchStateAtom = Atom.family((key: string) => {
-  knownGitBranchKeys.add(key);
-  return Atom.make(EMPTY_GIT_BRANCH_STATE).pipe(
-    Atom.keepAlive,
-    Atom.withLabel(`git-branches:${key}`),
-  );
+export const vcsRefStateAtom = Atom.family((key: string) => {
+  knownVcsRefKeys.add(key);
+  return Atom.make(EMPTY_VCS_REF_STATE).pipe(Atom.keepAlive, Atom.withLabel(`vcs-refs:${key}`));
 });
 
-export const EMPTY_GIT_BRANCH_ATOM = Atom.make(EMPTY_GIT_BRANCH_STATE).pipe(
+export const EMPTY_VCS_REF_ATOM = Atom.make(EMPTY_VCS_REF_STATE).pipe(
   Atom.keepAlive,
-  Atom.withLabel("git-branches:null"),
+  Atom.withLabel("vcs-refs:null"),
 );
 
 function normalizeQuery(query: string | null | undefined): string {
   return query?.trim() ?? "";
 }
 
-export function getGitBranchTargetKey(target: GitBranchTarget): string | null {
+export function getVcsRefTargetKey(target: VcsRefTarget): string | null {
   if (target.environmentId === null || target.cwd === null) {
     return null;
   }
@@ -62,14 +60,14 @@ export function getGitBranchTargetKey(target: GitBranchTarget): string | null {
 }
 
 function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Failed to load branches.";
+  return error instanceof Error ? error.message : "Failed to load refs.";
 }
 
-function mergeBranches(
-  previous: ReadonlyArray<GitBranch>,
-  next: ReadonlyArray<GitBranch>,
-): ReadonlyArray<GitBranch> {
-  const merged = new Map<string, GitBranch>();
+function mergeRefs(
+  previous: ReadonlyArray<VcsRef>,
+  next: ReadonlyArray<VcsRef>,
+): ReadonlyArray<VcsRef> {
+  const merged = new Map<string, VcsRef>();
   for (const branch of previous) {
     merged.set(branch.name, branch);
   }
@@ -79,11 +77,12 @@ function mergeBranches(
   return [...merged.values()];
 }
 
-export interface GitBranchManagerConfig {
+export interface VcsRefManagerConfig {
   readonly getRegistry: () => AtomRegistry.AtomRegistry;
-  readonly getClient: (environmentId: EnvironmentId) => GitBranchClient | null;
+  readonly getClient: (environmentId: EnvironmentId) => VcsRefClient | null;
   readonly subscribeClientChanges?: (listener: () => void) => () => void;
   readonly watchLimit?: number;
+  readonly onBackgroundError?: (error: unknown) => void;
 }
 
 interface WatchedEntry {
@@ -93,35 +92,50 @@ interface WatchedEntry {
 
 const NOOP: () => void = () => undefined;
 
-export function createGitBranchManager(config: GitBranchManagerConfig) {
-  const inFlight = new Map<string, Promise<GitListBranchesResult | null>>();
+export function createVcsRefManager(config: VcsRefManagerConfig) {
+  const inFlight = new Map<
+    string,
+    {
+      readonly client: VcsRefClient;
+      readonly promise: Promise<VcsListRefsResult | null>;
+    }
+  >();
+  const loadVersions = new Map<string, number>();
   const watched = new Map<string, WatchedEntry>();
   const watchLoadOptions =
     config.watchLimit === undefined ? undefined : { limit: config.watchLimit };
 
-  function getSnapshot(target: GitBranchTarget): GitBranchState {
-    const targetKey = getGitBranchTargetKey(target);
-    if (targetKey === null) {
-      return EMPTY_GIT_BRANCH_STATE;
-    }
-    return config.getRegistry().get(gitBranchStateAtom(targetKey));
+  function getLoadVersion(targetKey: string): number {
+    return loadVersions.get(targetKey) ?? 0;
   }
 
-  function setState(targetKey: string, nextState: GitBranchState): void {
-    config.getRegistry().set(gitBranchStateAtom(targetKey), nextState);
+  function bumpLoadVersion(targetKey: string): number {
+    const next = getLoadVersion(targetKey) + 1;
+    loadVersions.set(targetKey, next);
+    return next;
+  }
+
+  function getSnapshot(target: VcsRefTarget): VcsRefState {
+    const targetKey = getVcsRefTargetKey(target);
+    if (targetKey === null) {
+      return EMPTY_VCS_REF_STATE;
+    }
+    return config.getRegistry().get(vcsRefStateAtom(targetKey));
+  }
+
+  function setState(targetKey: string, nextState: VcsRefState): void {
+    config.getRegistry().set(vcsRefStateAtom(targetKey), nextState);
   }
 
   function markPending(targetKey: string): void {
-    const current = config.getRegistry().get(gitBranchStateAtom(targetKey));
+    const current = config.getRegistry().get(vcsRefStateAtom(targetKey));
     setState(
       targetKey,
-      current.data === null
-        ? INITIAL_GIT_BRANCH_STATE
-        : { ...current, isPending: true, error: null },
+      current.data === null ? INITIAL_VCS_REF_STATE : { ...current, isPending: true, error: null },
     );
   }
 
-  function setData(targetKey: string, data: GitListBranchesResult): void {
+  function setData(targetKey: string, data: VcsListRefsResult): void {
     setState(targetKey, {
       data,
       isPending: false,
@@ -130,7 +144,7 @@ export function createGitBranchManager(config: GitBranchManagerConfig) {
   }
 
   function setError(targetKey: string, error: unknown): void {
-    const current = config.getRegistry().get(gitBranchStateAtom(targetKey));
+    const current = config.getRegistry().get(vcsRefStateAtom(targetKey));
     setState(targetKey, {
       data: current.data,
       isPending: false,
@@ -139,15 +153,15 @@ export function createGitBranchManager(config: GitBranchManagerConfig) {
   }
 
   async function load(
-    target: GitBranchTarget,
-    client?: GitBranchClient,
+    target: VcsRefTarget,
+    client?: VcsRefClient,
     options?: {
       readonly cursor?: number;
       readonly limit?: number;
       readonly append?: boolean;
     },
-  ): Promise<GitListBranchesResult | null> {
-    const targetKey = getGitBranchTargetKey(target);
+  ): Promise<VcsListRefsResult | null> {
+    const targetKey = getVcsRefTargetKey(target);
     if (targetKey === null || target.environmentId === null || target.cwd === null) {
       return null;
     }
@@ -159,51 +173,72 @@ export function createGitBranchManager(config: GitBranchManagerConfig) {
 
     const inFlightKey = `${targetKey}:${options?.cursor ?? "start"}:${options?.append ? "append" : "replace"}`;
     const existing = inFlight.get(inFlightKey);
-    if (existing) {
-      return existing;
+    if (existing && existing.client === resolved) {
+      return existing.promise;
     }
 
     markPending(targetKey);
+    const loadVersion = bumpLoadVersion(targetKey);
 
     const current = getSnapshot(target).data;
-    const request: GitListBranchesInput = {
+    const request: VcsListRefsInput = {
       cwd: target.cwd,
       ...(normalizeQuery(target.query).length > 0 ? { query: normalizeQuery(target.query) } : {}),
       ...(options?.cursor !== undefined ? { cursor: options.cursor } : {}),
       ...(options?.limit !== undefined ? { limit: options.limit } : {}),
     };
 
-    const promise = resolved.listBranches(request).then(
+    const promise = resolved.listRefs(request).then(
       (result) => {
         const nextData =
           options?.append && current
             ? {
                 ...result,
-                branches: mergeBranches(current.branches, result.branches),
+                refs: mergeRefs(current.refs, result.refs),
               }
             : result;
-        setData(targetKey, nextData);
+        if (getLoadVersion(targetKey) === loadVersion) {
+          setData(targetKey, nextData);
+        }
         return nextData;
       },
       (error) => {
-        setError(targetKey, error);
+        if (getLoadVersion(targetKey) === loadVersion) {
+          setError(targetKey, error);
+        }
         throw error;
       },
     );
 
-    inFlight.set(inFlightKey, promise);
+    inFlight.set(inFlightKey, { client: resolved, promise });
     try {
       return await promise;
     } finally {
-      inFlight.delete(inFlightKey);
+      if (inFlight.get(inFlightKey)?.promise === promise) {
+        inFlight.delete(inFlightKey);
+      }
     }
   }
 
+  function loadInBackground(
+    target: VcsRefTarget,
+    client: VcsRefClient,
+    options?: {
+      readonly cursor?: number;
+      readonly limit?: number;
+      readonly append?: boolean;
+    },
+  ): void {
+    void load(target, client, options).catch((error: unknown) => {
+      config.onBackgroundError?.(error);
+    });
+  }
+
   async function loadNext(
-    target: GitBranchTarget,
-    client?: GitBranchClient,
+    target: VcsRefTarget,
+    client?: VcsRefClient,
     options?: { readonly limit?: number },
-  ): Promise<GitListBranchesResult | null> {
+  ): Promise<VcsListRefsResult | null> {
     const current = getSnapshot(target).data;
     if (!current?.nextCursor && current?.nextCursor !== 0) {
       return current ?? null;
@@ -216,8 +251,8 @@ export function createGitBranchManager(config: GitBranchManagerConfig) {
     });
   }
 
-  function watch(target: GitBranchTarget, client?: GitBranchClient): () => void {
-    const targetKey = getGitBranchTargetKey(target);
+  function watch(target: VcsRefTarget, client?: VcsRefClient): () => void {
+    const targetKey = getVcsRefTargetKey(target);
     if (targetKey === null || target.environmentId === null || target.cwd === null) {
       return NOOP;
     }
@@ -231,10 +266,10 @@ export function createGitBranchManager(config: GitBranchManagerConfig) {
     let teardown: () => void;
 
     if (client) {
-      void load(target, client, watchLoadOptions);
+      loadInBackground(target, client, watchLoadOptions);
       teardown = NOOP;
     } else if (config.subscribeClientChanges) {
-      let currentClient: GitBranchClient | null = null;
+      let currentClient: VcsRefClient | null = null;
       const sync = () => {
         const resolved = config.getClient(target.environmentId!);
         if (!resolved) {
@@ -246,7 +281,7 @@ export function createGitBranchManager(config: GitBranchManagerConfig) {
         }
 
         currentClient = resolved;
-        void load(target, resolved, watchLoadOptions);
+        loadInBackground(target, resolved, watchLoadOptions);
       };
 
       const unsubscribe = config.subscribeClientChanges(sync);
@@ -257,7 +292,7 @@ export function createGitBranchManager(config: GitBranchManagerConfig) {
       if (!resolved) {
         return NOOP;
       }
-      void load(target, resolved, watchLoadOptions);
+      loadInBackground(target, resolved, watchLoadOptions);
       teardown = NOOP;
     }
 
@@ -280,17 +315,17 @@ export function createGitBranchManager(config: GitBranchManagerConfig) {
     watched.delete(targetKey);
   }
 
-  function invalidate(target?: GitBranchTarget): void {
+  function invalidate(target?: VcsRefTarget): void {
     if (target) {
-      const targetKey = getGitBranchTargetKey(target);
+      const targetKey = getVcsRefTargetKey(target);
       if (targetKey !== null) {
-        setState(targetKey, EMPTY_GIT_BRANCH_STATE);
+        setState(targetKey, EMPTY_VCS_REF_STATE);
       }
       return;
     }
 
-    for (const key of knownGitBranchKeys) {
-      setState(key, EMPTY_GIT_BRANCH_STATE);
+    for (const key of knownVcsRefKeys) {
+      setState(key, EMPTY_VCS_REF_STATE);
     }
   }
 
@@ -299,6 +334,8 @@ export function createGitBranchManager(config: GitBranchManagerConfig) {
       entry.teardown();
     }
     watched.clear();
+    inFlight.clear();
+    loadVersions.clear();
     invalidate();
   }
 

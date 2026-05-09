@@ -11,7 +11,7 @@ export * from "./threadDetailReducer.ts";
 export * from "./threadDetailState.ts";
 export * from "./gitActions.ts";
 export * from "./gitActionState.ts";
-export * from "./gitBranchState.ts";
+export * from "./vcsRefState.ts";
 export * from "./gitStatusState.ts";
 export * from "./terminalSessionState.ts";
 export * from "./transportError.ts";

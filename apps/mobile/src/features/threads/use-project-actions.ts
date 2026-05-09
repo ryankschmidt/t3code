@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-import { EnvironmentScopedProjectShell } from "@t3tools/client-runtime";
+import { EnvironmentScopedProjectShell, type VcsRef } from "@t3tools/client-runtime";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -8,7 +8,6 @@ import {
   type EnvironmentId,
   MessageId,
   ThreadId,
-  type GitBranch,
   type ModelSelection,
   type ProviderInteractionMode,
   type RuntimeMode,
@@ -19,7 +18,7 @@ import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import { uuidv4 } from "../../lib/uuid";
 import { getEnvironmentClient } from "../../state/environment-session-registry";
 import { environmentRuntimeManager } from "../../state/use-environment-runtime";
-import { gitBranchManager } from "../../state/use-git-branches";
+import { vcsRefManager } from "../../state/use-vcs-refs";
 import { useRemoteCatalog } from "../../state/use-remote-catalog";
 import {
   setPendingConnectionError,
@@ -186,19 +185,19 @@ export function useProjectActions() {
   );
 
   const onListProjectBranches = useCallback(
-    async (project: EnvironmentScopedProjectShell): Promise<ReadonlyArray<GitBranch>> => {
+    async (project: EnvironmentScopedProjectShell): Promise<ReadonlyArray<VcsRef>> => {
       const client = getEnvironmentClient(project.environmentId);
       if (!client) {
         return [];
       }
 
       try {
-        const result = await gitBranchManager.load(
+        const result = await vcsRefManager.load(
           { environmentId: project.environmentId, cwd: project.workspaceRoot, query: null },
-          client.git,
+          client.vcs,
           { limit: 100 },
         );
-        return (result?.branches ?? []).filter((branch) => !branch.isRemote);
+        return (result?.refs ?? []).filter((branch) => !branch.isRemote);
       } catch (error) {
         setPendingConnectionError(
           error instanceof Error ? error.message : "Failed to load branches.",
@@ -226,19 +225,19 @@ export function useProjectActions() {
       }
 
       try {
-        const result = await client.git.createWorktree({
+        const result = await client.vcs.createWorktree({
           cwd: project.workspaceRoot,
-          branch: nextWorktree.baseBranch,
-          newBranch: sanitizeFeatureBranchName(nextWorktree.newBranch),
+          refName: nextWorktree.baseBranch,
+          newRefName: sanitizeFeatureBranchName(nextWorktree.newBranch),
           path: null,
         });
-        gitBranchManager.invalidate({
+        vcsRefManager.invalidate({
           environmentId: project.environmentId,
           cwd: project.workspaceRoot,
           query: null,
         });
         return {
-          branch: result.worktree.branch,
+          branch: result.worktree.refName,
           worktreePath: result.worktree.path,
         };
       } catch (error) {
