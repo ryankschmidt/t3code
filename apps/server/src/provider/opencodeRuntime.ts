@@ -450,7 +450,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
 
       const killOpenCodeProcessGroup = (signal: NodeJS.Signals) =>
         process.platform === "win32"
-          ? child.kill({ killSignal: signal, forceKillAfter: "1 second" }).pipe(Effect.asVoid)
+          ? child.kill({ killSignal: signal, forceKillAfter: "1 second" }).pipe(Effect.ignore)
           : Effect.sync(() => {
               try {
                 process.kill(-Number(child.pid), signal);
@@ -461,7 +461,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
               }
             });
       const killDirectChild = (signal: NodeJS.Signals) =>
-        child.kill({ killSignal: signal, forceKillAfter: "1 second" }).pipe(Effect.asVoid);
+        child.kill({ killSignal: signal, forceKillAfter: "1 second" }).pipe(Effect.ignore);
       const killMatchingServeProcesses = (signal: NodeJS.Signals) =>
         terminateMatchingOpenCodeServeProcesses({
           binaryPath: input.binaryPath,
