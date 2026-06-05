@@ -1,13 +1,17 @@
 import { sha256 } from "@noble/hashes/sha2";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -223,6 +227,111 @@ describe("RelayClient", () => {
       Effect.scoped,
       Effect.provide(
         Layer.mergeAll(NodeServices.layer, makeHttpClientLayer(bytes), makeSpawnerLayer(commands)),
+      ),
+    );
+  });
+
+  it.effect("fails with install_locked after the lock retry schedule is exhausted", () => {
+    const commands: Array<string> = [];
+    const bytes = new TextEncoder().encode("test-cloudflared-binary");
+    return Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-cloudflared-test-locked-",
+      });
+      const managedPath = resolveManagedCloudflaredPath({
+        baseDir,
+        platform: "linux",
+        arch: "x64",
+      });
+      const lockPath = `${managedPath}.lock`;
+      const path = yield* Path.Path;
+      yield* fileSystem.makeDirectory(path.dirname(managedPath), { recursive: true });
+      yield* fileSystem.writeFileString(lockPath, "locked");
+      const manager = yield* makeCloudflaredRelayClient({
+        baseDir,
+        platform: "linux",
+        arch: "x64",
+        releaseAsset: {
+          url: "https://example.test/cloudflared",
+          sha256: Encoding.encodeHex(sha256(bytes)),
+          archive: "binary",
+        },
+        configProvider: emptyConfigProvider,
+      });
+
+      const install = yield* manager.install.pipe(Effect.flip, Effect.forkScoped);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        yield* TestClock.adjust(Duration.millis(100));
+        yield* Effect.yieldNow;
+      }
+      const error = yield* Fiber.join(install);
+
+      assert.ok(error instanceof RelayClientInstallError);
+      assert.equal(error.reason, "install_locked");
+      assert.equal(commands.length, 0);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          TestClock.layer(),
+          makeHttpClientLayer(bytes),
+          makeSpawnerLayer(commands),
+        ),
+      ),
+    );
+  });
+
+  it.effect("removes stale install locks before downloading the managed executable", () => {
+    const commands: Array<string> = [];
+    const bytes = new TextEncoder().encode("test-cloudflared-binary");
+    return Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-cloudflared-test-stale-lock-",
+      });
+      const managedPath = resolveManagedCloudflaredPath({
+        baseDir,
+        platform: "linux",
+        arch: "x64",
+      });
+      const lockPath = `${managedPath}.lock`;
+      const path = yield* Path.Path;
+      yield* fileSystem.makeDirectory(path.dirname(managedPath), { recursive: true });
+      yield* fileSystem.writeFileString(lockPath, "stale");
+      yield* fileSystem.utimes(lockPath, 0, 0);
+      const manager = yield* makeCloudflaredRelayClient({
+        baseDir,
+        platform: "linux",
+        arch: "x64",
+        releaseAsset: {
+          url: "https://example.test/cloudflared",
+          sha256: Encoding.encodeHex(sha256(bytes)),
+          archive: "binary",
+        },
+        configProvider: emptyConfigProvider,
+      });
+
+      yield* TestClock.adjust(Duration.minutes(6));
+      const installed = yield* manager.install;
+
+      assert.deepStrictEqual(installed, {
+        status: "available",
+        executablePath: managedPath,
+        source: "managed",
+        version: CLOUDFLARED_VERSION,
+      });
+      assert.equal(commands.length, 1);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          TestClock.layer(),
+          makeHttpClientLayer(bytes),
+          makeSpawnerLayer(commands),
+        ),
       ),
     );
   });
