@@ -41,117 +41,125 @@ export const SshInvalidTargetError = Schema.Union([
 ]);
 export type SshInvalidTargetError = typeof SshInvalidTargetError.Type;
 
-const SshCommandErrorFields = {
+const SshCommandContextFields = {
   command: Schema.String,
   argumentCount: Schema.Number,
-  exitCode: Schema.NullOr(Schema.Number),
-  stderrBytes: Schema.Number,
-  stdoutBytes: Schema.optional(Schema.Number),
-  target: Schema.optional(Schema.String),
-  timeoutMs: Schema.optional(Schema.Number),
+  target: Schema.String,
 };
 
-const SshCommandFailureFields = {
-  ...SshCommandErrorFields,
+const SshCommandCauseFields = {
+  ...SshCommandContextFields,
   cause: Schema.Defect(),
 };
+
+export const SshProcessExitReason = Schema.Literals(["authentication-failed", "process-exited"]);
+export type SshProcessExitReason = typeof SshProcessExitReason.Type;
 
 export class SshAuthenticationHelperError extends Schema.TaggedErrorClass<SshAuthenticationHelperError>()(
   "SshAuthenticationHelperError",
   {
-    ...SshCommandFailureFields,
+    target: Schema.String,
+    cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return "Failed to prepare SSH authentication helpers.";
+    return `Failed to prepare SSH authentication helpers for ${this.target}.`;
   }
 }
 
 export class SshCommandSpawnError extends Schema.TaggedErrorClass<SshCommandSpawnError>()(
   "SshCommandSpawnError",
   {
-    ...SshCommandFailureFields,
+    ...SshCommandCauseFields,
   },
 ) {
   override get message(): string {
-    return `Failed to spawn SSH command${targetSuffix(this.target)}.`;
+    return `Failed to spawn SSH command for ${this.target}.`;
   }
 }
 
 export class SshCommandExecutionError extends Schema.TaggedErrorClass<SshCommandExecutionError>()(
   "SshCommandExecutionError",
   {
-    ...SshCommandFailureFields,
+    ...SshCommandCauseFields,
   },
 ) {
   override get message(): string {
-    return `Failed to run SSH command${targetSuffix(this.target)}.`;
+    return `Failed to run SSH command for ${this.target}.`;
   }
 }
 
 export class SshCommandExitError extends Schema.TaggedErrorClass<SshCommandExitError>()(
   "SshCommandExitError",
   {
-    ...SshCommandErrorFields,
+    ...SshCommandContextFields,
+    exitCode: Schema.Number,
+    stdoutBytes: Schema.Number,
+    stderrBytes: Schema.Number,
+    reason: SshProcessExitReason,
   },
 ) {
   override get message(): string {
-    return `SSH command failed${targetSuffix(this.target)}${exitCodeSuffix(this.exitCode)}.`;
+    return `SSH command failed for ${this.target} (exit ${this.exitCode}).`;
   }
 }
 
 export class SshCommandTimeoutError extends Schema.TaggedErrorClass<SshCommandTimeoutError>()(
   "SshCommandTimeoutError",
   {
-    ...SshCommandErrorFields,
+    ...SshCommandContextFields,
+    timeoutMs: Schema.Number,
   },
 ) {
   override get message(): string {
-    return `SSH command timed out after ${this.timeoutMs ?? 0}ms.`;
+    return `SSH command timed out after ${this.timeoutMs}ms for ${this.target}.`;
   }
 }
 
 export class SshCommandCancelledError extends Schema.TaggedErrorClass<SshCommandCancelledError>()(
   "SshCommandCancelledError",
   {
-    ...SshCommandErrorFields,
+    target: Schema.String,
   },
 ) {
   override get message(): string {
-    return `SSH environment connection was cancelled${targetSuffix(this.target)}.`;
+    return `SSH environment connection was cancelled for ${this.target}.`;
   }
 }
 
 export class SshTunnelSpawnError extends Schema.TaggedErrorClass<SshTunnelSpawnError>()(
   "SshTunnelSpawnError",
   {
-    ...SshCommandFailureFields,
+    ...SshCommandCauseFields,
   },
 ) {
   override get message(): string {
-    return `Failed to spawn SSH tunnel${targetSuffix(this.target)}.`;
+    return `Failed to spawn SSH tunnel for ${this.target}.`;
   }
 }
 
 export class SshTunnelMonitorError extends Schema.TaggedErrorClass<SshTunnelMonitorError>()(
   "SshTunnelMonitorError",
   {
-    ...SshCommandFailureFields,
+    ...SshCommandCauseFields,
   },
 ) {
   override get message(): string {
-    return `Failed to monitor SSH tunnel${targetSuffix(this.target)}.`;
+    return `Failed to monitor SSH tunnel for ${this.target}.`;
   }
 }
 
 export class SshTunnelExitError extends Schema.TaggedErrorClass<SshTunnelExitError>()(
   "SshTunnelExitError",
   {
-    ...SshCommandErrorFields,
+    ...SshCommandContextFields,
+    exitCode: Schema.Number,
+    stderrBytes: Schema.Number,
+    reason: SshProcessExitReason,
   },
 ) {
   override get message(): string {
-    return `SSH tunnel exited unexpectedly${targetSuffix(this.target)}${exitCodeSuffix(this.exitCode)}.`;
+    return `SSH tunnel exited unexpectedly for ${this.target} (exit ${this.exitCode}).`;
   }
 }
 
@@ -171,35 +179,38 @@ export type SshCommandError = typeof SshCommandError.Type;
 export class SshLaunchPortMissingError extends Schema.TaggedErrorClass<SshLaunchPortMissingError>()(
   "SshLaunchPortMissingError",
   {
+    target: Schema.String,
     stdoutBytes: Schema.Number,
   },
 ) {
   override get message(): string {
-    return "SSH launch did not return a remote port.";
+    return `SSH launch for ${this.target} did not return a remote port.`;
   }
 }
 
 export class SshLaunchOutputParseError extends Schema.TaggedErrorClass<SshLaunchOutputParseError>()(
   "SshLaunchOutputParseError",
   {
+    target: Schema.String,
     stdoutBytes: Schema.Number,
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return "SSH launch returned unparseable output.";
+    return `SSH launch for ${this.target} returned unparseable output.`;
   }
 }
 
 export class SshLaunchInvalidPortError extends Schema.TaggedErrorClass<SshLaunchInvalidPortError>()(
   "SshLaunchInvalidPortError",
   {
+    target: Schema.String,
     stdoutBytes: Schema.Number,
-    remotePort: Schema.optional(Schema.Number),
+    remotePort: Schema.Number,
   },
 ) {
   override get message(): string {
-    return `SSH launch returned an invalid remote port: ${String(this.remotePort)}.`;
+    return `SSH launch for ${this.target} returned an invalid remote port: ${this.remotePort}.`;
   }
 }
 
@@ -213,34 +224,37 @@ export type SshLaunchError = typeof SshLaunchError.Type;
 export class SshPairingCredentialMissingError extends Schema.TaggedErrorClass<SshPairingCredentialMissingError>()(
   "SshPairingCredentialMissingError",
   {
+    target: Schema.String,
     stdoutBytes: Schema.Number,
   },
 ) {
   override get message(): string {
-    return "SSH pairing did not return a credential.";
+    return `SSH pairing for ${this.target} did not return a credential.`;
   }
 }
 
 export class SshPairingOutputParseError extends Schema.TaggedErrorClass<SshPairingOutputParseError>()(
   "SshPairingOutputParseError",
   {
+    target: Schema.String,
     stdoutBytes: Schema.Number,
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return "SSH pairing returned unparseable output.";
+    return `SSH pairing for ${this.target} returned unparseable output.`;
   }
 }
 
 export class SshPairingInvalidCredentialError extends Schema.TaggedErrorClass<SshPairingInvalidCredentialError>()(
   "SshPairingInvalidCredentialError",
   {
+    target: Schema.String,
     stdoutBytes: Schema.Number,
   },
 ) {
   override get message(): string {
-    return "SSH pairing command returned an invalid credential.";
+    return `SSH pairing for ${this.target} returned an invalid credential.`;
   }
 }
 
@@ -459,11 +473,3 @@ export const SshPasswordPromptError = Schema.Union([
   SshPasswordPromptRequestError,
 ]);
 export type SshPasswordPromptError = typeof SshPasswordPromptError.Type;
-
-function targetSuffix(target: string | undefined): string {
-  return target ? ` for ${target}` : "";
-}
-
-function exitCodeSuffix(exitCode: number | null): string {
-  return exitCode === null ? "" : ` (exit ${exitCode})`;
-}

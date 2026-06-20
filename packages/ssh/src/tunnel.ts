@@ -772,6 +772,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
     SshCommandError | SshInvalidTargetError | SshLaunchError,
     ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
   > {
+    const destination = target.alias.trim() || target.hostname.trim();
     yield* Effect.logInfo("ssh.remoteServer.launch.start", {
       ...sshTargetLogFields(target),
       ...sshRunnerLogFields(runner),
@@ -786,6 +787,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
     });
     if (!getLastNonEmptyOutputLine(result.stdout)) {
       return yield* new SshLaunchPortMissingError({
+        target: destination,
         stdoutBytes: utf8ByteLength(result.stdout),
       });
     }
@@ -793,6 +795,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       Effect.mapError(
         (cause) =>
           new SshLaunchOutputParseError({
+            target: destination,
             stdoutBytes: utf8ByteLength(result.stdout),
             cause,
           }),
@@ -800,6 +803,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
     );
     if (!Number.isInteger(parsed.remotePort)) {
       return yield* new SshLaunchInvalidPortError({
+        target: destination,
         stdoutBytes: utf8ByteLength(result.stdout),
         remotePort: parsed.remotePort,
       });
@@ -828,6 +832,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
   SshCommandError | SshInvalidTargetError | SshPairingError,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > {
+  const destination = target.alias.trim() || target.hostname.trim();
   yield* Effect.logDebug("ssh.remoteServer.pairingToken.start", {
     ...sshTargetLogFields(target),
     stateKey: remoteStateKey(target),
@@ -841,6 +846,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
   });
   if (!getLastNonEmptyOutputLine(result.stdout)) {
     return yield* new SshPairingCredentialMissingError({
+      target: destination,
       stdoutBytes: utf8ByteLength(result.stdout),
     });
   }
@@ -848,6 +854,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
     Effect.mapError(
       (cause) =>
         new SshPairingOutputParseError({
+          target: destination,
           stdoutBytes: utf8ByteLength(result.stdout),
           cause,
         }),
@@ -855,6 +862,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
   );
   if (parsed.credential.trim().length === 0) {
     return yield* new SshPairingInvalidCredentialError({
+      target: destination,
       stdoutBytes: utf8ByteLength(result.stdout),
     });
   }
@@ -1087,10 +1095,6 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
     Effect.mapError(
       (cause) =>
         new SshAuthenticationHelperError({
-          command: "ssh",
-          argumentCount: 0,
-          exitCode: null,
-          stderrBytes: 0,
           target: hostSpec,
           cause,
         }),
@@ -1142,8 +1146,6 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
           new SshTunnelSpawnError({
             command: sshCommand,
             argumentCount: args.length,
-            exitCode: null,
-            stderrBytes: 0,
             target: input.resolvedTarget.alias,
             cause,
           }),
@@ -1178,8 +1180,6 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
         new SshTunnelMonitorError({
           command: sshCommand,
           argumentCount: args.length,
-          exitCode: null,
-          stderrBytes: 0,
           target: input.resolvedTarget.alias,
           cause,
         }),
@@ -1191,6 +1191,7 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
         exitCode,
         stderrBytes: utf8ByteLength(stderr),
         target: input.resolvedTarget.alias,
+        reason: SshAuth.classifySshProcessExit({ stdout: "", stderr }),
       });
       return Effect.logWarning("ssh.tunnel.process.exited", {
         ...sshTargetLogFields(input.resolvedTarget),
@@ -1319,10 +1320,6 @@ export const make = Effect.fn("ssh/tunnel.SshEnvironmentManager.make")(function*
     yield* Deferred.fail(
       pending,
       new SshCommandCancelledError({
-        command: "ssh",
-        argumentCount: 0,
-        exitCode: null,
-        stderrBytes: 0,
         target: target.alias || target.hostname,
       }),
     ).pipe(Effect.ignore);

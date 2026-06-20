@@ -48,6 +48,26 @@ const makeSuccessfulProcess = (stdout: string) => {
   });
 };
 
+const makeFailedProcess = (input: { readonly stdout?: string; readonly stderr?: string }) => {
+  const stdout = input.stdout ?? "";
+  const stderr = input.stderr ?? "";
+  const stdoutStream = stdout === "" ? Stream.empty : Stream.make(new TextEncoder().encode(stdout));
+  const stderrStream = stderr === "" ? Stream.empty : Stream.make(new TextEncoder().encode(stderr));
+  return ChildProcessSpawner.makeHandle({
+    pid: ChildProcessSpawner.ProcessId(123),
+    stdout: stdoutStream,
+    stderr: stderrStream,
+    all: Stream.empty,
+    exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+    isRunning: Effect.succeed(false),
+    kill: () => Effect.void,
+    stdin: Sink.drain,
+    getInputFd: () => Sink.drain,
+    getOutputFd: () => Stream.empty,
+    unref: Effect.succeed(Effect.void),
+  });
+};
+
 const makeRunningProcess = (onKill: () => void) => {
   let finish: ((exitCode: ChildProcessSpawner.ExitCode) => void) | null = null;
   return ChildProcessSpawner.makeHandle({
@@ -576,6 +596,7 @@ describe("ssh tunnel scripts", () => {
       assert.isTrue(Result.isFailure(result));
       if (Result.isFailure(result)) {
         assert.instanceOf(result.failure, SshPairingOutputParseError);
+        assert.equal(result.failure.target, "devbox");
         assert.equal(result.failure.stdoutBytes, new TextEncoder().encode(output).length);
         assert.isFalse("stdout" in result.failure);
         assert.notInclude(result.failure.message, "pairing-secret");
@@ -606,6 +627,59 @@ describe("ssh tunnel scripts", () => {
         launchAttempts += 1;
         if (launchAttempts === 1) {
           return Effect.fail(authFailure);
+        }
+        return Effect.succeed(makeSuccessfulProcess('{"remotePort":3773}\n'));
+      }
+      if (args.includes("-N")) {
+        return Effect.succeed(makeRunningProcess(() => {}));
+      }
+      return Effect.succeed(makeSuccessfulProcess("\n"));
+    });
+    const layer = Layer.mergeAll(
+      NodeServices.layer,
+      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Layer.succeed(HttpClient.HttpClient, testHttpClient),
+      Layer.succeed(NetService.NetService, testNetService),
+      SshAuth.layer({
+        isAvailable: true,
+        request: (request) =>
+          Effect.sync(() => {
+            promptAttempts.push(request.attempt);
+            return "secret";
+          }),
+      }),
+      SshTunnel.layer(),
+    );
+
+    return Effect.gen(function* () {
+      const manager = yield* SshTunnel.SshEnvironmentManager;
+      const environment = yield* manager.ensureEnvironment(target);
+
+      assert.equal(environment.remotePort, 3773);
+      assert.equal(launchAttempts, 2);
+      assert.deepEqual(promptAttempts, [1]);
+    }).pipe(Effect.provide(layer), Effect.scoped);
+  });
+
+  it.effect("retries authentication after a permission-denied SSH exit", () => {
+    const target = {
+      alias: "devbox",
+      hostname: "devbox.example.com",
+      username: "julius",
+      port: 2222,
+    } as const;
+    const promptAttempts: number[] = [];
+    let launchAttempts = 0;
+    const spawner = ChildProcessSpawner.make((command) => {
+      const args = commandArgs(command);
+      if (args.includes("sh") && args.includes("--")) {
+        launchAttempts += 1;
+        if (launchAttempts === 1) {
+          return Effect.succeed(
+            makeFailedProcess({
+              stderr: "julius@devbox: Permission denied (publickey,password).\n",
+            }),
+          );
         }
         return Effect.succeed(makeSuccessfulProcess('{"remotePort":3773}\n'));
       }

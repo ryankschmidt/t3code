@@ -178,10 +178,6 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
     Effect.mapError(
       (cause) =>
         new SshAuthenticationHelperError({
-          command: "ssh",
-          argumentCount: 0,
-          exitCode: null,
-          stderrBytes: 0,
           target: hostSpec,
           cause,
         }),
@@ -222,8 +218,6 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
           new SshCommandSpawnError({
             command: sshCommand,
             argumentCount: args.length,
-            exitCode: null,
-            stderrBytes: 0,
             target: hostSpec,
             cause,
           }),
@@ -243,8 +237,6 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
         new SshCommandExecutionError({
           command: sshCommand,
           argumentCount: args.length,
-          exitCode: null,
-          stderrBytes: 0,
           target: hostSpec,
           cause,
         }),
@@ -267,6 +259,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
       stdoutBytes: utf8ByteLength(stdout),
       stderrBytes: utf8ByteLength(stderr),
       target: hostSpec,
+      reason: SshAuth.classifySshProcessExit({ stdout, stderr }),
     });
   }
 
@@ -312,8 +305,6 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
                 (input.preHostArgs?.length ?? 0) +
                 1 +
                 (input.remoteCommandArgs?.length ?? 0),
-              exitCode: null,
-              stderrBytes: 0,
               target: target.alias || target.hostname,
               timeoutMs: input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS,
             });

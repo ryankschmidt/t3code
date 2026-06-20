@@ -36,18 +36,12 @@ describe("ssh auth", () => {
     const commandFailure = new SshErrors.SshCommandSpawnError({
       command: "ssh",
       argumentCount: 1,
-      exitCode: null,
-      stderrBytes: 0,
       target: "devbox",
       cause: authFailure,
     });
     assert.equal(isSshAuthFailure(commandFailure), true);
 
     const helperFailure = new SshErrors.SshAuthenticationHelperError({
-      command: "ssh",
-      argumentCount: 1,
-      exitCode: null,
-      stderrBytes: 0,
       target: "devbox",
       cause: authFailure,
     });

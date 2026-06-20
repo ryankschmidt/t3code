@@ -217,6 +217,19 @@ function isSshAuthFailureMessage(message: string): boolean {
   );
 }
 
+export function classifySshProcessExit(input: {
+  readonly stdout: string;
+  readonly stderr: string;
+}): SshErrors.SshProcessExitReason {
+  return isSshAuthFailureMessage(`${input.stderr}\n${input.stdout}`)
+    ? "authentication-failed"
+    : "process-exited";
+}
+
+const isSshAuthFailureExit = Schema.is(
+  Schema.Union([SshErrors.SshCommandExitError, SshErrors.SshTunnelExitError]),
+);
+
 const isSshAuthFailureCauseWrapper = Schema.is(
   Schema.Union([
     SshErrors.SshCommandSpawnError,
@@ -232,6 +245,9 @@ export function isSshAuthFailure(error: unknown): boolean {
 
   while (!visited.has(current)) {
     visited.add(current);
+    if (isSshAuthFailureExit(current)) {
+      return current.reason === "authentication-failed";
+    }
     const message = current instanceof Error ? current.message : String(current);
     if (isSshAuthFailureMessage(message)) {
       return true;

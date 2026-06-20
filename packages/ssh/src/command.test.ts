@@ -184,8 +184,6 @@ describe("ssh command", () => {
       const spawnError = new SshCommandSpawnError({
         command: "ssh",
         argumentCount: 0,
-        exitCode: null,
-        stderrBytes: 0,
         target: "devbox",
         cause: spawnCause,
       });
@@ -254,7 +252,7 @@ describe("ssh command", () => {
 
       assert.isTrue(Result.isFailure(result));
       if (Result.isFailure(result)) {
-        assert.include(result.failure.message, "SSH command timed out after 1ms.");
+        assert.equal(result.failure.message, "SSH command timed out after 1ms for devbox.");
       }
     }).pipe(Effect.provide(processLayer));
   });
