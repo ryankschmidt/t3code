@@ -363,6 +363,9 @@ export class SshPasswordPromptRequestError extends Schema.TaggedErrorClass<SshPa
   },
 ) {
   override get message(): string {
+    if (this.cause instanceof Error && this.cause.message) {
+      return this.cause.message;
+    }
     return `SSH authentication failed for ${this.destination}.`;
   }
 }
