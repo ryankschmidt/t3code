@@ -198,19 +198,18 @@ export const relayClientAuthLayer = Layer.effect(
         const token = readHttpAuthorizationCredential(credential);
         const verified = yield* verifyRelayClientBearerToken(config, token).pipe(
           Effect.tapError((error) =>
-            Effect.annotateCurrentSpan(
-              "relay.auth.clerk_verification_failure",
-              clerkVerificationFailureReason(error.cause),
-            ),
+            Effect.annotateCurrentSpan({
+              "relay.auth.clerk_verification_failure": error.cause.reason,
+              "relay.auth.clerk_session_failure_stage": error.sessionFailure.stage,
+              "relay.auth.clerk_session_failure_reason": error.sessionFailure.reason,
+              "relay.auth.clerk_oauth_failure_stage": error.cause.stage,
+              "relay.auth.clerk_oauth_failure_reason": error.cause.reason,
+            }),
           ),
-          Effect.catch(() => relayAuthInvalidError("invalid_bearer")),
+          Effect.catchTags({
+            ClerkBearerTokenVerificationError: () => relayAuthInvalidError("invalid_bearer"),
+          }),
         );
-        if (!verified.sub) {
-          yield* Effect.annotateCurrentSpan({
-            "relay.auth.clerk_verification_failure": "missing_subject",
-          });
-          return yield* relayAuthInvalidError("invalid_bearer");
-        }
         yield* Effect.annotateCurrentSpan({
           "relay.auth.mode": verified.mode,
           "relay.auth.subject": verified.sub,
@@ -861,14 +860,39 @@ export const serverApi = HttpApiBuilder.group(
   }),
 );
 
-class ClerkTokenVerificationFailed extends Schema.TaggedErrorClass<ClerkTokenVerificationFailed>()(
-  "ClerkTokenVerificationFailed",
+const ClerkTokenVerificationStage = Schema.Literals([
+  "session-token-verification",
+  "session-claims-validation",
+  "oauth-request-authentication",
+  "oauth-auth-state-validation",
+]);
+const ClerkTokenVerificationReason = Schema.String.check(
+  Schema.isMaxLength(64),
+  Schema.isPattern(/^[a-z0-9._-]+$/i),
+);
+
+export class ClerkTokenVerificationError extends Schema.TaggedErrorClass<ClerkTokenVerificationError>()(
+  "ClerkTokenVerificationError",
   {
-    cause: Schema.Defect(),
+    stage: ClerkTokenVerificationStage,
+    reason: ClerkTokenVerificationReason,
+    cause: Schema.optionalKey(Schema.Defect()),
   },
 ) {
   override get message(): string {
-    return "Clerk token verification failed";
+    return `Clerk token verification failed during '${this.stage}' (${this.reason}).`;
+  }
+}
+
+export class ClerkBearerTokenVerificationError extends Schema.TaggedErrorClass<ClerkBearerTokenVerificationError>()(
+  "ClerkBearerTokenVerificationError",
+  {
+    sessionFailure: ClerkTokenVerificationError,
+    cause: ClerkTokenVerificationError,
+  },
+) {
+  override get message(): string {
+    return `Clerk bearer token verification failed after session stage '${this.sessionFailure.stage}' (${this.sessionFailure.reason}) and OAuth stage '${this.cause.stage}' (${this.cause.reason}).`;
   }
 }
 
@@ -1008,7 +1032,7 @@ function resolveConnectClientKeyThumbprint(payload: RelayEnvironmentConnectReque
 }
 
 function safeAuthFailureReason(value: string): string {
-  return /^[a-z0-9._-]+$/i.test(value) ? value : "unknown";
+  return value.length <= 64 && /^[a-z0-9._-]+$/i.test(value) ? value : "unknown";
 }
 
 function clerkVerificationFailureReason(cause: unknown): string {
@@ -1041,14 +1065,19 @@ function hasExpectedClerkAudience(audience: unknown, expectedAudience: string): 
 function verifyClerkBearerToken(
   config: RelayConfiguration.RelayConfiguration["Service"],
   token: string,
-) {
+): Effect.Effect<Awaited<ReturnType<typeof verifyToken>>, ClerkTokenVerificationError> {
   return Effect.tryPromise({
     try: () =>
       verifyToken(token, {
         secretKey: Redacted.value(config.clerkSecretKey),
         audience: config.clerkJwtAudience,
       }),
-    catch: (cause) => new ClerkTokenVerificationFailed({ cause }),
+    catch: (cause) =>
+      new ClerkTokenVerificationError({
+        stage: "session-token-verification",
+        reason: clerkVerificationFailureReason(cause),
+        cause,
+      }),
   }).pipe(
     Effect.withSpan("verify_clerk_bearer_token", {
       attributes: { "relay.auth.token_length": token.length },
@@ -1059,44 +1088,104 @@ function verifyClerkBearerToken(
 function verifyClerkOAuthBearerToken(
   config: RelayConfiguration.RelayConfiguration["Service"],
   token: string,
-) {
+): Effect.Effect<{ readonly sub: string }, ClerkTokenVerificationError> {
   return Effect.tryPromise({
-    try: async () => {
+    try: () => {
       const client = createClerkClient({
         secretKey: Redacted.value(config.clerkSecretKey),
         publishableKey: config.clerkPublishableKey,
       });
-      const state = await client.authenticateRequest(
+      return client.authenticateRequest(
         new Request(config.relayIssuer, {
           headers: { authorization: `Bearer ${token}` },
         }),
         { acceptsToken: "oauth_token" },
       );
-      const auth = state.toAuth();
-      if (!state.isAuthenticated || !auth.userId) {
-        throw new Error("Clerk OAuth token is not authenticated.");
-      }
-      return { sub: auth.userId };
     },
-    catch: (cause) => new ClerkTokenVerificationFailed({ cause }),
-  });
+    catch: (cause) =>
+      new ClerkTokenVerificationError({
+        stage: "oauth-request-authentication",
+        reason: clerkVerificationFailureReason(cause),
+        cause,
+      }),
+  }).pipe(
+    Effect.flatMap((state) =>
+      Effect.try({
+        try: () => state.toAuth(),
+        catch: (cause) =>
+          new ClerkTokenVerificationError({
+            stage: "oauth-auth-state-validation",
+            reason: clerkVerificationFailureReason(cause),
+            cause,
+          }),
+      }).pipe(
+        Effect.flatMap((auth) => {
+          if (!state.isAuthenticated) {
+            return Effect.fail(
+              new ClerkTokenVerificationError({
+                stage: "oauth-auth-state-validation",
+                reason: "not_authenticated",
+              }),
+            );
+          }
+          if (!auth.userId) {
+            return Effect.fail(
+              new ClerkTokenVerificationError({
+                stage: "oauth-auth-state-validation",
+                reason: "missing_user_id",
+              }),
+            );
+          }
+          return Effect.succeed({ sub: auth.userId });
+        }),
+      ),
+    ),
+  );
 }
 
 export function verifyRelayClientBearerToken(
   config: RelayConfiguration.RelayConfiguration["Service"],
   token: string,
-) {
+): Effect.Effect<
+  {
+    readonly sub: string;
+    readonly mode: "clerk_session_bearer" | "clerk_oauth_bearer";
+  },
+  ClerkBearerTokenVerificationError
+> {
   return verifyClerkBearerToken(config, token).pipe(
-    Effect.flatMap((verified) =>
-      verified.sub && hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)
-        ? Effect.succeed({ sub: verified.sub, mode: "clerk_session_bearer" as const })
-        : Effect.fail(new ClerkTokenVerificationFailed({ cause: "missing_relay_audience" })),
-    ),
-    Effect.catch(() =>
-      verifyClerkOAuthBearerToken(config, token).pipe(
-        Effect.map((verified) => ({ ...verified, mode: "clerk_oauth_bearer" as const })),
-      ),
-    ),
+    Effect.flatMap((verified) => {
+      if (!verified.sub) {
+        return Effect.fail(
+          new ClerkTokenVerificationError({
+            stage: "session-claims-validation",
+            reason: "missing_subject",
+          }),
+        );
+      }
+      if (!hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)) {
+        return Effect.fail(
+          new ClerkTokenVerificationError({
+            stage: "session-claims-validation",
+            reason: "audience_mismatch",
+          }),
+        );
+      }
+      return Effect.succeed({ sub: verified.sub, mode: "clerk_session_bearer" as const });
+    }),
+    Effect.catchTags({
+      ClerkTokenVerificationError: (sessionFailure) =>
+        verifyClerkOAuthBearerToken(config, token).pipe(
+          Effect.map((verified) => ({ ...verified, mode: "clerk_oauth_bearer" as const })),
+          Effect.mapError(
+            (cause) =>
+              new ClerkBearerTokenVerificationError({
+                sessionFailure,
+                cause,
+              }),
+          ),
+        ),
+    }),
   );
 }
 

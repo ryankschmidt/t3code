@@ -14,6 +14,8 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { RelayEnvironmentAuth } from "@t3tools/contracts/relay";
 
 import {
+  ClerkBearerTokenVerificationError,
+  ClerkTokenVerificationError,
   relayCors,
   relayDocsRedirectRoute,
   relayEnvironmentAuthLayer,
@@ -94,6 +96,87 @@ describe("relay client authentication", () => {
         secretKey: "clerk-secret-key",
         publishableKey: "pk_test_test",
       });
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          vi.mocked(verifyToken).mockReset();
+          vi.mocked(createClerkClient).mockReset();
+        }),
+      ),
+    ),
+  );
+
+  it.effect("preserves both Clerk failures when session and OAuth verification fail", () => {
+    const sessionCause = Object.assign(new Error("private session verification detail"), {
+      reason: "session_invalid",
+    });
+    const oauthCause = Object.assign(new Error("private OAuth verification detail"), {
+      reason: "oauth_invalid",
+    });
+
+    return Effect.gen(function* () {
+      vi.mocked(verifyToken).mockRejectedValue(sessionCause);
+      vi.mocked(createClerkClient).mockReturnValue({
+        authenticateRequest: vi.fn().mockRejectedValue(oauthCause),
+      } as never);
+
+      const error = yield* Effect.flip(
+        verifyRelayClientBearerToken(relaySettings, "invalid-token"),
+      );
+
+      expect(error).toBeInstanceOf(ClerkBearerTokenVerificationError);
+      expect(error.sessionFailure).toBeInstanceOf(ClerkTokenVerificationError);
+      expect(error.sessionFailure).toMatchObject({
+        stage: "session-token-verification",
+        reason: "session_invalid",
+        cause: sessionCause,
+      });
+      expect(error.cause).toBeInstanceOf(ClerkTokenVerificationError);
+      expect(error.cause).toMatchObject({
+        stage: "oauth-request-authentication",
+        reason: "oauth_invalid",
+        cause: oauthCause,
+      });
+      expect(error.message).toBe(
+        "Clerk bearer token verification failed after session stage 'session-token-verification' (session_invalid) and OAuth stage 'oauth-request-authentication' (oauth_invalid).",
+      );
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          vi.mocked(verifyToken).mockReset();
+          vi.mocked(createClerkClient).mockReset();
+        }),
+      ),
+    );
+  });
+
+  it.effect("models an unauthenticated Clerk OAuth state as a structured failure", () =>
+    Effect.gen(function* () {
+      vi.mocked(verifyToken).mockRejectedValue(
+        Object.assign(new Error("not a session JWT"), { reason: "session_invalid" }),
+      );
+      vi.mocked(createClerkClient).mockReturnValue({
+        authenticateRequest: vi.fn().mockResolvedValue({
+          isAuthenticated: false,
+          toAuth: () => ({ userId: null }),
+        }),
+      } as never);
+
+      const error = yield* Effect.flip(
+        verifyRelayClientBearerToken(relaySettings, "unauthenticated-token"),
+      );
+
+      expect(error).toBeInstanceOf(ClerkBearerTokenVerificationError);
+      expect(error.sessionFailure).toMatchObject({
+        stage: "session-token-verification",
+        reason: "session_invalid",
+      });
+      expect(error.cause).toBeInstanceOf(ClerkTokenVerificationError);
+      expect(error.cause).toMatchObject({
+        stage: "oauth-auth-state-validation",
+        reason: "not_authenticated",
+      });
+      expect(error.cause.cause).toBeUndefined();
     }).pipe(
       Effect.ensuring(
         Effect.sync(() => {
