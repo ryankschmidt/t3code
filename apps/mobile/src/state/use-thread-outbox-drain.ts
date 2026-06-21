@@ -118,6 +118,12 @@ export function useThreadOutboxDrain(): void {
         }
       };
 
+      const isRetryableFailure = (result: AtomCommandResult<unknown, unknown>): boolean => {
+        if (!AsyncResult.isFailure(result)) return false;
+        const error = Cause.squash(result.cause);
+        return Cause.hasInterruptsOnly(result.cause) || shouldRetryThreadOutboxDelivery(error);
+      };
+
       if (!modelSelectionsEqual(settings.modelSelection, thread.modelSelection)) {
         const updateResult = await updateThreadMetadata({
           environmentId: queuedMessage.environmentId,
@@ -127,8 +133,8 @@ export function useThreadOutboxDrain(): void {
             modelSelection: settings.modelSelection,
           },
         });
-        if (AsyncResult.isFailure(updateResult)) {
-          return completeDelivery(updateResult);
+        if (isRetryableFailure(updateResult)) {
+          return false;
         }
       }
 
@@ -142,8 +148,8 @@ export function useThreadOutboxDrain(): void {
             createdAt: queuedMessage.createdAt,
           },
         });
-        if (AsyncResult.isFailure(runtimeResult)) {
-          return completeDelivery(runtimeResult);
+        if (isRetryableFailure(runtimeResult)) {
+          return false;
         }
       }
 
@@ -157,8 +163,8 @@ export function useThreadOutboxDrain(): void {
             createdAt: queuedMessage.createdAt,
           },
         });
-        if (AsyncResult.isFailure(interactionResult)) {
-          return completeDelivery(interactionResult);
+        if (isRetryableFailure(interactionResult)) {
+          return false;
         }
       }
 
