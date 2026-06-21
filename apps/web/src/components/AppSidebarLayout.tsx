@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
@@ -22,7 +22,7 @@ function SidebarControl() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || event.repeat) return;
       if (resolveShortcutCommand(event, keybindings) !== "sidebar.toggle") return;
 
       event.preventDefault();
@@ -48,8 +48,25 @@ function SidebarControl() {
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+
+  const [isWcoVisible, setIsWcoVisible] = useState(
+    () =>
+      (navigator as Navigator & { windowControlsOverlay?: { visible: boolean } })
+        .windowControlsOverlay?.visible ?? false,
+  );
+
+  useEffect(() => {
+    const overlay = (
+      navigator as Navigator & { windowControlsOverlay?: EventTarget & { visible: boolean } }
+    ).windowControlsOverlay;
+    if (!overlay) return;
+    const update = () => setIsWcoVisible(overlay.visible);
+    overlay.addEventListener("geometrychange", update);
+    return () => overlay.removeEventListener("geometrychange", update);
+  }, []);
+
   const macosWindowControlsStyle =
-    isElectron && isMacPlatform(navigator.platform)
+    isElectron && isMacPlatform(navigator.platform) && !isWcoVisible
       ? ({ "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET } as CSSProperties)
       : undefined;
 
