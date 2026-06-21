@@ -153,6 +153,9 @@ export function ThreadRouteScreen() {
   const handleOpenDrawer = useCallback(() => {
     setDrawerVisible(true);
   }, []);
+  const handleToggleDrawer = useCallback(() => {
+    setDrawerVisible((visible) => !visible);
+  }, []);
 
   const handleOpenConnectionEditor = useCallback(() => {
     void router.push("/connections");
@@ -415,6 +418,14 @@ export function ThreadRouteScreen() {
           ),
         }}
       />
+
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button
+          accessibilityLabel={drawerVisible ? "Close thread sidebar" : "Open thread sidebar"}
+          icon="sidebar.left"
+          onPress={handleToggleDrawer}
+        />
+      </Stack.Toolbar>
 
       <ThreadGitControls
         currentBranch={selectedThread.branch}

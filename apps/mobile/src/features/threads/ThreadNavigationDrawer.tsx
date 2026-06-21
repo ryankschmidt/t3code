@@ -58,6 +58,7 @@ export function ThreadNavigationDrawer(props: {
   const drawerBg = useThemeColor("--color-drawer");
   const drawerShadow = useThemeColor("--color-drawer-shadow");
   const primaryForeground = useThemeColor("--color-primary-foreground");
+  const iconColor = useThemeColor("--color-icon");
   const borderSubtleColor = useThemeColor("--color-border-subtle");
 
   useEffect(() => {
@@ -151,7 +152,10 @@ export function ThreadNavigationDrawer(props: {
               drawerStyle,
             ]}
           >
-            <View className="flex-row items-center justify-between px-4 pb-5">
+            <View
+              className="flex-row items-center justify-between pr-4 pb-5"
+              style={{ paddingLeft: 68 }}
+            >
               <Text className="text-2xl font-t3-bold">Threads</Text>
               <Pressable
                 onPress={() => {
@@ -178,6 +182,24 @@ export function ThreadNavigationDrawer(props: {
             />
           </Animated.View>
         </GestureDetector>
+        <Pressable
+          accessibilityLabel="Close thread sidebar"
+          accessibilityRole="button"
+          onPress={props.onClose}
+          style={{
+            position: "absolute",
+            left: 12,
+            top: insets.top + 6,
+            width: 44,
+            height: 44,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 22,
+            backgroundColor: drawerBg,
+          }}
+        >
+          <SymbolView name="sidebar.left" size={18} tintColor={iconColor} type="monochrome" />
+        </Pressable>
       </View>
     </Modal>
   );

@@ -85,6 +85,11 @@ function useSidebar() {
   return context;
 }
 
+function useSidebarVisibility() {
+  const { isMobile, open, openMobile } = useSidebar();
+  return isMobile ? openMobile : open;
+}
+
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
@@ -310,13 +315,15 @@ function Sidebar({
 }
 
 function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar, openMobile } = useSidebar();
+  const { toggleSidebar } = useSidebar();
+  const isOpen = useSidebarVisibility();
 
   return (
     <Button
-      className={cn("size-7", className)}
+      className={cn("size-7 sm:size-7", className)}
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
+      aria-pressed={isOpen}
       onClick={(event) => {
         onClick?.(event);
         toggleSidebar();
@@ -325,7 +332,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       variant="ghost"
       {...props}
     >
-      {openMobile ? <PanelLeftCloseIcon /> : <PanelLeftIcon />}
+      {isOpen ? <PanelLeftCloseIcon /> : <PanelLeftIcon />}
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   );
@@ -1004,4 +1011,5 @@ export {
   SidebarSeparator,
   SidebarTrigger,
   useSidebar,
+  useSidebarVisibility,
 };
