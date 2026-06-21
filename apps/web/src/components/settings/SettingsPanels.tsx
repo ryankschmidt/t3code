@@ -12,6 +12,7 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -36,7 +37,7 @@ import { TraitsPicker } from "../chat/TraitsPicker";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import { useTheme } from "../../hooks/useTheme";
-import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
+import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
@@ -44,6 +45,7 @@ import {
   resolveAppModelSelectionState,
 } from "../../modelSelection";
 import {
+  applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
@@ -373,8 +375,8 @@ function AboutVersionSection() {
 
 export function useSettingsRestore(onRestored?: () => void) {
   const { theme, setTheme } = useTheme();
-  const settings = useSettings();
-  const updateSettings = useUpdateSettings();
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
 
   const isGitWritingModelDirty = !Equal.equals(
     settings.textGenerationModelSelection ?? null,
@@ -479,8 +481,8 @@ export function useSettingsRestore(onRestored?: () => void) {
 
 export function GeneralSettingsPanel() {
   const { theme, setTheme } = useTheme();
-  const settings = useSettings();
-  const updateSettings = useUpdateSettings();
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const diagnosticsDescription = formatDiagnosticsDescription({
@@ -496,7 +498,7 @@ export function GeneralSettingsPanel() {
   const textGenModel = textGenerationModelSelection.model;
   const textGenModelOptions = textGenerationModelSelection.options;
   const gitModelInstanceEntries = sortProviderInstanceEntries(
-    deriveProviderInstanceEntries(serverProviders),
+    applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
   );
   const textGenInstanceEntry = gitModelInstanceEntries.find(
     (entry) => entry.instanceId === textGenInstanceId,
@@ -665,6 +667,33 @@ export function GeneralSettingsPanel() {
                 updateSettings({ enableAssistantStreaming: Boolean(checked) })
               }
               aria-label="Stream assistant messages"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Provider update checks"
+          description="Check installed provider CLIs for newer available versions."
+          resetAction={
+            settings.enableProviderUpdateChecks !==
+            DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks ? (
+              <SettingResetButton
+                label="provider update checks"
+                onClick={() =>
+                  updateSettings({
+                    enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.enableProviderUpdateChecks}
+              onCheckedChange={(checked) =>
+                updateSettings({ enableProviderUpdateChecks: Boolean(checked) })
+              }
+              aria-label="Check provider versions"
             />
           }
         />
@@ -950,8 +979,8 @@ export function GeneralSettingsPanel() {
 }
 
 export function ProviderSettingsPanel() {
-  const settings = useSettings();
-  const updateSettings = useUpdateSettings();
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const primaryEnvironment = usePrimaryEnvironment();
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
@@ -1011,7 +1040,11 @@ export function ProviderSettingsPanel() {
       refreshingRef.current = false;
       setIsRefreshingProviders(false);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        console.warn("Failed to refresh providers", squashAtomCommandFailure(result));
+        console.warn("Failed to refresh providers", {
+          operation: "refresh-providers",
+          environmentId: primaryEnvironment.environmentId,
+          ...safeErrorLogAttributes(squashAtomCommandFailure(result)),
+        });
       }
     })();
   }, [primaryEnvironment, refreshServerProviders]);

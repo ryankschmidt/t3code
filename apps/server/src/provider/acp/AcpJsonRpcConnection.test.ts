@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as path from "node:path";
-import * as os from "node:os";
-import { fileURLToPath } from "node:url";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeOS from "node:os";
+import * as NodeURL from "node:url";
+import * as NodeFS from "node:fs";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
@@ -10,15 +10,11 @@ import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { describe, expect } from "vite-plus/test";
 
-import {
-  AcpSessionRuntime,
-  selectAcpAgentAuthMethod,
-  type AcpSessionRequestLogEvent,
-} from "./AcpSessionRuntime.ts";
+import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const mockAgentPath = path.join(__dirname, "../../../scripts/acp-mock-agent.ts");
+const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
+const mockAgentPath = NodePath.join(__dirname, "../../../scripts/acp-mock-agent.ts");
 const mockAgentCommand = "node";
 const mockAgentArgs = [mockAgentPath];
 
@@ -29,15 +25,15 @@ describe("AcpSessionRuntime", () => {
       { id: "api-key", name: "API key" },
     ];
 
-    expect(selectAcpAgentAuthMethod(methods)?.id).toBe("api-key");
-    expect(selectAcpAgentAuthMethod(methods, "browser")?.id).toBe("browser");
-    expect(selectAcpAgentAuthMethod(methods, "missing")).toBeUndefined();
+    expect(AcpSessionRuntime.selectAcpAgentAuthMethod(methods)?.id).toBe("api-key");
+    expect(AcpSessionRuntime.selectAcpAgentAuthMethod(methods, "browser")?.id).toBe("browser");
+    expect(AcpSessionRuntime.selectAcpAgentAuthMethod(methods, "missing")).toBeUndefined();
   });
 
   it.effect("merges custom initialize client capabilities into the ACP handshake", () => {
-    const requestEvents: Array<AcpSessionRequestLogEvent> = [];
+    const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];
     return Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();
 
       const initializeStarted = requestEvents.find(
@@ -78,9 +74,9 @@ describe("AcpSessionRuntime", () => {
   });
 
   it.effect("does not authenticate when an advertised method is not required", () => {
-    const requestEvents: Array<AcpSessionRequestLogEvent> = [];
+    const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];
     return Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();
 
       expect(
@@ -109,9 +105,9 @@ describe("AcpSessionRuntime", () => {
   });
 
   it.effect("authenticates and retries once after session creation returns auth_required", () => {
-    const requestEvents: Array<AcpSessionRequestLogEvent> = [];
+    const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];
     return Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       const started = yield* runtime.start();
 
       expect(started.sessionId).toBe("mock-session-1");
@@ -155,7 +151,7 @@ describe("AcpSessionRuntime", () => {
 
   it.effect("starts a session, prompts, and emits normalized events against the mock agent", () =>
     Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       const started = yield* runtime.start();
 
       expect(started.initializeResult).toMatchObject({ protocolVersion: 1 });
@@ -206,7 +202,7 @@ describe("AcpSessionRuntime", () => {
 
   it.effect("segments assistant text around ACP tool calls", () =>
     Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();
 
       const promptResult = yield* runtime.prompt({
@@ -267,7 +263,7 @@ describe("AcpSessionRuntime", () => {
 
   it.effect("suppresses generic placeholder tool updates until completion", () =>
     Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();
 
       const promptResult = yield* runtime.prompt({
@@ -304,9 +300,9 @@ describe("AcpSessionRuntime", () => {
   );
 
   it.effect("logs ACP requests from the shared runtime", () => {
-    const requestEvents: Array<AcpSessionRequestLogEvent> = [];
+    const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];
     return Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();
 
       yield* runtime.setModel("composer-2");
@@ -356,9 +352,9 @@ describe("AcpSessionRuntime", () => {
   });
 
   it.effect("supports negotiated ACP session list, fork, resume, and close methods", () => {
-    const requestEvents: Array<AcpSessionRequestLogEvent> = [];
+    const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];
     return Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       const started = yield* runtime.start();
       expect(started.initializeResult.agentCapabilities?.sessionCapabilities).toMatchObject({
         list: {},
@@ -413,9 +409,9 @@ describe("AcpSessionRuntime", () => {
   });
 
   it.effect("skips no-op session config writes when the requested value is already active", () => {
-    const requestEvents: Array<AcpSessionRequestLogEvent> = [];
+    const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];
     return Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();
 
       yield* runtime.setConfigOption("model", "default");
@@ -450,7 +446,7 @@ describe("AcpSessionRuntime", () => {
   it.effect("emits low-level ACP protocol logs for raw and decoded messages", () => {
     const protocolEvents: Array<EffectAcpProtocol.AcpProtocolLogEvent> = [];
     return Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();
 
       yield* runtime.prompt({
@@ -495,10 +491,10 @@ describe("AcpSessionRuntime", () => {
   });
 
   it.effect("rejects invalid config option values before sending session/set_config_option", () => {
-    const tempDir = mkdtempSync(path.join(os.tmpdir(), "acp-runtime-"));
-    const requestLogPath = path.join(tempDir, "requests.ndjson");
+    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "acp-runtime-"));
+    const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
     return Effect.gen(function* () {
-      const runtime = yield* AcpSessionRuntime;
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();
 
       const error = yield* runtime.setModel("composer-2[fast=false]").pipe(Effect.flip);
@@ -511,7 +507,7 @@ describe("AcpSessionRuntime", () => {
         expect(error.message).toContain("composer-2[fast=true]");
       }
 
-      const recordedRequests = readFileSync(requestLogPath, "utf8")
+      const recordedRequests = NodeFS.readFileSync(requestLogPath, "utf8")
         .trim()
         .split("\n")
         .filter((line) => line.length > 0)
@@ -540,7 +536,7 @@ describe("AcpSessionRuntime", () => {
       ),
       Effect.scoped,
       Effect.provide(NodeServices.layer),
-      Effect.ensuring(Effect.sync(() => rmSync(tempDir, { recursive: true, force: true }))),
+      Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
     );
   });
 });
