@@ -15,7 +15,6 @@ import ProjectScriptsControl, {
   type ProjectScriptActionResult,
 } from "../ProjectScriptsControl";
 import { OpenInPicker } from "./OpenInPicker";
-import { useSidebarVisibility } from "../ui/sidebar";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { cn } from "~/lib/utils";
 
@@ -72,7 +71,6 @@ export const ChatHeader = memo(function ChatHeader({
   onDeleteProjectScript,
 }: ChatHeaderProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const sidebarOpen = useSidebarVisibility();
   const showOpenInPicker = shouldShowOpenInPicker({
     activeProjectName,
     activeThreadEnvironmentId,
@@ -80,12 +78,7 @@ export const ChatHeader = memo(function ChatHeader({
   });
   return (
     <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-      <div
-        className={cn(
-          "flex min-w-0 flex-1 items-center gap-2 overflow-hidden transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:gap-3",
-          !sidebarOpen && "pl-[calc(var(--workspace-controls-left)+2.5rem)]",
-        )}
-      >
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-3">
         <Tooltip>
           <TooltipTrigger
             render={
