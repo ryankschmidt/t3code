@@ -107,7 +107,9 @@ function EmptyMobileClients() {
 export function MobileClientsUserProfilePage() {
   const devicesState = useManagedRelayDevices();
   const devices = devicesState.data ?? [];
-  const isInitialLoad = devicesState.data === null && !devicesState.error;
+  const isInitialLoad =
+    !devicesState.accountId || (devicesState.data === null && !devicesState.error);
+  const hasErrorWithoutData = devicesState.error !== null && devicesState.data === null;
 
   return (
     <div className="flex min-h-[30rem] w-full flex-col bg-background text-foreground">
@@ -149,7 +151,7 @@ export function MobileClientsUserProfilePage() {
 
         {isInitialLoad ? (
           <MobileClientsSkeleton />
-        ) : devices.length > 0 ? (
+        ) : hasErrorWithoutData ? null : devices.length > 0 ? (
           <ul className="space-y-3">
             {devices.map((device) => (
               <MobileClientRow key={device.deviceId} device={device} />

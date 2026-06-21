@@ -1586,6 +1586,14 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
   const [operationError, setOperationError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
+  const [optimisticPublishActivity, setOptimisticPublishActivity] = useState<boolean | null>(null);
+
+  const serverPublishActivity = primaryCloudLinkState.data?.publishAgentActivity ?? null;
+  useEffect(() => {
+    if (optimisticPublishActivity !== null && serverPublishActivity === optimisticPublishActivity) {
+      setOptimisticPublishActivity(null);
+    }
+  }, [serverPublishActivity, optimisticPublishActivity]);
 
   const reportUpdateFailure = (cause: unknown) => {
     const message = cause instanceof Error ? cause.message : "Could not update T3 Connect access.";
@@ -1689,6 +1697,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
     }
 
     primaryCloudLinkState.refresh();
+    setOptimisticPublishActivity(enabled);
     toastManager.add({
       type: "success",
       title: enabled ? "Agent activity enabled" : "Agent activity disabled",
@@ -1734,7 +1743,11 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
           control={
             <Switch
               aria-label="Publish agent activity to mobile clients"
-              checked={primaryCloudLinkState.data?.publishAgentActivity ?? false}
+              checked={
+                optimisticPublishActivity ??
+                primaryCloudLinkState.data?.publishAgentActivity ??
+                false
+              }
               disabled={
                 !canManageRelay ||
                 !isSignedIn ||
