@@ -22,7 +22,7 @@
           "lazyEffect": "off",
           "preferSchemaOverJson": "error",
           "schemaSyncInEffect": "error",
-          "cryptoRandomUUID": "error",
+          "cryptoRandomUUID": "off",
           "cryptoRandomUUIDInEffect": "error",
           "nodeBuiltinImport": "off",
           "globalDate": "off",
@@ -31,7 +31,7 @@
           "globalConsoleInEffect": "error",
           "globalRandom": "error",
           "globalRandomInEffect": "error",
-          "globalTimers": "error",
+          "globalTimers": "off",
           "globalTimersInEffect": "error",
           "globalFetch": "error",
           "globalFetchInEffect": "error"

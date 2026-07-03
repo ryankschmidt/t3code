@@ -12,6 +12,7 @@
  */
 import { Absurd } from "absurd-sdk";
 import { registerHealthProbeTask } from "./task.ts";
+import { makeLocalEchoTransport, registerThreadRunTask } from "./thread-driver.ts";
 
 export type StartAbsurdRuntimeOptions = {
   /** Queue name to bind the app and worker to. Defaults to "default". */
@@ -44,6 +45,9 @@ export function startAbsurdRuntime(
 
   const app = new Absurd({ queueName });
   registerHealthProbeTask(app);
+  // durable-thread-driver (T1.3): LocalEcho transport until the WS RPC
+  // transport lands (T1.3b) — task shape + checkpoints are the real ones.
+  registerThreadRunTask(app, makeLocalEchoTransport());
 
   // Poll forever in the background of the host process — do not await.
   app
