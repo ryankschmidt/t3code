@@ -1,0 +1,33 @@
+{
+  "name": "@t3tools/absurd-runtime",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Overlay capability module: Absurd durable task execution inside the T3 Code fork. Vendor-and-overlay — no upstream edits. Provides a registerable durable task + a runnable smoke entrypoint.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./worker": {
+      "types": "./src/worker.ts",
+      "import": "./src/worker.ts"
+    },
+    "./layer": {
+      "types": "./src/layer.ts",
+      "import": "./src/layer.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "smoke": "node --env-file=.env --experimental-strip-types src/smoke.ts"
+  },
+  "dependencies": {
+    "absurd-sdk": "^0.4.0",
+    "effect": "catalog:",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0"
+  }
+}
