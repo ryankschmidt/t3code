@@ -104,7 +104,19 @@ export function registerThreadRunTask(app: Absurd, transport: ThreadTransport): 
         console.log(
           `[thread-run ${ctx.taskID}] EXECUTING await-turn-complete (turn ${turn.turnId}, hold ${holdMs}ms)`,
         );
-        return transport.awaitTurnComplete(thread.threadId, turn.turnId, holdMs);
+        // Long step: leases are extended only on checkpoint writes, so a hold
+        // >= the worker claimTimeout would expire its own lease while alive.
+        // Heartbeat every 30s for the duration of this step (SDK pattern).
+        const beat = setInterval(() => {
+          void ctx.heartbeat().catch((err: unknown) => {
+            console.error(`[thread-run ${ctx.taskID}] heartbeat failed:`, err);
+          });
+        }, 30_000);
+        try {
+          return await transport.awaitTurnComplete(thread.threadId, turn.turnId, holdMs);
+        } finally {
+          clearInterval(beat);
+        }
       });
 
       const result: ThreadRunResult = {
