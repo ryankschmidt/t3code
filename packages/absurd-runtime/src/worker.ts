@@ -11,6 +11,7 @@
  * NOT awaited here (matches absurd-sandbox/src/demo.ts).
  */
 import { Absurd } from "absurd-sdk";
+import { registerAgentFanoutTask, startAgentQueueWorker } from "./agent-queue.ts";
 import { registerHealthProbeTask } from "./task.ts";
 import { makeLocalEchoTransport, registerThreadRunTask } from "./thread-driver.ts";
 
@@ -19,6 +20,8 @@ export type StartAbsurdRuntimeOptions = {
   queueName?: string;
   /** Worker concurrency. Defaults to 1. */
   concurrency?: number;
+  /** Concurrency bound for the dedicated agent fan-out queue. Defaults to 4. */
+  agentQueueConcurrency?: number;
 };
 
 export type AbsurdRuntimeHandle = {
@@ -48,16 +51,25 @@ export function startAbsurdRuntime(
   // durable-thread-driver (T1.3): LocalEcho transport until the WS RPC
   // transport lands (T1.3b) — task shape + checkpoints are the real ones.
   registerThreadRunTask(app, makeLocalEchoTransport());
+  // agent-queue (T2.2): fan-out parents run on THIS queue; their children run
+  // on the dedicated agent queue below (cross-queue joins are deadlock-free).
+  registerAgentFanoutTask(app);
 
   // Poll forever in the background of the host process — do not await.
   app
     .startWorker({ concurrency })
     .catch((err) => console.error("[absurd-runtime] worker error:", err));
 
+  // Dedicated fan-out worker (backpressure bound lives on its concurrency).
+  const agentQueue = startAgentQueueWorker({
+    concurrency: options.agentQueueConcurrency ?? 4,
+  });
+
   return {
     app,
     queueName,
     close: async () => {
+      await agentQueue.close();
       await app.close();
     },
   };

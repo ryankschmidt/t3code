@@ -25,6 +25,7 @@
  * steps 1-2 must show ONE execution total while step 3 shows two.
  */
 import type { Absurd } from "absurd-sdk";
+import { captureStepCheckpoint } from "./checkpoint-bridge.ts";
 
 export type ThreadRunParams = {
   /** The user prompt / instruction for the turn. */
@@ -36,6 +37,18 @@ export type ThreadRunParams = {
   /** How long step 3 holds before completing (ms). Lets the T1.4 validator
    * land a kill INSIDE step 3 deterministically. Default 8000. */
   holdMs?: number;
+  /**
+   * checkpoint-bridge (T2.1) opt-in: when present, the run captures a SCOPED
+   * git checkpoint as its own committed step after each mutating boundary
+   * (dispatch-turn, await-turn-complete). Refs land under
+   * `refs/t3-absurd/checkpoints/<taskId>/…` — branches/index/worktree untouched.
+   */
+  checkpoint?: {
+    /** Git workspace (repo root or worktree) the capture runs in. */
+    cwd: string;
+    /** Work-surface paths relative to cwd; the scoped alternative to add -A over everything. */
+    scopePaths?: string[];
+  };
 };
 
 export type ThreadRunResult = {
@@ -100,6 +113,19 @@ export function registerThreadRunTask(app: Absurd, transport: ThreadTransport): 
         return transport.dispatchTurn(thread.threadId, params.prompt);
       });
 
+      if (params.checkpoint) {
+        const cp = params.checkpoint;
+        await ctx.step("git-checkpoint:dispatch-turn", async () => {
+          console.log(`[thread-run ${ctx.taskID}] EXECUTING git-checkpoint:dispatch-turn`);
+          return captureStepCheckpoint({
+            cwd: cp.cwd,
+            taskId: ctx.taskID,
+            step: "dispatch-turn",
+            scopePaths: cp.scopePaths,
+          });
+        });
+      }
+
       const done = await ctx.step("await-turn-complete", async () => {
         console.log(
           `[thread-run ${ctx.taskID}] EXECUTING await-turn-complete (turn ${turn.turnId}, hold ${holdMs}ms)`,
@@ -118,6 +144,19 @@ export function registerThreadRunTask(app: Absurd, transport: ThreadTransport): 
           clearInterval(beat);
         }
       });
+
+      if (params.checkpoint) {
+        const cp = params.checkpoint;
+        await ctx.step("git-checkpoint:await-turn-complete", async () => {
+          console.log(`[thread-run ${ctx.taskID}] EXECUTING git-checkpoint:await-turn-complete`);
+          return captureStepCheckpoint({
+            cwd: cp.cwd,
+            taskId: ctx.taskID,
+            step: "await-turn-complete",
+            scopePaths: cp.scopePaths,
+          });
+        });
+      }
 
       const result: ThreadRunResult = {
         threadId: thread.threadId,
