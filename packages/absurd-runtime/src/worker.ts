@@ -14,6 +14,7 @@ import { Absurd } from "absurd-sdk";
 import { registerAgentFanoutTask, startAgentQueueWorker } from "./agent-queue.ts";
 import { registerHealthProbeTask } from "./task.ts";
 import { makeLocalEchoTransport, registerThreadRunTask } from "./thread-driver.ts";
+import { type LazyWsRpcTransport, makeWsRpcTransportFromEnv } from "./ws-rpc-transport.ts";
 
 export type StartAbsurdRuntimeOptions = {
   /** Queue name to bind the app and worker to. Defaults to "default". */
@@ -48,9 +49,12 @@ export function startAbsurdRuntime(
 
   const app = new Absurd({ queueName });
   registerHealthProbeTask(app);
-  // durable-thread-driver (T1.3): LocalEcho transport until the WS RPC
-  // transport lands (T1.3b) — task shape + checkpoints are the real ones.
-  registerThreadRunTask(app, makeLocalEchoTransport());
+  // durable-thread-driver (T1.3/T1.3b): LocalEcho by default; opt in to REAL
+  // provider turns with T3_THREAD_TRANSPORT=ws (WS RPC door, lazy connect on
+  // first task use so boot never blocks on the door being up).
+  const wsTransport: LazyWsRpcTransport | null =
+    process.env["T3_THREAD_TRANSPORT"] === "ws" ? makeWsRpcTransportFromEnv() : null;
+  registerThreadRunTask(app, wsTransport ?? makeLocalEchoTransport());
   // agent-queue (T2.2): fan-out parents run on THIS queue; their children run
   // on the dedicated agent queue below (cross-queue joins are deadlock-free).
   registerAgentFanoutTask(app);
@@ -70,6 +74,7 @@ export function startAbsurdRuntime(
     queueName,
     close: async () => {
       await agentQueue.close();
+      if (wsTransport) await wsTransport.close();
       await app.close();
     },
   };

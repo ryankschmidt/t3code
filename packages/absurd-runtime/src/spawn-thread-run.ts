@@ -14,7 +14,9 @@ const holdMs = Number(process.argv[2] ?? 10000);
 const app = new Absurd({ queueName: QUEUE_NAME });
 
 const params: ThreadRunParams = {
-  prompt: "Landing Sprint T1.3 proof: run one durable thread turn.",
+  // argv[3] lets the T1.3b WS proof send a real (tiny) provider prompt; the
+  // default remains the T1.3 LocalEcho proof text.
+  prompt: process.argv[3] ?? "Landing Sprint T1.3 proof: run one durable thread turn.",
   holdMs,
 };
 

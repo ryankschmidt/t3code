@@ -717,6 +717,9 @@ importers:
         specifier: ^8.21.0
         version: 8.21.0
     devDependencies:
+      '@t3tools/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
