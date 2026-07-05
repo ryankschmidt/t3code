@@ -2,8 +2,10 @@ import {
   type ModelCapabilities,
   type PiSettings,
   ProviderDriverKind,
+  type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+import type * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -20,6 +22,7 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { discoverPiModels } from "./PiSessionRuntime.ts";
 
 /**
  * Pi provider snapshot/status helpers (D2 — pi-harness as a first-class
@@ -211,4 +214,64 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
       message: `Pi CLI ${version ?? "(version unknown)"} available.`,
     },
   });
+});
+
+/**
+ * enrichPiSnapshot — provider-scoped, on-demand model discovery (#402:
+ * models come from Pi; never a hard-coded list, never fake fallbacks).
+ *
+ * Runs in the managed snapshot's enrich phase — forked by
+ * `makeManagedServerProvider`, so it can never block the health probe.
+ * Spawns a short-lived Pi RPC child, asks for the real model catalog, and
+ * republishes the snapshot with discovered models merged ahead of the
+ * user's customModels. On any discovery failure the settings-derived
+ * snapshot stands unchanged.
+ */
+export const enrichPiSnapshot = Effect.fn("enrichPiSnapshot")(function* (input: {
+  readonly piSettings: PiSettings;
+  readonly snapshot: ServerProvider;
+  readonly publishSnapshot: (snapshot: ServerProvider) => Effect.Effect<void>;
+  readonly environment?: NodeJS.ProcessEnv;
+}): Effect.fn.Return<void, never, ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto> {
+  if (!input.piSettings.enabled) {
+    return;
+  }
+  if (input.snapshot.status !== "ready") {
+    // Discovery needs a working binary; the probe said it is not ready.
+    return;
+  }
+
+  const catalogResult = yield* discoverPiModels({
+    binaryPath: input.piSettings.binaryPath || "pi",
+    ...(input.environment ? { environment: input.environment } : {}),
+  }).pipe(Effect.result);
+
+  if (Result.isFailure(catalogResult)) {
+    yield* Effect.logDebug("Pi model discovery failed; keeping settings-derived models.", {
+      errorTag: catalogResult.failure._tag,
+      detail: catalogResult.failure.detail,
+    });
+    return;
+  }
+
+  const catalog = catalogResult.success;
+  if (catalog.models.length === 0) {
+    // No models discovered — show nothing rather than inventing entries.
+    return;
+  }
+
+  const discoveredModels: ReadonlyArray<ServerProviderModel> = catalog.models.map((model) => ({
+    slug: model.slug,
+    name: model.name,
+    isCustom: false,
+    capabilities: EMPTY_CAPABILITIES,
+  }));
+  const models = providerModelsFromSettings(
+    discoveredModels,
+    PROVIDER,
+    input.piSettings.customModels ?? [],
+    EMPTY_CAPABILITIES,
+  );
+
+  yield* input.publishSnapshot({ ...input.snapshot, models });
 });
