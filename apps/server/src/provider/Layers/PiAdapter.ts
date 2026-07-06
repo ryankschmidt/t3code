@@ -548,18 +548,55 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
               return [];
             }
             case "agent_end": {
-              completedAssistantTurns.delete(assistantTurnKey(event.threadId, event.turnId));
+              const turnKey = assistantTurnKey(event.threadId, event.turnId);
+              // Read BEFORE the delete: set membership is the only per-turn
+              // record that an assistant message actually completed
+              // (message_end / turn_end `.add()` on real output).
+              const hadAssistantOutput = completedAssistantTurns.has(turnKey);
+              completedAssistantTurns.delete(turnKey);
               const abortingTurnId = abortingTurnIds.get(event.threadId);
               const interrupted =
                 abortingTurnId !== undefined &&
                 (abortingTurnId === "*" || abortingTurnId === event.turnId);
-              if (interrupted) {
-                abortingTurnIds.delete(event.threadId);
-              }
+              // The turn is over on every outcome — clear the abort marker so
+              // stale per-turn state can never leak into the next prompt
+              // (turn_start also clears it; this covers failed/completed ends).
+              abortingTurnIds.delete(event.threadId);
               const base = yield* makeEventBase({
                 threadId: event.threadId,
                 turnId: event.turnId,
               });
+              if (!interrupted && !hadAssistantOutput) {
+                // Zero-output turn: every message_end/turn_end was suppressed
+                // by the #402 empty-assistant guard, so an unconditional
+                // "completed" would render a silent empty turn. Surface a loud
+                // provider error activity and fail the completion so the
+                // thread state machine resets to idle instead of wedging.
+                const message = `Pi turn ended with no output (session ${event.threadId}).`;
+                const errorBase = yield* makeEventBase({
+                  threadId: event.threadId,
+                  turnId: event.turnId,
+                });
+                return [
+                  {
+                    ...errorBase,
+                    type: "runtime.error",
+                    payload: {
+                      message,
+                      class: "provider_error",
+                    },
+                  } satisfies ProviderRuntimeEvent,
+                  {
+                    ...base,
+                    type: "turn.completed",
+                    payload: {
+                      state: "failed",
+                      stopReason: null,
+                      errorMessage: message,
+                    },
+                  } satisfies ProviderRuntimeEvent,
+                ];
+              }
               return [
                 {
                   ...base,
@@ -627,6 +664,33 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
     return session;
   });
 
+  /**
+   * Model-identity guard: a selection stamped for a DIFFERENT provider
+   * instance must never be dropped silently — the composer chip would keep
+   * claiming a model this Pi instance never accepted. Emit a loud
+   * provider_error activity; the session/turn continues on Pi's current
+   * model so the mismatch is visible instead of masked by a hard failure.
+   */
+  const emitDroppedModelSelectionError = (input: {
+    readonly threadId: ThreadId;
+    readonly operation: "startSession" | "sendTurn";
+    readonly selection: NonNullable<ProviderSendTurnInput["modelSelection"]>;
+  }) =>
+    Effect.gen(function* () {
+      const base = yield* makeEventBase({ threadId: input.threadId });
+      yield* Queue.offer(runtimeEventQueue, {
+        ...base,
+        type: "runtime.error",
+        payload: {
+          message:
+            `Pi dropped the model selection '${input.selection.model}' on ${input.operation}: ` +
+            `it targets provider instance '${input.selection.instanceId}' but this session is ` +
+            `bound to '${boundInstanceId}'. The turn continues on Pi's current model.`,
+          class: "provider_error",
+        },
+      } satisfies ProviderRuntimeEvent);
+    });
+
   const startSession: ProviderAdapterShape<ProviderAdapterError>["startSession"] = (input) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -635,6 +699,17 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
             provider: PROVIDER,
             operation: "startSession",
             issue: `Expected provider '${PROVIDER}' but received '${input.provider}'.`,
+          });
+        }
+
+        if (
+          input.modelSelection !== undefined &&
+          input.modelSelection.instanceId !== boundInstanceId
+        ) {
+          yield* emitDroppedModelSelectionError({
+            threadId: input.threadId,
+            operation: "startSession",
+            selection: input.modelSelection,
           });
         }
 
@@ -812,6 +887,16 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       );
 
       const session = yield* requireSession(input.threadId);
+      if (
+        input.modelSelection !== undefined &&
+        input.modelSelection.instanceId !== boundInstanceId
+      ) {
+        yield* emitDroppedModelSelectionError({
+          threadId: input.threadId,
+          operation: "sendTurn",
+          selection: input.modelSelection,
+        });
+      }
       const model =
         input.modelSelection?.instanceId === boundInstanceId
           ? input.modelSelection.model

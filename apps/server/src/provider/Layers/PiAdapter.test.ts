@@ -669,6 +669,204 @@ mappingLayer("PiAdapter event mapping", (it) => {
       NodeAssert.ok(warning.payload.message.length <= 2_000);
     }),
   );
+
+  it.effect("fails a zero-output turn loudly instead of completing silently", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-empty-turn");
+      yield* drainStartupEvents(adapter, threadId);
+      const runtime = mappingFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const turnId = asTurnId("turn-empty");
+
+      const collected = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      // Scripted fake-pi turn that ends with NO message_end carrying visible
+      // text: the turn reaches agent_end having produced zero assistant
+      // output (the #402 empty-assistant guard suppressed everything).
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: { type: "turn_start" },
+      });
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: {
+          type: "message_end",
+          message: { role: "assistant", content: [{ type: "thinking", thinking: "..." }] },
+        },
+      });
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: { type: "agent_end" },
+      });
+
+      const events = yield* Fiber.join(collected);
+      NodeAssert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["turn.started", "runtime.error", "turn.completed"],
+      );
+      const [, runtimeError, turnCompleted] = events as ProviderRuntimeEvent[];
+      NodeAssert.ok(runtimeError && runtimeError.type === "runtime.error");
+      NodeAssert.equal(runtimeError.payload.class, "provider_error");
+      NodeAssert.ok(runtimeError.payload.message.includes("no output"));
+      NodeAssert.ok(runtimeError.payload.message.includes(threadId));
+      NodeAssert.ok(turnCompleted && turnCompleted.type === "turn.completed");
+      NodeAssert.deepStrictEqual(turnCompleted.payload, {
+        state: "failed",
+        stopReason: null,
+        errorMessage: `Pi turn ended with no output (session ${threadId}).`,
+      });
+    }),
+  );
+
+  it.effect("recovers after a failed zero-output turn: the next prompt dispatches cleanly", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-no-wedge");
+      yield* drainStartupEvents(adapter, threadId);
+      const runtime = mappingFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+
+      // Turn 1: zero output → runtime.error + failed completion.
+      const firstTurn = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId: asTurnId("turn-wedge-1"),
+        payload: { type: "turn_start" },
+      });
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId: asTurnId("turn-wedge-1"),
+        payload: { type: "agent_end" },
+      });
+      const firstEvents = yield* Fiber.join(firstTurn);
+      const failedCompletion = firstEvents[2];
+      NodeAssert.ok(failedCompletion && failedCompletion.type === "turn.completed");
+      NodeAssert.equal(failedCompletion.payload.state, "failed");
+
+      // The failed turn must not wedge the session: the very next prompt
+      // dispatches cleanly through the same adapter session.
+      const sendCallsBefore = runtime.sendTurnImpl.mock.calls.length;
+      const result = yield* adapter.sendTurn({ threadId, input: "follow-up after failure" });
+      NodeAssert.equal(runtime.sendTurnImpl.mock.calls.length, sendCallsBefore + 1);
+      NodeAssert.equal(result.threadId, threadId);
+
+      // Turn 2 runs normally and stays completed — a failed turn leaves no
+      // per-turn residue behind.
+      const secondTurn = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const secondTurnId = asTurnId("turn-wedge-2");
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId: secondTurnId,
+        payload: { type: "turn_start" },
+      });
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId: secondTurnId,
+        payload: {
+          type: "message_end",
+          message: { role: "assistant", content: [{ type: "text", text: "Recovered" }] },
+        },
+      });
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId: secondTurnId,
+        payload: { type: "agent_end" },
+      });
+      const secondEvents = yield* Fiber.join(secondTurn);
+      NodeAssert.deepStrictEqual(
+        secondEvents.map((event) => event.type),
+        ["turn.started", "item.completed", "turn.completed"],
+      );
+      const completed = secondEvents[2];
+      NodeAssert.ok(completed && completed.type === "turn.completed");
+      NodeAssert.deepStrictEqual(completed.payload, { state: "completed", stopReason: null });
+    }),
+  );
+
+  it.effect("emits a loud runtime.error when a model selection targets another instance", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-selection-mismatch");
+      const factoryCallsBefore = mappingFactory.factory.mock.calls.length;
+
+      const collected = yield* Stream.take(adapter.streamEvents, 4).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("pi"),
+        threadId,
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("codex"),
+          "anthropic/claude-x",
+          [],
+        ),
+        runtimeMode: "full-access",
+      });
+      const events = yield* Fiber.join(collected);
+
+      NodeAssert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["runtime.error", "session.started", "session.configured", "thread.started"],
+      );
+      const dropped = events[0];
+      NodeAssert.ok(dropped && dropped.type === "runtime.error");
+      NodeAssert.equal(dropped.payload.class, "provider_error");
+      NodeAssert.ok(dropped.payload.message.includes("anthropic/claude-x"));
+      NodeAssert.ok(dropped.payload.message.includes("codex"));
+
+      // The mismatched selection must NOT reach the runtime as a model.
+      const runtimeInput = mappingFactory.factory.mock.calls[factoryCallsBefore]?.[0];
+      NodeAssert.ok(runtimeInput);
+      NodeAssert.equal(runtimeInput.model, undefined);
+
+      // Same guard on sendTurn: loud error, prompt still dispatches on Pi's
+      // current model (no silent model divergence, no blocked send).
+      const runtime = mappingFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const sendCollected = yield* Stream.take(adapter.streamEvents, 1).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.sendTurn({
+        threadId,
+        input: "hello",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("codex"),
+          "anthropic/claude-x",
+          [],
+        ),
+      });
+      const sendEvents = yield* Fiber.join(sendCollected);
+      const sendError = sendEvents[0];
+      NodeAssert.ok(sendError && sendError.type === "runtime.error");
+      NodeAssert.equal(sendError.payload.class, "provider_error");
+      const lastSendInput = runtime.sendTurnImpl.mock.calls.at(-1)?.[0];
+      NodeAssert.ok(lastSendInput);
+      NodeAssert.equal(lastSendInput.model, undefined);
+    }),
+  );
 });
 
 // ---------------------------------------------------------------------------
