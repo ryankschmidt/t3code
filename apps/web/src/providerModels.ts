@@ -9,6 +9,7 @@ import {
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import { createModelCapabilities, normalizeModelSlug } from "@t3tools/shared/model";
+import { applyModelFamilyOrdering } from "./modelFamilyOrdering";
 
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -27,7 +28,13 @@ export function getProviderModels(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderDriverKind,
 ): ReadonlyArray<ServerProviderModel> {
-  return getProviderSnapshot(providers, provider)?.models ?? [];
+  // Newest-first family sort for pi's raw discovered catalog (identity for
+  // curated drivers), so default-model resolution never lands on the oldest
+  // entry. The per-instance floor is resolved in the app-option layer where
+  // instance config is readable.
+  return applyModelFamilyOrdering(getProviderSnapshot(providers, provider)?.models ?? [], {
+    driverKind: provider,
+  });
 }
 
 export function getProviderSnapshot(

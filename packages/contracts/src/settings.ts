@@ -325,6 +325,14 @@ export const PiSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
+    // Per-instance model floor: family key → minimum version slug. Models
+    // below the floor are hidden from the picker (custom models exempt);
+    // an explicit empty record disables filtering. Keep the default in
+    // sync with DEFAULT_PI_MODEL_FLOOR in apps/web/src/modelFamilyOrdering.ts.
+    modelFloor: Schema.Record(Schema.String, Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed({ openai: "gpt-5.4", anthropic: "claude-4.8" })),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
   },
   {
     order: ["binaryPath"],

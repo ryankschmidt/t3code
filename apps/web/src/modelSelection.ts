@@ -23,6 +23,11 @@ import {
 } from "./providerModels";
 import { ModelEsque } from "./components/chat/providerIconUtils";
 import { type ProviderInstanceEntry, deriveProviderInstanceEntries } from "./providerInstances";
+import {
+  applyModelFamilyOrdering,
+  type ModelFloorConfig,
+  resolveInstanceModelFloor,
+} from "./modelFamilyOrdering";
 import { sortModelsForProviderInstance } from "./modelOrdering";
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
@@ -106,10 +111,18 @@ function applyInstanceModelPreferences(
     readonly hiddenModels: ReadonlyArray<string>;
     readonly modelOrder: ReadonlyArray<string>;
   },
+  ordering?: {
+    readonly driverKind: ProviderDriverKind;
+    readonly floor: ModelFloorConfig | undefined;
+  },
 ): AppModelOption[] {
   const hiddenModels = new Set(preferences.hiddenModels);
+  // Instance-level floor + newest-first family sort run first; the user's
+  // explicit modelOrder pins then win inside sortModelsForProviderInstance,
+  // with the family order as the stable tiebreak.
+  const familyOrdered = ordering === undefined ? options : applyModelFamilyOrdering(options, ordering);
   return sortModelsForProviderInstance(
-    options.filter((option) => option.isCustom || !hiddenModels.has(option.slug)),
+    familyOrdered.filter((option) => option.isCustom || !hiddenModels.has(option.slug)),
     { modelOrder: preferences.modelOrder },
   );
 }
@@ -179,6 +192,13 @@ export function getAppModelOptions(
   return applyInstanceModelPreferences(
     options,
     readInstanceModelPreferences(settings, defaultInstanceId),
+    {
+      driverKind: provider,
+      floor: resolveInstanceModelFloor(
+        provider,
+        settings.providerInstances?.[defaultInstanceId]?.config,
+      ),
+    },
   );
 }
 
@@ -219,6 +239,13 @@ export function getAppModelOptionsForInstance(
   return applyInstanceModelPreferences(
     options,
     readInstanceModelPreferences(settings, entry.instanceId),
+    {
+      driverKind: entry.driverKind,
+      floor: resolveInstanceModelFloor(
+        entry.driverKind,
+        settings.providerInstances?.[entry.instanceId]?.config,
+      ),
+    },
   );
 }
 
