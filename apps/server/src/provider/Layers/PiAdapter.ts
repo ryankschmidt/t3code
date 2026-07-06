@@ -197,6 +197,25 @@ function hasVisibleAssistantText(message: unknown): boolean {
   return extractPiAssistantText(message) !== undefined;
 }
 
+/**
+ * Extracts the upstream provider-error text from a pi assistant message.
+ * pi marks provider/transport failures with `stopReason: "error"` and puts
+ * the REAL upstream failure text (Meridian / Claude Code SDK / provider API
+ * error) in `errorMessage`. Returns undefined for non-error messages; user
+ * aborts use `stopReason: "aborted"` and are not provider failures.
+ */
+function piProviderErrorText(message: unknown): string | undefined {
+  const record = asRecord(message);
+  if (!record || asString(record.role) !== "assistant") {
+    return undefined;
+  }
+  if (asString(record.stopReason) !== "error") {
+    return undefined;
+  }
+  const text = asString(record.errorMessage)?.trim();
+  return text && text.length > 0 ? text : undefined;
+}
+
 function assistantTurnKey(threadId: ThreadId, turnId?: TurnId): string {
   return `${threadId}:${turnId ?? "session"}`;
 }
@@ -265,6 +284,13 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
   const abortingTurnIds = new Map<ThreadId, string>();
   /** Turn keys whose assistant message already completed (dedupes turn_end). */
   const completedAssistantTurns = new Set<string>();
+  /**
+   * Turn keys → upstream provider-error text (assistant `stopReason:
+   * "error"`). Lets agent_end fail the completion with the REAL upstream
+   * message instead of the generic zero-output text, and dedupes the error
+   * activity across stream/message_end/turn_end sightings of one failure.
+   */
+  const turnProviderErrors = new Map<string, string>();
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const randomUUIDv4 = crypto.randomUUIDv4.pipe(
@@ -395,6 +421,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         case "exit": {
           abortingTurnIds.delete(event.threadId);
           completedAssistantTurns.delete(assistantTurnKey(event.threadId, event.turnId));
+          turnProviderErrors.delete(assistantTurnKey(event.threadId, event.turnId));
           const base = yield* makeEventBase({
             threadId: event.threadId,
             turnId: event.turnId,
@@ -429,6 +456,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
             case "turn_start": {
               abortingTurnIds.delete(event.threadId);
               completedAssistantTurns.delete(assistantTurnKey(event.threadId, event.turnId));
+              turnProviderErrors.delete(assistantTurnKey(event.threadId, event.turnId));
               const base = yield* makeEventBase({
                 threadId: event.threadId,
                 turnId: event.turnId,
@@ -476,6 +504,25 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
                 ];
               }
               if (assistantType === "error") {
+                if (asString(assistantMessageEvent?.reason) === "aborted") {
+                  // User abort, not a provider failure: agent_end reports the
+                  // interrupted completion; an error activity would be noise.
+                  return [];
+                }
+                // pi's stream error frame is { type: "error", reason, error:
+                // AssistantMessage } — the REAL upstream failure text
+                // (Meridian / Claude Code SDK / provider API) lives at
+                // error.errorMessage. `reason` is only the stop-reason
+                // literal ("error"); never present it as the failure text.
+                const upstreamText =
+                  piProviderErrorText(assistantMessageEvent?.error) ??
+                  asString(assistantMessageEvent?.error)?.trim() ??
+                  "Pi assistant message failed.";
+                const message = (upstreamText || "Pi assistant message failed.").slice(
+                  0,
+                  STDERR_WARNING_MAX_CHARS,
+                );
+                turnProviderErrors.set(assistantTurnKey(event.threadId, event.turnId), message);
                 const base = yield* makeEventBase({
                   threadId: event.threadId,
                   turnId: event.turnId,
@@ -485,10 +532,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
                     ...base,
                     type: "runtime.error",
                     payload: {
-                      message:
-                        asString(assistantMessageEvent?.reason) ??
-                        asString(assistantMessageEvent?.error) ??
-                        "Pi assistant message failed.",
+                      message,
                       class: "provider_error",
                       detail: payload,
                     },
@@ -501,6 +545,32 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
               const message = asRecord(payload.message);
               if (asString(message?.role) !== "assistant") {
                 return [];
+              }
+              const messageEndErrorText = piProviderErrorText(payload.message);
+              if (messageEndErrorText !== undefined) {
+                // Provider error carried on the completed message (stopReason
+                // "error"): surface the REAL upstream text exactly once per
+                // turn — the stream error frame may have surfaced it already.
+                const errorTurnKey = assistantTurnKey(event.threadId, event.turnId);
+                if (turnProviderErrors.has(errorTurnKey)) {
+                  return [];
+                }
+                const errorText = messageEndErrorText.slice(0, STDERR_WARNING_MAX_CHARS);
+                turnProviderErrors.set(errorTurnKey, errorText);
+                const base = yield* makeEventBase({
+                  threadId: event.threadId,
+                  turnId: event.turnId,
+                });
+                return [
+                  {
+                    ...base,
+                    type: "runtime.error",
+                    payload: {
+                      message: errorText,
+                      class: "provider_error",
+                    },
+                  } satisfies ProviderRuntimeEvent,
+                ];
               }
               if (!hasVisibleAssistantText(payload.message)) {
                 // #402 empty-assistant guard: tool/planning stages complete
@@ -556,6 +626,31 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
                 }),
               ];
             case "turn_end": {
+              const turnEndErrorText = piProviderErrorText(payload.message);
+              if (turnEndErrorText !== undefined) {
+                // Same provider-error surfacing as message_end (turn_end also
+                // carries the final message); the per-turn map dedupes.
+                const errorTurnKey = assistantTurnKey(event.threadId, event.turnId);
+                if (turnProviderErrors.has(errorTurnKey)) {
+                  return [];
+                }
+                const errorText = turnEndErrorText.slice(0, STDERR_WARNING_MAX_CHARS);
+                turnProviderErrors.set(errorTurnKey, errorText);
+                const base = yield* makeEventBase({
+                  threadId: event.threadId,
+                  turnId: event.turnId,
+                });
+                return [
+                  {
+                    ...base,
+                    type: "runtime.error",
+                    payload: {
+                      message: errorText,
+                      class: "provider_error",
+                    },
+                  } satisfies ProviderRuntimeEvent,
+                ];
+              }
               const turnKey = assistantTurnKey(event.threadId, event.turnId);
               if (
                 !completedAssistantTurns.has(turnKey) &&
@@ -581,6 +676,8 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
               // (message_end / turn_end `.add()` on real output).
               const hadAssistantOutput = completedAssistantTurns.has(turnKey);
               completedAssistantTurns.delete(turnKey);
+              const providerErrorText = turnProviderErrors.get(turnKey);
+              turnProviderErrors.delete(turnKey);
               const abortingTurnId = abortingTurnIds.get(event.threadId);
               const interrupted =
                 abortingTurnId !== undefined &&
@@ -594,6 +691,24 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
                 turnId: event.turnId,
               });
               if (!interrupted && !hadAssistantOutput) {
+                if (providerErrorText !== undefined) {
+                  // A provider error already surfaced as a runtime.error with
+                  // the REAL upstream text (stream frame / message_end /
+                  // turn_end). Fail the completion with that same text — the
+                  // generic zero-output message is reserved for genuinely
+                  // silent turns that carried no error at all.
+                  return [
+                    {
+                      ...base,
+                      type: "turn.completed",
+                      payload: {
+                        state: "failed",
+                        stopReason: null,
+                        errorMessage: providerErrorText,
+                      },
+                    } satisfies ProviderRuntimeEvent,
+                  ];
+                }
                 // Zero-output turn: every message_end/turn_end was suppressed
                 // by the #402 empty-assistant guard, so an unconditional
                 // "completed" would render a silent empty turn. Surface a loud
