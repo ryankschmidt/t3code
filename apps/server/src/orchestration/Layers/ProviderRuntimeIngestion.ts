@@ -620,6 +620,36 @@ function runtimeEventToActivities(
       ];
     }
 
+    case "turn.started": {
+      // Route-family diagnostic (Meridian seam patch): providers that split
+      // model transport across seams (Pi: openai-native-pi vs
+      // anthropic-meridian-claude-code-sdk) stamp turn.started with
+      // routeFamily. Persist it as a compact info activity so SUCCESSFUL
+      // turns leave a durable, queryable route record — failures already
+      // persist through seam-naming runtime.error activities. Events without
+      // routeFamily produce no activity (zero noise for providers that do
+      // not split routes).
+      const routeFamily = event.payload.routeFamily;
+      if (routeFamily === undefined) {
+        return [];
+      }
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "info",
+          kind: "turn.route-family",
+          summary: `Route: ${routeFamily}`,
+          payload: {
+            routeFamily,
+            ...(event.payload.model ? { model: event.payload.model } : {}),
+          },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
     default:
       break;
   }

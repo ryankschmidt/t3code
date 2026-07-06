@@ -807,6 +807,116 @@ describe("ProviderRuntimeIngestion", () => {
     expect(rawOutput?.content).toBe('import * as Effect from "effect/Effect"\n');
   });
 
+  it("persists routeFamily route activities for successful turns of both families", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    // Codex-family pi turn: turn.started stamped openai-native-pi.
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-route-codex-turn"),
+      provider: ProviderDriverKind.make("pi"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-route-codex"),
+      payload: {
+        model: "openai-codex/gpt-5.2-codex",
+        routeFamily: "openai-native-pi",
+      },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-route-codex-completed"),
+      provider: ProviderDriverKind.make("pi"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-route-codex"),
+      payload: { state: "completed" },
+    });
+
+    // Claude/Meridian-family pi turn: stamped anthropic-meridian-claude-code-sdk.
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-route-claude-turn"),
+      provider: ProviderDriverKind.make("pi"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-route-claude"),
+      payload: {
+        model: "anthropic/claude-haiku-4-5",
+        routeFamily: "anthropic-meridian-claude-code-sdk",
+      },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-route-claude-completed"),
+      provider: ProviderDriverKind.make("pi"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-route-claude"),
+      payload: { state: "completed" },
+    });
+
+    // Route activities project from persisted thread.activity-appended
+    // orchestration events (real sqlite-backed event store): presence in the
+    // read model proves the routeFamily row is durable for SUCCESSFUL turns.
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) =>
+        entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) => activity.id === "evt-route-codex-turn",
+        ) &&
+        entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) => activity.id === "evt-route-claude-turn",
+        ),
+    );
+
+    const codexRoute = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-route-codex-turn",
+    );
+    const codexPayload =
+      codexRoute?.payload && typeof codexRoute.payload === "object"
+        ? (codexRoute.payload as Record<string, unknown>)
+        : undefined;
+    expect(codexRoute?.kind).toBe("turn.route-family");
+    expect(codexRoute?.tone).toBe("info");
+    expect(codexRoute?.turnId).toBe("turn-route-codex");
+    expect(codexPayload?.routeFamily).toBe("openai-native-pi");
+    expect(codexPayload?.model).toBe("openai-codex/gpt-5.2-codex");
+
+    const claudeRoute = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-route-claude-turn",
+    );
+    const claudePayload =
+      claudeRoute?.payload && typeof claudeRoute.payload === "object"
+        ? (claudeRoute.payload as Record<string, unknown>)
+        : undefined;
+    expect(claudeRoute?.kind).toBe("turn.route-family");
+    expect(claudeRoute?.tone).toBe("info");
+    expect(claudeRoute?.turnId).toBe("turn-route-claude");
+    expect(claudePayload?.routeFamily).toBe("anthropic-meridian-claude-code-sdk");
+    expect(claudePayload?.model).toBe("anthropic/claude-haiku-4-5");
+
+    // A turn.started WITHOUT routeFamily must add no activity (zero noise
+    // for providers that do not split routes).
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-route-none-turn"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-route-none"),
+      payload: { model: "gpt-5-codex" },
+    });
+    await harness.drain();
+    const settled = await waitForThread(harness.readModel, () => true);
+    expect(
+      settled.activities.some(
+        (entry: ProviderRuntimeTestActivity) => entry.id === "evt-route-none-turn",
+      ),
+    ).toBe(false);
+  });
+
   it("normalizes command execution activities to ran-command summaries", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
