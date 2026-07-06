@@ -311,11 +311,14 @@ export const PiSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    binaryPath: makeBinaryPathSetting("pi").pipe(
+    binaryPath: makeBinaryPathSetting("/Users/Admin/.local/bin/ryan-pi").pipe(
       Schema.annotateKey({
         title: "Binary path",
-        description: "Path to the Pi CLI binary.",
-        providerSettingsForm: { placeholder: "pi", clearWhenEmpty: "omit" },
+        description: "Path to the Pi CLI binary (defaults to the governed ryan-pi door).",
+        providerSettingsForm: {
+          placeholder: "/Users/Admin/.local/bin/ryan-pi",
+          clearWhenEmpty: "omit",
+        },
       }),
     ),
     customModels: Schema.Array(Schema.String).pipe(
