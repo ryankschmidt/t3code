@@ -80,6 +80,15 @@ describe("modelFamilyKey / modelVersionTuple", () => {
     expect(modelVersionTuple("kimi/k2")).toEqual([2]);
     expect(modelVersionTuple("codex-mini-latest")).toEqual([]);
   });
+
+  it("treats 6+ digit runs as date/build stamps, not version parts", () => {
+    // Live repro 2026-07-05: date-suffixed Anthropic ids outranked real point
+    // releases (4.20250514 > 4.8) and slipped past the claude-4.8 floor.
+    expect(modelVersionTuple("anthropic/claude-opus-4-20250514")).toEqual([4]);
+    expect(modelVersionTuple("anthropic/claude-sonnet-4-20250514")).toEqual([4]);
+    expect(modelVersionTuple("anthropic/claude-fable-5-20260609")).toEqual([5]);
+    expect(modelVersionTuple("anthropic/claude-opus-4-8")).toEqual([4, 8]);
+  });
 });
 
 describe("resolveInstanceModelFloor", () => {
@@ -122,6 +131,27 @@ describe("applyModelFamilyOrdering", () => {
       "openai/gpt-5.4",
       "kimi/k2",
       "openrouter/meta-llama-3",
+    ]);
+  });
+
+  it("floors and outranks date-suffixed ids correctly (live catalog shape)", () => {
+    const catalog = [
+      "anthropic/claude-opus-4-20250514",
+      "anthropic/claude-sonnet-4-20250514",
+      "anthropic/claude-opus-4-8",
+      "anthropic/claude-fable-5",
+      "openai/gpt-5.5",
+    ];
+    const ordered = applyModelFamilyOrdering(toModels(catalog), {
+      driverKind: PI,
+      floor: DEFAULT_PI_MODEL_FLOOR,
+    }).map((model) => model.slug);
+    // Date-stamped 4.0 ids fall below the claude-4.8 floor and disappear;
+    // fable-5 (newest) leads, then opus-4-8 — never the dated 4.0 models.
+    expect(ordered).toEqual([
+      "anthropic/claude-fable-5",
+      "anthropic/claude-opus-4-8",
+      "openai/gpt-5.5",
     ]);
   });
 

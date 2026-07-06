@@ -92,9 +92,18 @@ export function modelFamilyKey(model: {
   return (alpha?.[0] ?? model.slug).toLowerCase();
 }
 
-/** Every integer run in the model-id part, e.g. "gpt-5.4-codex" → [5, 4]. */
+/**
+ * Every integer run in the model-id part, e.g. "gpt-5.4-codex" → [5, 4].
+ * Digit runs of 6+ characters are date/build stamps (Anthropic-style
+ * "claude-opus-4-20250514"), not version components — without this exclusion
+ * the stamp parses as a huge minor version, outranks real point releases,
+ * and slips past the model floor (live repro: "Claude Opus 4" sorted above
+ * "Claude Opus 4.8" and survived the claude-4.8 floor, 2026-07-05).
+ */
 export function modelVersionTuple(value: string): ReadonlyArray<number> {
-  return Array.from(modelIdPart(value).matchAll(/\d+/g), (match) => Number(match[0]));
+  return Array.from(modelIdPart(value).matchAll(/\d+/g), (match) => match[0])
+    .filter((run) => run.length < 6)
+    .map(Number);
 }
 
 function compareVersionTuples(a: ReadonlyArray<number>, b: ReadonlyArray<number>): number {
