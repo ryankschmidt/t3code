@@ -15,6 +15,7 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import {
+  buildSelectOptionDescriptor,
   buildServerProvider,
   isCommandMissingCause,
   parseGenericCliVersion,
@@ -22,7 +23,7 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
-import { discoverPiModels } from "./PiSessionRuntime.ts";
+import { discoverPiModels, PI_THINKING_LEVELS, type PiThinkingLevel } from "./PiSessionRuntime.ts";
 
 /**
  * Pi provider snapshot/status helpers (D2 — pi-harness as a first-class
@@ -40,8 +41,36 @@ const PI_PRESENTATION = {
   requiresNewThreadForModelChange: false,
 } as const;
 const PROVIDER = ProviderDriverKind.make("pi");
-const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
-  optionDescriptors: [],
+
+const PI_THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
+  off: "Off",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+};
+
+/**
+ * Every Pi model advertises one option group: pi's NATIVE thinking levels
+ * (#402: provider-native levels only, never invented server-side). The
+ * option id `thinkingLevel` is the id PiAdapter already consumes on
+ * startSession/sendTurn and forwards to the RPC child as
+ * `set_thinking_level` — this descriptor is what makes the existing
+ * round-trip visible in the model options menu.
+ */
+const PI_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
+  optionDescriptors: [
+    buildSelectOptionDescriptor({
+      id: "thinkingLevel",
+      label: "Reasoning",
+      options: PI_THINKING_LEVELS.map((level) => ({
+        value: level,
+        label: PI_THINKING_LEVEL_LABELS[level],
+        ...(level === "high" ? { isDefault: true } : {}),
+      })),
+    }),
+  ],
 });
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
@@ -56,7 +85,7 @@ export function piModelsFromSettings(
     PI_BUILT_IN_MODELS,
     PROVIDER,
     customModels ?? [],
-    EMPTY_CAPABILITIES,
+    PI_MODEL_CAPABILITIES,
   );
 }
 
@@ -264,13 +293,13 @@ export const enrichPiSnapshot = Effect.fn("enrichPiSnapshot")(function* (input: 
     slug: model.slug,
     name: model.name,
     isCustom: false,
-    capabilities: EMPTY_CAPABILITIES,
+    capabilities: PI_MODEL_CAPABILITIES,
   }));
   const models = providerModelsFromSettings(
     discoveredModels,
     PROVIDER,
     input.piSettings.customModels ?? [],
-    EMPTY_CAPABILITIES,
+    PI_MODEL_CAPABILITIES,
   );
 
   yield* input.publishSnapshot({ ...input.snapshot, models });
