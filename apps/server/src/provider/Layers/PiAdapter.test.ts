@@ -34,9 +34,11 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { type ProviderAdapterError } from "../Errors.ts";
 import { type ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import { makePiAdapter } from "./PiAdapter.ts";
+import { type PiMeridianRouteGuardOptions } from "./PiMeridianRoute.ts";
 import {
   discoverPiModels,
   makePiSessionRuntime,
+  parsePiModelSlug,
   PiSessionRuntimeError,
   type PiRuntimeEvent,
   type PiSessionRuntimeOptions,
@@ -58,8 +60,12 @@ class FakePiRuntime implements PiSessionRuntimeShape {
   private readonly eventQueue = Effect.runSync(Queue.unbounded<PiRuntimeEvent>());
   private readonly now = "2026-01-01T00:00:00.000Z";
 
-  public readonly startImpl = vi.fn(() =>
-    Promise.resolve({
+  public readonly startImpl = vi.fn(() => {
+    // The resume cursor mirrors the requested model when one was set (like
+    // real pi reporting its post-set_model state); legacy anthropic default
+    // otherwise so no-selection sessions keep their historical shape.
+    const parsedModel = parsePiModelSlug(this.options.model);
+    return Promise.resolve({
       provider: ProviderDriverKind.make("pi"),
       status: "ready" as const,
       runtimeMode: this.options.runtimeMode,
@@ -69,14 +75,14 @@ class FakePiRuntime implements PiSessionRuntimeShape {
       resumeCursor: {
         sessionFile: "/tmp/pi-session.jsonl",
         sessionId: "pi-sess-1",
-        modelProvider: "anthropic",
-        modelId: "claude-test",
+        modelProvider: parsedModel?.provider ?? "anthropic",
+        modelId: parsedModel?.modelId ?? "claude-test",
         thinkingLevel: "medium",
       },
       createdAt: this.now,
       updatedAt: this.now,
-    } satisfies ProviderSession),
-  );
+    } satisfies ProviderSession);
+  });
 
   public readonly sendTurnImpl = vi.fn(
     (_input: PiSessionRuntimeSendTurnInput): Promise<ProviderTurnStartResult> =>
@@ -179,13 +185,41 @@ function makeRuntimeFactory(options?: {
   };
 }
 
-const makeAdapterLayer = (factory: ReturnType<typeof makeRuntimeFactory>) =>
+// Meridian route fixtures: adapter suites default to a GREEN route (valid
+// loopback override + reachable probe) so Anthropic-model tests exercise the
+// legacy flows; the guard suites below inject red/down routes explicitly.
+const meridianFixtureDir = NodeFS.mkdtempSync(
+  NodePath.join(NodeOS.tmpdir(), "t3code-pi-meridian-"),
+);
+const greenMeridianConfigPath = NodePath.join(meridianFixtureDir, "models.json");
+NodeFS.writeFileSync(
+  greenMeridianConfigPath,
+  JSON.stringify({
+    providers: {
+      anthropic: {
+        baseUrl: "http://127.0.0.1:3456",
+        apiKey: "x",
+        headers: { "x-meridian-agent": "pi" },
+      },
+    },
+  }),
+);
+const greenMeridianRoute: PiMeridianRouteGuardOptions = {
+  configPath: greenMeridianConfigPath,
+  probe: () => Effect.succeed(true),
+};
+
+const makeAdapterLayer = (
+  factory: ReturnType<typeof makeRuntimeFactory>,
+  meridianRoute: PiMeridianRouteGuardOptions = greenMeridianRoute,
+) =>
   Layer.effect(
     PiAdapter,
     Effect.gen(function* () {
       const piSettings = decodePiSettings({});
       return yield* makePiAdapter(piSettings, {
         makeRuntime: factory.factory,
+        meridianRoute,
       });
     }),
   ).pipe(
@@ -446,7 +480,10 @@ mappingLayer("PiAdapter event mapping", (it) => {
       );
       const [turnStarted, delta, completedItem, turnCompleted] = events as ProviderRuntimeEvent[];
       NodeAssert.ok(turnStarted && turnStarted.type === "turn.started");
-      NodeAssert.deepStrictEqual(turnStarted.payload, { model: "anthropic/claude-test" });
+      NodeAssert.deepStrictEqual(turnStarted.payload, {
+        model: "anthropic/claude-test",
+        routeFamily: "anthropic-meridian-claude-code-sdk",
+      });
       NodeAssert.ok(delta && delta.type === "content.delta");
       NodeAssert.deepStrictEqual(delta.payload, { streamKind: "assistant_text", delta: "Hello" });
       NodeAssert.ok(completedItem && completedItem.type === "item.completed");
@@ -865,6 +902,241 @@ mappingLayer("PiAdapter event mapping", (it) => {
       const lastSendInput = runtime.sendTurnImpl.mock.calls.at(-1)?.[0];
       NodeAssert.ok(lastSendInput);
       NodeAssert.equal(lastSendInput.model, undefined);
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Meridian seam guard (PLAN-T3-Meridian-Seam-Patch Tasks 1/3/5)
+// ---------------------------------------------------------------------------
+
+const missingConfigProbe = vi.fn((_healthUrl: string) => Effect.succeed(true));
+const missingConfigFactory = makeRuntimeFactory();
+const missingConfigLayer = it.layer(
+  makeAdapterLayer(missingConfigFactory, {
+    configPath: NodePath.join(meridianFixtureDir, "absent-models.json"),
+    probe: missingConfigProbe,
+  }),
+);
+
+missingConfigLayer("PiAdapter Meridian guard — route not configured", (it) => {
+  it.effect("fails an Anthropic session start closed: seam-naming error, no runtime, no set_model", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-meridian-missing-start");
+      const factoryCallsBefore = missingConfigFactory.factory.mock.calls.length;
+
+      const collected = yield* Stream.take(adapter.streamEvents, 1).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const result = yield* adapter
+        .startSession({
+          provider: ProviderDriverKind.make("pi"),
+          threadId,
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("pi"),
+            "anthropic/claude-opus-4-8",
+            [],
+          ),
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.result);
+
+      NodeAssert.equal(result._tag, "Failure");
+      NodeAssert.equal(result.failure._tag, "ProviderAdapterRequestError");
+      NodeAssert.ok(result.failure.detail.includes("Meridian Claude Code SDK seam"));
+      NodeAssert.ok(result.failure.detail.includes("not configured"));
+      NodeAssert.ok(result.failure.detail.includes("Pi native Anthropic OAuth is disabled"));
+
+      // Fail-closed means fail BEFORE the runtime exists: no runtime was
+      // constructed, so no set_model (and no prompt) could ever be sent.
+      NodeAssert.equal(missingConfigFactory.factory.mock.calls.length, factoryCallsBefore);
+      NodeAssert.equal(yield* adapter.hasSession(threadId), false);
+
+      // The seam failure is a VISIBLE runtime.error activity, not silence.
+      const events = yield* Fiber.join(collected);
+      const seamError = events[0];
+      NodeAssert.ok(seamError && seamError.type === "runtime.error");
+      NodeAssert.equal(seamError.payload.class, "provider_error");
+      NodeAssert.ok(seamError.payload.message.includes("Meridian Claude Code SDK seam"));
+
+      // Config was missing — the guard never even probed reachability.
+      NodeAssert.equal(missingConfigProbe.mock.calls.length, 0);
+    }),
+  );
+
+  it.effect("fails an Anthropic turn on a live session closed: no prompt reaches Pi", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-meridian-missing-turn");
+      // No model selection at start: no Anthropic route is claimed yet, so
+      // the session comes up (pi's own default model applies).
+      yield* drainStartupEvents(adapter, threadId);
+      const runtime = missingConfigFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+
+      const collected = yield* Stream.take(adapter.streamEvents, 1).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      // The fake session's current model is anthropic/claude-test (resume
+      // cursor), so a plain follow-up IS an Anthropic-family turn.
+      const result = yield* adapter.sendTurn({ threadId, input: "hello" }).pipe(Effect.result);
+
+      NodeAssert.equal(result._tag, "Failure");
+      NodeAssert.equal(result.failure._tag, "ProviderAdapterRequestError");
+      NodeAssert.ok(result.failure.detail.includes("Meridian Claude Code SDK seam"));
+      // The prompt never reached the Pi RPC child.
+      NodeAssert.equal(runtime.sendTurnImpl.mock.calls.length, 0);
+
+      const events = yield* Fiber.join(collected);
+      const seamError = events[0];
+      NodeAssert.ok(seamError && seamError.type === "runtime.error");
+      NodeAssert.ok(seamError.payload.message.includes("anthropic/claude-test"));
+    }),
+  );
+
+  it.effect("openai-codex turns are completely unaffected by a red Meridian route (regression)", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-meridian-codex-unaffected");
+      const probeCallsBefore = missingConfigProbe.mock.calls.length;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("pi"),
+        threadId,
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("pi"),
+          "openai-codex/gpt-5.2-codex",
+          [],
+        ),
+        runtimeMode: "full-access",
+      });
+      const runtime = missingConfigFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      NodeAssert.equal(runtime.options.model, "openai-codex/gpt-5.2-codex");
+
+      // Plain follow-up on the codex session AND an explicit codex selection
+      // both dispatch normally with the Anthropic route dead.
+      const first = yield* adapter.sendTurn({ threadId, input: "codex turn" });
+      NodeAssert.equal(first.threadId, threadId);
+      yield* adapter.sendTurn({
+        threadId,
+        input: "codex turn 2",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("pi"),
+          "openai-codex/gpt-5.2-codex",
+          [],
+        ),
+      });
+      NodeAssert.equal(runtime.sendTurnImpl.mock.calls.length, 2);
+
+      // The codex path triggered ZERO Meridian activity: no reachability
+      // probe ran for the start or either turn.
+      NodeAssert.equal(missingConfigProbe.mock.calls.length, probeCallsBefore);
+    }),
+  );
+});
+
+const meridianDownProbe = vi.fn((_healthUrl: string) => Effect.succeed(false));
+const meridianDownFactory = makeRuntimeFactory();
+const meridianDownLayer = it.layer(
+  makeAdapterLayer(meridianDownFactory, {
+    configPath: greenMeridianConfigPath,
+    probe: meridianDownProbe,
+    probeCacheTtlMs: 0,
+  }),
+);
+
+meridianDownLayer("PiAdapter Meridian guard — Meridian down", (it) => {
+  it.effect("names Meridian down at the configured loopback target and sends nothing", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-meridian-down");
+      const factoryCallsBefore = meridianDownFactory.factory.mock.calls.length;
+
+      const collected = yield* Stream.take(adapter.streamEvents, 1).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const result = yield* adapter
+        .startSession({
+          provider: ProviderDriverKind.make("pi"),
+          threadId,
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("pi"),
+            "anthropic/claude-haiku-4-5",
+            [],
+          ),
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.result);
+
+      NodeAssert.equal(result._tag, "Failure");
+      NodeAssert.equal(result.failure._tag, "ProviderAdapterRequestError");
+      NodeAssert.ok(
+        result.failure.detail.includes("Meridian is down or unreachable at 127.0.0.1:3456"),
+      );
+      NodeAssert.ok(result.failure.detail.includes("Meridian Claude Code SDK seam"));
+      NodeAssert.ok(result.failure.detail.includes("no Pi native Anthropic OAuth fallback"));
+      NodeAssert.equal(meridianDownFactory.factory.mock.calls.length, factoryCallsBefore);
+      NodeAssert.ok(meridianDownProbe.mock.calls.length > 0);
+
+      const events = yield* Fiber.join(collected);
+      const seamError = events[0];
+      NodeAssert.ok(seamError && seamError.type === "runtime.error");
+      NodeAssert.equal(seamError.payload.class, "transport_error");
+      NodeAssert.ok(
+        seamError.payload.message.includes("Meridian is down or unreachable at 127.0.0.1:3456"),
+      );
+    }),
+  );
+});
+
+const routeDiagnosticFactory = makeRuntimeFactory();
+const routeDiagnosticLayer = it.layer(makeAdapterLayer(routeDiagnosticFactory));
+
+routeDiagnosticLayer("PiAdapter route-family diagnostics", (it) => {
+  it.effect("every turn start names its route family per model family", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-route-diagnostic");
+      yield* drainStartupEvents(adapter, threadId);
+      const runtime = routeDiagnosticFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+
+      const collected = yield* Stream.take(adapter.streamEvents, 2).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId: asTurnId("turn-codex"),
+        model: "openai-codex/gpt-5.2-codex",
+        payload: { type: "turn_start" },
+      });
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId: asTurnId("turn-claude"),
+        model: "anthropic/claude-opus-4-8",
+        payload: { type: "turn_start" },
+      });
+
+      const events = yield* Fiber.join(collected);
+      const [codexStarted, claudeStarted] = events as ProviderRuntimeEvent[];
+      NodeAssert.ok(codexStarted && codexStarted.type === "turn.started");
+      NodeAssert.deepStrictEqual(codexStarted.payload, {
+        model: "openai-codex/gpt-5.2-codex",
+        routeFamily: "openai-native-pi",
+      });
+      NodeAssert.ok(claudeStarted && claudeStarted.type === "turn.started");
+      NodeAssert.deepStrictEqual(claudeStarted.payload, {
+        model: "anthropic/claude-opus-4-8",
+        routeFamily: "anthropic-meridian-claude-code-sdk",
+      });
     }),
   );
 });
