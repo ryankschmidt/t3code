@@ -226,7 +226,14 @@ const defaultProbe = (healthUrl: string): Effect.Effect<boolean> =>
       });
       return response.ok;
     },
-    catch: () => false,
+    catch: (error) => {
+      // Surface WHY the seam probe failed (raw stderr: pre-Effect diagnostics
+      // for a loopback health check; never carries secrets).
+      const errno = (error as { cause?: NodeJS.ErrnoException })?.cause;
+      const detail = errno?.code ?? (error instanceof Error ? error.name : String(error));
+      process.stderr.write(`[pi-meridian-probe] ${healthUrl} probe failed: ${detail}\n`);
+      return false;
+    },
   }).pipe(Effect.orElseSucceed(() => false));
 
 export interface PiMeridianRouteGuardOptions {
