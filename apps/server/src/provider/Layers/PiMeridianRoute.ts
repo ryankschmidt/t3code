@@ -46,7 +46,11 @@ export const PI_ROUTE_FAMILY_ANTHROPIC_MERIDIAN: RuntimeRouteFamily =
 /** Default location of pi's provider-override config (the deployed route). */
 export const PI_MODELS_JSON_RELATIVE_PATH = ".pi/agent/models.json";
 
-const PROBE_TIMEOUT_MS = 750;
+// Meridian's FIRST /health answer after an idle stretch takes ~1.6s cold
+// (measured live 2026-07-06: 1.59s then ~1ms warm) — a 750ms timeout failed
+// every first-turn-after-idle and the false result cached across both gates.
+// 4s absorbs the cold start while staying snappy for a turn-start gate.
+const PROBE_TIMEOUT_MS = 4_000;
 const DEFAULT_PROBE_CACHE_TTL_MS = 5_000;
 
 /**
