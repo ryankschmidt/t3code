@@ -62,6 +62,12 @@ import {
 import { type ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import {
+  isAnthropicFamilyPiModel,
+  makePiMeridianRouteGuard,
+  type PiMeridianRouteGuardOptions,
+  piRouteFamilyForModel,
+} from "./PiMeridianRoute.ts";
+import {
   makePiSessionRuntime,
   normalizePiThinkingLevel,
   type PiPromptImage,
@@ -86,6 +92,12 @@ export interface PiAdapterLiveOptions {
   >;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  /**
+   * Meridian seam guard overrides (tests). Production uses the defaults:
+   * `~/.pi/agent/models.json` + a GET /health probe against the configured
+   * loopback Meridian endpoint.
+   */
+  readonly meridianRoute?: PiMeridianRouteGuardOptions;
 }
 
 interface PiAdapterSessionContext {
@@ -94,6 +106,12 @@ interface PiAdapterSessionContext {
   readonly runtime: PiSessionRuntimeShape;
   readonly eventFiber: Fiber.Fiber<void, never>;
   stopped: boolean;
+  /**
+   * The session's current Pi model slug as last observed by the adapter
+   * (start result / turn results). Lets the Meridian seam guard classify a
+   * turn's EFFECTIVE model when the turn carries no explicit selection.
+   */
+  currentModel: string | undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -415,11 +433,20 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
                 threadId: event.threadId,
                 turnId: event.turnId,
               });
+              // Route-family diagnostic (Meridian seam patch, Task 5): every
+              // turn start names its transport route — `openai-native-pi`
+              // (Pi native auth) or `anthropic-meridian-claude-code-sdk`
+              // (Meridian → official Claude Code SDK). Omitted only when the
+              // model is unknown; never guessed.
+              const routeFamily = piRouteFamilyForModel(event.model);
               return [
                 {
                   ...base,
                   type: "turn.started",
-                  payload: event.model ? { model: event.model } : {},
+                  payload: {
+                    ...(event.model ? { model: event.model } : {}),
+                    ...(routeFamily ? { routeFamily } : {}),
+                  },
                 } satisfies ProviderRuntimeEvent,
               ];
             }
@@ -691,6 +718,51 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       } satisfies ProviderRuntimeEvent);
     });
 
+  const meridianRouteGuard = makePiMeridianRouteGuard(fileSystem, options?.meridianRoute);
+
+  /**
+   * Fail-closed Meridian seam gate (Meridian seam patch, Task 1): when the
+   * effective model for a session start / turn is Anthropic-family, the turn
+   * may only proceed if the Meridian route override is configured in pi's
+   * models.json AND the loopback Meridian endpoint answers its health probe.
+   * On failure this emits a seam-naming `runtime.error` activity AND fails
+   * the operation — Pi native Anthropic OAuth is unreachable from Claude
+   * turn flow because no Pi RPC (set_model/prompt) happens for the turn.
+   * Non-Anthropic models (openai-codex, ...) bypass everything: no config
+   * read, no probe.
+   */
+  const guardAnthropicRoute = (input: {
+    readonly threadId: ThreadId;
+    readonly method: string;
+    readonly model: string | undefined;
+  }) =>
+    input.model !== undefined && isAnthropicFamilyPiModel(input.model)
+      ? meridianRouteGuard.guardAnthropicTurn(input.model).pipe(
+          Effect.tapError((error) =>
+            Effect.gen(function* () {
+              const base = yield* makeEventBase({ threadId: input.threadId });
+              yield* Queue.offer(runtimeEventQueue, {
+                ...base,
+                type: "runtime.error",
+                payload: {
+                  message: error.detail,
+                  class: error.errorClass,
+                },
+              } satisfies ProviderRuntimeEvent);
+            }).pipe(Effect.ignore),
+          ),
+          Effect.mapError(
+            (error) =>
+              new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: input.method,
+                detail: error.detail,
+                cause: error,
+              }),
+          ),
+        )
+      : Effect.void;
+
   const startSession: ProviderAdapterShape<ProviderAdapterError>["startSession"] = (input) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -713,11 +785,6 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
           });
         }
 
-        const existing = sessions.get(input.threadId);
-        if (existing && !existing.stopped) {
-          yield* Effect.suspend(() => stopSessionInternal(existing));
-        }
-
         const model =
           input.modelSelection?.instanceId === boundInstanceId
             ? input.modelSelection.model
@@ -728,6 +795,22 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
                 getModelSelectionStringOptionValue(input.modelSelection, "thinkingLevel"),
               )
             : undefined;
+
+        // Meridian seam guard: an Anthropic-family start (explicit selection
+        // or resume onto an Anthropic model) must verify the Meridian route
+        // BEFORE any runtime exists, so no set_model can ever be sent down a
+        // dead Anthropic route. Runs before the existing-session stop so a
+        // rejected start is non-destructive.
+        yield* guardAnthropicRoute({
+          threadId: input.threadId,
+          method: "session/start",
+          model: model ?? piModelFromResumeCursor(input.resumeCursor),
+        });
+
+        const existing = sessions.get(input.threadId);
+        if (existing && !existing.stopped) {
+          yield* Effect.suspend(() => stopSessionInternal(existing));
+        }
 
         const runtimeInput: PiSessionRuntimeOptions = {
           threadId: input.threadId,
@@ -798,12 +881,14 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
           ),
         );
 
+        const sessionModel = piModelFromResumeCursor(started.resumeCursor) ?? started.model;
         sessions.set(input.threadId, {
           threadId: input.threadId,
           scope: sessionScope,
           runtime,
           eventFiber,
           stopped: false,
+          currentModel: sessionModel,
         });
         sessionScopeTransferred = true;
 
@@ -811,7 +896,6 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         const startedBase = yield* makeEventBase({ threadId: input.threadId });
         const configuredBase = yield* makeEventBase({ threadId: input.threadId });
         const threadBase = yield* makeEventBase({ threadId: input.threadId });
-        const sessionModel = piModelFromResumeCursor(started.resumeCursor) ?? started.model;
         const sessionThinkingLevel = piThinkingLevelFromResumeCursor(started.resumeCursor);
         const providerThreadId = asString(asRecord(started.resumeCursor)?.sessionId);
         yield* Queue.offerAll(runtimeEventQueue, [
@@ -908,7 +992,18 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
             )
           : undefined;
 
-      return yield* session.runtime
+      // Meridian seam guard: gate the turn's EFFECTIVE model (explicit
+      // selection, else the session's current model) BEFORE any Pi RPC, so
+      // an Anthropic turn can never reach set_model/prompt while the
+      // Meridian route is absent or down. Codex-family turns skip this
+      // entirely (no config read, no probe).
+      yield* guardAnthropicRoute({
+        threadId: input.threadId,
+        method: "turn/prompt",
+        model: model ?? session.currentModel,
+      });
+
+      const result = yield* session.runtime
         .sendTurn({
           ...(input.input !== undefined ? { input: input.input } : {}),
           ...(model !== undefined ? { model } : {}),
@@ -916,6 +1011,11 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
           ...(images.length > 0 ? { images } : {}),
         })
         .pipe(Effect.mapError((cause) => toRequestError(input.threadId, "turn/prompt", cause)));
+      const settledModel = piModelFromResumeCursor(result.resumeCursor) ?? model;
+      if (settledModel !== undefined) {
+        session.currentModel = settledModel;
+      }
+      return result;
     },
   );
 
