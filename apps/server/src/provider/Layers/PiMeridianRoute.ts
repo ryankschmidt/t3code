@@ -13,7 +13,7 @@
  *   - at session/turn start for Anthropic-family models, verify the Meridian
  *     route override is configured (parse models.json server-side) and that
  *     the loopback Meridian endpoint is reachable (cheap GET /health with a
- *     short timeout, cached briefly)
+ *     short timeout and one retry for wake-from-idle blips, cached briefly)
  *   - on any failure, fail the turn with an error that NAMES the seam —
  *     never fall back to Pi native Anthropic OAuth
  *
@@ -52,6 +52,13 @@ export const PI_MODELS_JSON_RELATIVE_PATH = ".pi/agent/models.json";
 // 4s absorbs the cold start while staying snappy for a turn-start gate.
 const PROBE_TIMEOUT_MS = 4_000;
 const DEFAULT_PROBE_CACHE_TTL_MS = 5_000;
+// Wake-from-idle can exceed even the 4s timeout on the FIRST attempt
+// (measured live 2026-07-06, events 4634-4636: the guard declared Meridian
+// down while pid 15276 had run continuously since 03:51:44 and /health
+// answered 200 in 1.2s moments later — page-ins/App Nap blip, not an outage).
+// One retry after a short delay absorbs the blip; fail-closed is preserved
+// because a genuinely down Meridian fails both attempts.
+const PROBE_RETRY_DELAY_MS = 1_500;
 
 /**
  * Classifies a Pi model slug (`provider/modelId`) into its transport route
@@ -243,6 +250,8 @@ export interface PiMeridianRouteGuardOptions {
   readonly probe?: (healthUrl: string) => Effect.Effect<boolean>;
   /** Probe result cache TTL; 0 disables caching. */
   readonly probeCacheTtlMs?: number;
+  /** Delay before the single probe retry (tests may pass 0; default 1.5s). */
+  readonly probeRetryDelayMs?: number;
 }
 
 export interface PiMeridianRouteGuardShape {
@@ -266,6 +275,7 @@ export function makePiMeridianRouteGuard(
   const configPath = options?.configPath ?? defaultPiModelsJsonPath();
   const probe = options?.probe ?? defaultProbe;
   const probeCacheTtlMs = options?.probeCacheTtlMs ?? DEFAULT_PROBE_CACHE_TTL_MS;
+  const probeRetryDelayMs = options?.probeRetryDelayMs ?? PROBE_RETRY_DELAY_MS;
   const probeCache = new Map<string, { readonly atMillis: number; readonly ok: boolean }>();
 
   const cachedProbe = (healthUrl: string): Effect.Effect<boolean> =>
@@ -275,7 +285,22 @@ export function makePiMeridianRouteGuard(
       if (cached && probeCacheTtlMs > 0 && nowMillis - cached.atMillis < probeCacheTtlMs) {
         return cached.ok;
       }
-      const ok = yield* probe(healthUrl);
+      let ok = yield* probe(healthUrl);
+      if (!ok) {
+        // Retry exactly once before declaring Meridian down: a first-attempt
+        // timeout during machine wake is a transient blip (the measured idle
+        // false negative above), while a real outage fails both attempts —
+        // fail-closed behavior is unchanged, and the NEGATIVE result is only
+        // cached after the retry also fails.
+        yield* Effect.promise(
+          () =>
+            new Promise<void>((resolve) => {
+              // @effect-diagnostics-next-line globalTimers:off - Deliberate WALL-CLOCK backoff before the single probe retry (same boundary as the global fetch above): Effect.sleep binds to the test clock, and the fail-closed guard suites run under a frozen TestClock — they must not hang on an I/O backoff that is not program-logic timing.
+              setTimeout(resolve, probeRetryDelayMs);
+            }),
+        );
+        ok = yield* probe(healthUrl);
+      }
       probeCache.set(healthUrl, { atMillis: nowMillis, ok });
       return ok;
     });

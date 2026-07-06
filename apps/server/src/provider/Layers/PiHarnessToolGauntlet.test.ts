@@ -18,6 +18,8 @@
  *   6. forbidden/destructive    → "gauntlet 6: a destructive out-of-set tool is refused visibly, never silently"
  *   7. idempotent write         → "gauntlet 7: duplicate idempotent-write invocations cause one durable effect"
  *   8. restart replay           → "gauntlet 8: a fresh adapter re-emits a replayed end frame (per-process dedupe pinned)"
+ *   9. probe retry (recovers)   → "gauntlet 9: a first-attempt probe timeout recovers on the single retry"
+ *  10. probe retry (fail-closed)→ "gauntlet 10: both probe attempts failing still fails closed with the seam-naming error"
  *
  * Honest pins:
  *   - Scenario 6: enforcement lives upstream (pi dispatches only registered
@@ -54,6 +56,7 @@ import { describe, expect } from "vite-plus/test";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
@@ -65,7 +68,7 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { type ProviderAdapterError } from "../Errors.ts";
 import { type ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import { makePiAdapter } from "./PiAdapter.ts";
-import { type PiMeridianRouteGuardOptions } from "./PiMeridianRoute.ts";
+import { makePiMeridianRouteGuard, type PiMeridianRouteGuardOptions } from "./PiMeridianRoute.ts";
 import {
   parsePiModelSlug,
   type PiRuntimeEvent,
@@ -710,5 +713,68 @@ describe("Pi harness tool gauntlet (shape 8, restart replay)", () => {
       NodeAssert.equal(replayed.itemId, "pi-tool:call-r8");
       NodeAssert.equal(replayed.payload.itemType, "dynamic_tool_call");
     }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Gauntlet 9/10 — probe retry: wake-from-idle false negative (regression)
+// ---------------------------------------------------------------------------
+// Live defect 2026-07-06 (events 4634-4636): after hours of machine idle the
+// FIRST /health probe attempt exceeded PROBE_TIMEOUT_MS during wake
+// (page-ins/App Nap) and the guard failed closed + cached the negative —
+// while Meridian (pid 15276, up since 03:51:44) answered 200 in 1.2s moments
+// later. The fix retries exactly once; a real outage still fails both
+// attempts, so fail-closed is preserved.
+
+describe("Pi harness tool gauntlet (probe retry, wake-from-idle regression)", () => {
+  it.effect("gauntlet 9: a first-attempt probe timeout recovers on the single retry", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      let attempts = 0;
+      const guard = makePiMeridianRouteGuard(fileSystem, {
+        configPath: greenMeridianConfigPath,
+        probe: () =>
+          Effect.sync(() => {
+            attempts += 1;
+            return attempts >= 2; // first attempt "times out", second answers ok
+          }),
+        probeRetryDelayMs: 0,
+        probeCacheTtlMs: 60_000,
+      });
+      yield* guard.guardAnthropicTurn("anthropic/claude-test");
+      NodeAssert.equal(attempts, 2);
+      // The POSITIVE result is cached as before: the next turn does not re-probe.
+      yield* guard.guardAnthropicTurn("anthropic/claude-test");
+      NodeAssert.equal(attempts, 2);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "gauntlet 10: both probe attempts failing still fails closed with the seam-naming error",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        let attempts = 0;
+        const guard = makePiMeridianRouteGuard(fileSystem, {
+          configPath: greenMeridianConfigPath,
+          probe: () =>
+            Effect.sync(() => {
+              attempts += 1;
+              return false; // genuinely down: both attempts fail
+            }),
+          probeRetryDelayMs: 0,
+          probeCacheTtlMs: 60_000,
+        });
+        const error = yield* guard.guardAnthropicTurn("anthropic/claude-test").pipe(Effect.flip);
+        NodeAssert.equal(attempts, 2);
+        NodeAssert.equal(error.reason, "unreachable");
+        NodeAssert.ok(error.detail.includes("Meridian is down or unreachable"));
+        NodeAssert.ok(error.detail.includes("no Pi native Anthropic OAuth fallback"));
+        // The NEGATIVE result is cached only AFTER the retry also failed —
+        // a further turn hits the cache without probing again (still closed).
+        const cachedError = yield* guard.guardAnthropicTurn("anthropic/claude-test").pipe(Effect.flip);
+        NodeAssert.equal(cachedError.reason, "unreachable");
+        NodeAssert.equal(attempts, 2);
+      }).pipe(Effect.provide(NodeServices.layer)),
   );
 });
