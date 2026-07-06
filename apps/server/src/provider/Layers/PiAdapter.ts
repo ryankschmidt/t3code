@@ -291,6 +291,12 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
    * activity across stream/message_end/turn_end sightings of one failure.
    */
   const turnProviderErrors = new Map<string, string>();
+  /**
+   * Turn keys → toolCallIds whose tool_execution_end already completed.
+   * Pi's RPC stream can replay an end frame (duplicate delivery); a second
+   * item.completed for the same call would render a duplicate tool card.
+   */
+  const completedToolCallEnds = new Map<string, Set<string>>();
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const randomUUIDv4 = crypto.randomUUIDv4.pipe(
@@ -422,6 +428,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
           abortingTurnIds.delete(event.threadId);
           completedAssistantTurns.delete(assistantTurnKey(event.threadId, event.turnId));
           turnProviderErrors.delete(assistantTurnKey(event.threadId, event.turnId));
+          completedToolCallEnds.delete(assistantTurnKey(event.threadId, event.turnId));
           const base = yield* makeEventBase({
             threadId: event.threadId,
             turnId: event.turnId,
@@ -457,6 +464,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
               abortingTurnIds.delete(event.threadId);
               completedAssistantTurns.delete(assistantTurnKey(event.threadId, event.turnId));
               turnProviderErrors.delete(assistantTurnKey(event.threadId, event.turnId));
+              completedToolCallEnds.delete(assistantTurnKey(event.threadId, event.turnId));
               const base = yield* makeEventBase({
                 threadId: event.threadId,
                 turnId: event.turnId,
@@ -612,7 +620,23 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
                   status: "inProgress",
                 }),
               ];
-            case "tool_execution_end":
+            case "tool_execution_end": {
+              // One completion per toolCallId per turn ("no duplicate tool
+              // calls"): pi's RPC stream can replay an end frame; a second
+              // item.completed for the same call renders a duplicate tool
+              // card. Dedupe only on a real string toolCallId — events
+              // without one keep legacy pass-through (toolItemId already
+              // falls back to toolName).
+              const dupToolCallId = asString(payload.toolCallId);
+              if (dupToolCallId !== undefined) {
+                const toolTurnKey = assistantTurnKey(event.threadId, event.turnId);
+                const seenEnds = completedToolCallEnds.get(toolTurnKey) ?? new Set<string>();
+                if (seenEnds.has(dupToolCallId)) {
+                  return [];
+                }
+                seenEnds.add(dupToolCallId);
+                completedToolCallEnds.set(toolTurnKey, seenEnds);
+              }
               return [
                 yield* toolLifecycleEvent({
                   type: "item.completed",
@@ -625,6 +649,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
                   status: payload.isError === true ? "failed" : "completed",
                 }),
               ];
+            }
             case "turn_end": {
               const turnEndErrorText = piProviderErrorText(payload.message);
               if (turnEndErrorText !== undefined) {
@@ -678,6 +703,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
               completedAssistantTurns.delete(turnKey);
               const providerErrorText = turnProviderErrors.get(turnKey);
               turnProviderErrors.delete(turnKey);
+              completedToolCallEnds.delete(turnKey);
               const abortingTurnId = abortingTurnIds.get(event.threadId);
               const interrupted =
                 abortingTurnId !== undefined &&
