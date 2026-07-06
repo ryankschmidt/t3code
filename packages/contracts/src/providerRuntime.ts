@@ -353,9 +353,22 @@ const ThreadRealtimeClosedPayload = Schema.Struct({
 });
 export type ThreadRealtimeClosedPayload = typeof ThreadRealtimeClosedPayload.Type;
 
+/**
+ * Route family diagnostic for providers that split model transport across
+ * seams (Pi: OpenAI/Codex stays on Pi native auth; Anthropic/Claude routes
+ * through Meridian and the official Claude Code SDK). A literal union so a
+ * misspelled family is unrepresentable.
+ */
+const RuntimeRouteFamily = Schema.Literals([
+  "openai-native-pi",
+  "anthropic-meridian-claude-code-sdk",
+]);
+export type RuntimeRouteFamily = typeof RuntimeRouteFamily.Type;
+
 const TurnStartedPayload = Schema.Struct({
   model: Schema.optional(TrimmedNonEmptyStringSchema),
   effort: Schema.optional(TrimmedNonEmptyStringSchema),
+  routeFamily: Schema.optional(RuntimeRouteFamily),
 });
 export type TurnStartedPayload = typeof TurnStartedPayload.Type;
 
