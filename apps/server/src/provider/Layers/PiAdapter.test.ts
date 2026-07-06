@@ -1142,6 +1142,654 @@ routeDiagnosticLayer("PiAdapter route-family diagnostics", (it) => {
 });
 
 // ---------------------------------------------------------------------------
+// Provider-error text mapping (auditable failure paths)
+// ---------------------------------------------------------------------------
+
+const UPSTREAM_ERROR_TEXT =
+  "Claude Code returned an error result: API Error: 400 You're out of extra usage.";
+
+const providerErrorFactory = makeRuntimeFactory();
+const providerErrorLayer = it.layer(makeAdapterLayer(providerErrorFactory));
+
+providerErrorLayer("PiAdapter provider-error text mapping", (it) => {
+  it.effect("surfaces the real upstream text from a streamed provider-error frame", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-provider-error-streamed");
+      yield* drainStartupEvents(adapter, threadId);
+      const runtime = providerErrorFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const turnId = asTurnId("turn-provider-error");
+      const errorMessage = {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: UPSTREAM_ERROR_TEXT,
+      };
+
+      const collected = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: { type: "turn_start" },
+      });
+      // pi's stream error frame: the REAL text lives at error.errorMessage.
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: {
+          type: "message_update",
+          assistantMessageEvent: { type: "error", reason: "error", error: errorMessage },
+        },
+      });
+      // The loop then completes the same error-bearing message; the per-turn
+      // dedupe must NOT emit a second error activity for it.
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: { type: "message_end", message: errorMessage },
+      });
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: { type: "agent_end" },
+      });
+
+      const events = yield* Fiber.join(collected);
+      NodeAssert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["turn.started", "runtime.error", "turn.completed"],
+      );
+      const [, runtimeError, turnCompleted] = events as ProviderRuntimeEvent[];
+      NodeAssert.ok(runtimeError && runtimeError.type === "runtime.error");
+      NodeAssert.equal(runtimeError.payload.class, "provider_error");
+      NodeAssert.equal(runtimeError.payload.message, UPSTREAM_ERROR_TEXT);
+      NodeAssert.ok(!runtimeError.payload.message.includes("no output"));
+      NodeAssert.ok(turnCompleted && turnCompleted.type === "turn.completed");
+      NodeAssert.deepStrictEqual(turnCompleted.payload, {
+        state: "failed",
+        stopReason: null,
+        errorMessage: UPSTREAM_ERROR_TEXT,
+      });
+    }),
+  );
+
+  it.effect("surfaces the real upstream text from a non-streamed error-bearing message_end", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-provider-error-plain");
+      yield* drainStartupEvents(adapter, threadId);
+      const runtime = providerErrorFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const turnId = asTurnId("turn-provider-error-plain");
+
+      const collected = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: { type: "turn_start" },
+      });
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: {
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [],
+            stopReason: "error",
+            errorMessage: UPSTREAM_ERROR_TEXT,
+          },
+        },
+      });
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: { type: "agent_end" },
+      });
+
+      const events = yield* Fiber.join(collected);
+      NodeAssert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["turn.started", "runtime.error", "turn.completed"],
+      );
+      const [, runtimeError, turnCompleted] = events as ProviderRuntimeEvent[];
+      NodeAssert.ok(runtimeError && runtimeError.type === "runtime.error");
+      NodeAssert.equal(runtimeError.payload.message, UPSTREAM_ERROR_TEXT);
+      NodeAssert.ok(turnCompleted && turnCompleted.type === "turn.completed");
+      NodeAssert.equal(turnCompleted.payload.state, "failed");
+      NodeAssert.equal(turnCompleted.payload.errorMessage, UPSTREAM_ERROR_TEXT);
+    }),
+  );
+
+  it.effect("maps an aborted stream frame to no error activity", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-provider-error-aborted");
+      yield* drainStartupEvents(adapter, threadId);
+      const runtime = providerErrorFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const turnId = asTurnId("turn-aborted-frame");
+
+      const collected = yield* Stream.take(adapter.streamEvents, 1).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: {
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "error",
+            reason: "aborted",
+            error: { role: "assistant", content: [], stopReason: "aborted" },
+          },
+        },
+      });
+      // Sentinel: the abort frame itself must map to NOTHING.
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId,
+        turnId,
+        payload: { type: "tool_execution_start", toolCallId: "sentinel-1", toolName: "read_file" },
+      });
+
+      const events = yield* Fiber.join(collected);
+      const sentinel = events[0];
+      NodeAssert.ok(sentinel && sentinel.type === "item.started");
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Pi-shaped Meridian stream parity (hermetic mock SSE endpoint + pi's real
+// captured request shape from pi-fixtures/pi-req-1.json)
+// ---------------------------------------------------------------------------
+
+interface PiRequestFixture {
+  readonly url: string;
+  readonly headers: Record<string, string>;
+  readonly body: {
+    readonly model: string;
+    readonly stream: boolean;
+    readonly system: ReadonlyArray<Record<string, unknown>>;
+    readonly tools: ReadonlyArray<Record<string, unknown>>;
+    readonly thinking: Record<string, unknown>;
+    readonly messages: ReadonlyArray<Record<string, unknown>>;
+    readonly max_tokens: number;
+  };
+}
+
+const piRequestFixture = JSON.parse(
+  NodeFS.readFileSync(new URL("./pi-fixtures/pi-req-1.json", import.meta.url), "utf8"),
+) as PiRequestFixture;
+
+interface MockMeridianReply {
+  readonly textChunks: ReadonlyArray<string>;
+  readonly toolCall?: { readonly name: string; readonly input: Record<string, unknown> };
+}
+
+interface MockMeridianCapture {
+  readonly headers: Record<string, string | string[] | undefined>;
+  readonly body: PiRequestFixture["body"] & { readonly tools?: ReadonlyArray<Record<string, unknown>> };
+}
+
+/**
+ * Minimal hermetic Meridian stand-in: accepts POST /v1/messages, captures the
+ * request verbatim, and streams an Anthropic-shaped SSE reply. Loopback only.
+ */
+async function startMockMeridian(reply: MockMeridianReply): Promise<{
+  readonly baseUrl: string;
+  readonly captures: MockMeridianCapture[];
+  readonly close: () => Promise<void>;
+}> {
+  const { createServer } = await import("node:http");
+  const captures: MockMeridianCapture[] = [];
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      captures.push({
+        headers: request.headers,
+        body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as MockMeridianCapture["body"],
+      });
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+      });
+      const sse = (event: string, data: Record<string, unknown>) =>
+        response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      sse("message_start", {
+        type: "message_start",
+        message: { id: "msg_mock", type: "message", role: "assistant", content: [] },
+      });
+      let blockIndex = 0;
+      if (reply.toolCall) {
+        sse("content_block_start", {
+          type: "content_block_start",
+          index: blockIndex,
+          content_block: { type: "tool_use", id: "toolu_mock_1", name: reply.toolCall.name },
+        });
+        sse("content_block_delta", {
+          type: "content_block_delta",
+          index: blockIndex,
+          delta: { type: "input_json_delta", partial_json: JSON.stringify(reply.toolCall.input) },
+        });
+        sse("content_block_stop", { type: "content_block_stop", index: blockIndex });
+        blockIndex += 1;
+      }
+      sse("content_block_start", {
+        type: "content_block_start",
+        index: blockIndex,
+        content_block: { type: "text", text: "" },
+      });
+      for (const chunk of reply.textChunks) {
+        sse("content_block_delta", {
+          type: "content_block_delta",
+          index: blockIndex,
+          delta: { type: "text_delta", text: chunk },
+        });
+      }
+      sse("content_block_stop", { type: "content_block_stop", index: blockIndex });
+      sse("message_delta", {
+        type: "message_delta",
+        delta: { stop_reason: reply.toolCall ? "tool_use" : "end_turn" },
+      });
+      sse("message_stop", { type: "message_stop" });
+      response.end();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address !== "object") {
+    throw new Error("mock Meridian failed to bind");
+  }
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    captures,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  };
+}
+
+interface ParsedSseFrame {
+  readonly event: string;
+  readonly data: Record<string, unknown>;
+}
+
+/** POSTs pi's captured request shape at the mock endpoint and parses the SSE reply. */
+async function postPiRequestAndReadSse(
+  baseUrl: string,
+  body: Record<string, unknown>,
+): Promise<ReadonlyArray<ParsedSseFrame>> {
+  // @effect-diagnostics-next-line globalFetch:off - Hermetic in-test SSE client against the loopback mock Meridian; no HttpClient service exists in this plain async helper.
+  const response = await fetch(`${baseUrl}/v1/messages`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "anthropic-version": piRequestFixture.headers["anthropic-version"] ?? "2023-06-01",
+      "anthropic-beta": piRequestFixture.headers["anthropic-beta"] ?? "",
+      "x-meridian-agent": piRequestFixture.headers["x-meridian-agent"] ?? "pi",
+      authorization: "Bearer x",
+    },
+    body: JSON.stringify(body),
+  });
+  const raw = await response.text();
+  const frames: ParsedSseFrame[] = [];
+  for (const block of raw.split("\n\n")) {
+    const lines = block.split("\n").filter((line) => line.length > 0);
+    const eventLine = lines.find((line) => line.startsWith("event: "));
+    const dataLine = lines.find((line) => line.startsWith("data: "));
+    if (!eventLine || !dataLine) {
+      continue;
+    }
+    frames.push({
+      event: eventLine.slice("event: ".length),
+      data: JSON.parse(dataLine.slice("data: ".length)) as Record<string, unknown>,
+    });
+  }
+  return frames;
+}
+
+function sseTextDeltas(frames: ReadonlyArray<ParsedSseFrame>): ReadonlyArray<string> {
+  return frames
+    .filter((frame) => frame.event === "content_block_delta")
+    .map((frame) => (frame.data.delta as Record<string, unknown> | undefined) ?? {})
+    .filter((delta) => delta.type === "text_delta")
+    .map((delta) => String(delta.text ?? ""));
+}
+
+function sseToolUse(
+  frames: ReadonlyArray<ParsedSseFrame>,
+): { name: string; input: Record<string, unknown> } | undefined {
+  const start = frames.find(
+    (frame) =>
+      frame.event === "content_block_start" &&
+      (frame.data.content_block as Record<string, unknown> | undefined)?.type === "tool_use",
+  );
+  if (!start) {
+    return undefined;
+  }
+  const block = start.data.content_block as Record<string, unknown>;
+  const inputDelta = frames.find(
+    (frame) =>
+      frame.event === "content_block_delta" &&
+      (frame.data.delta as Record<string, unknown> | undefined)?.type === "input_json_delta",
+  );
+  const partialJson = (inputDelta?.data.delta as Record<string, unknown> | undefined)?.partial_json;
+  return {
+    name: String(block.name),
+    input:
+      typeof partialJson === "string"
+        ? (JSON.parse(partialJson) as Record<string, unknown>)
+        : {},
+  };
+}
+
+/** Asserts the captured request IS pi's harness contract (Ryan's steering). */
+function assertPiRequestShape(capture: MockMeridianCapture, options: { tools: boolean }): void {
+  if (options.tools) {
+    NodeAssert.deepStrictEqual(
+      (capture.body.tools ?? []).map((tool) => tool.name),
+      ["Read", "Bash", "Edit", "Write"],
+    );
+  } else {
+    NodeAssert.equal(capture.body.tools, undefined);
+  }
+  NodeAssert.equal(capture.body.system.length, 2);
+  for (const block of capture.body.system) {
+    NodeAssert.deepStrictEqual(block.cache_control, { type: "ephemeral" });
+  }
+  NodeAssert.ok(String(capture.body.system[0]?.text).startsWith("You are Claude Code"));
+  NodeAssert.equal(capture.body.stream, true);
+  NodeAssert.equal((capture.body.thinking as Record<string, unknown>).type, "enabled");
+  NodeAssert.equal((capture.body.thinking as Record<string, unknown>).budget_tokens, 16384);
+  NodeAssert.equal(
+    capture.headers["anthropic-beta"],
+    "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14",
+  );
+  NodeAssert.equal(capture.headers["x-meridian-agent"], "pi");
+}
+
+const streamParityFactory = makeRuntimeFactory();
+const streamParityLayer = it.layer(makeAdapterLayer(streamParityFactory));
+
+streamParityLayer("PiAdapter Meridian stream parity (pi-shaped contract)", (it) => {
+  /**
+   * Runs one pi turn through the REAL adapter mapping from frames pi would
+   * emit for the given SSE reply, and returns { streamedText, finalText }.
+   * `streamedText` concatenates content.delta events; `finalText` is the
+   * completed assistant message detail.
+   */
+  const runAdapterTurn = (input: {
+    readonly threadId: ThreadId;
+    readonly turnId: TurnId;
+    readonly deltas: ReadonlyArray<string>;
+    readonly finalText: string;
+    readonly tool?: { readonly name: string; readonly input: Record<string, unknown> };
+  }) =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const runtime = streamParityFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const expectedCount = 1 + input.deltas.length + (input.tool ? 2 : 0) + 2;
+      const collected = yield* Stream.take(adapter.streamEvents, expectedCount).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId: input.threadId,
+        turnId: input.turnId,
+        model: "anthropic/claude-haiku-4-5",
+        payload: { type: "turn_start" },
+      });
+      if (input.tool) {
+        yield* runtime.emit({
+          kind: "rpc-event",
+          threadId: input.threadId,
+          turnId: input.turnId,
+          payload: {
+            type: "tool_execution_start",
+            toolCallId: "toolu_mock_1",
+            toolName: input.tool.name,
+            args: input.tool.input,
+          },
+        });
+        yield* runtime.emit({
+          kind: "rpc-event",
+          threadId: input.threadId,
+          turnId: input.turnId,
+          payload: {
+            type: "tool_execution_end",
+            toolCallId: "toolu_mock_1",
+            toolName: input.tool.name,
+            result: "ok",
+            isError: false,
+          },
+        });
+      }
+      for (const delta of input.deltas) {
+        yield* runtime.emit({
+          kind: "rpc-event",
+          threadId: input.threadId,
+          turnId: input.turnId,
+          payload: {
+            type: "message_update",
+            assistantMessageEvent: { type: "text_delta", delta },
+          },
+        });
+      }
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId: input.threadId,
+        turnId: input.turnId,
+        payload: {
+          type: "message_end",
+          message: { role: "assistant", content: [{ type: "text", text: input.finalText }] },
+        },
+      });
+      yield* runtime.emit({
+        kind: "rpc-event",
+        threadId: input.threadId,
+        turnId: input.turnId,
+        payload: { type: "agent_end" },
+      });
+
+      const events = yield* Fiber.join(collected);
+      const streamedText = events
+        .filter(
+          (event): event is Extract<ProviderRuntimeEvent, { type: "content.delta" }> =>
+            event.type === "content.delta" && event.payload.streamKind === "assistant_text",
+        )
+        .map((event) => event.payload.delta)
+        .join("");
+      const completedItem = events.find(
+        (event): event is Extract<ProviderRuntimeEvent, { type: "item.completed" }> =>
+          event.type === "item.completed" && event.payload.itemType === "assistant_message",
+      );
+      const turnCompleted = events.find((event) => event.type === "turn.completed");
+      NodeAssert.ok(turnCompleted && turnCompleted.type === "turn.completed");
+      NodeAssert.equal(turnCompleted.payload.state, "completed");
+      const toolEvents = events.filter(
+        (event) => event.type === "item.started" || event.type === "item.completed",
+      );
+      return {
+        events,
+        streamedText,
+        finalText: String(completedItem?.payload.detail ?? ""),
+        toolEvents,
+      };
+    });
+
+  it.effect("case a: text-only streamed reply assembles identically to a non-streamed reply", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-parity-text-only");
+      yield* drainStartupEvents(adapter, threadId);
+
+      // Pi-shaped request WITHOUT tools (text-only case): fixture minus tools.
+      const { tools: _tools, ...bodyWithoutTools } = piRequestFixture.body;
+      const mock = yield* Effect.promise(() =>
+        startMockMeridian({ textChunks: ["MERIDIAN", "-UI-", "PASS"] }),
+      );
+      const frames = yield* Effect.promise(() =>
+        postPiRequestAndReadSse(mock.baseUrl, bodyWithoutTools),
+      );
+      yield* Effect.promise(() => mock.close());
+
+      const capture = mock.captures[0];
+      NodeAssert.ok(capture);
+      assertPiRequestShape(capture, { tools: false });
+      const sseText = sseTextDeltas(frames).join("");
+      NodeAssert.equal(sseText, "MERIDIAN-UI-PASS");
+
+      // Streamed turn: pi frames built from what the wire carried.
+      const streamed = yield* runAdapterTurn({
+        threadId,
+        turnId: asTurnId("turn-parity-a-streamed"),
+        deltas: sseTextDeltas(frames),
+        finalText: sseText,
+      });
+      // Non-streamed reference turn: same final message, no deltas.
+      const buffered = yield* runAdapterTurn({
+        threadId,
+        turnId: asTurnId("turn-parity-a-buffered"),
+        deltas: [],
+        finalText: sseText,
+      });
+
+      // Parity: chunked text concatenates to the same final message a
+      // non-streaming turn produces.
+      NodeAssert.equal(streamed.streamedText, sseText);
+      NodeAssert.equal(streamed.finalText, sseText);
+      NodeAssert.equal(buffered.streamedText, "");
+      NodeAssert.equal(buffered.finalText, streamed.finalText);
+    }),
+  );
+
+  it.effect("case b: tools present with no tool call streams to the same final text", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-parity-tools-no-call");
+      yield* drainStartupEvents(adapter, threadId);
+
+      const mock = yield* Effect.promise(() =>
+        startMockMeridian({ textChunks: ["No tools ", "needed."] }),
+      );
+      const frames = yield* Effect.promise(() =>
+        postPiRequestAndReadSse(mock.baseUrl, piRequestFixture.body),
+      );
+      yield* Effect.promise(() => mock.close());
+
+      const capture = mock.captures[0];
+      NodeAssert.ok(capture);
+      // Ryan's steering: the tools=true case must be the Pi-shaped tool path
+      // (PascalCase Read/Bash/Edit/Write with pi's schemas), not generic chat.
+      assertPiRequestShape(capture, { tools: true });
+      NodeAssert.equal(sseToolUse(frames), undefined);
+      const sseText = sseTextDeltas(frames).join("");
+
+      const streamed = yield* runAdapterTurn({
+        threadId,
+        turnId: asTurnId("turn-parity-b-streamed"),
+        deltas: sseTextDeltas(frames),
+        finalText: sseText,
+      });
+      const buffered = yield* runAdapterTurn({
+        threadId,
+        turnId: asTurnId("turn-parity-b-buffered"),
+        deltas: [],
+        finalText: sseText,
+      });
+
+      NodeAssert.equal(streamed.streamedText, sseText);
+      NodeAssert.equal(streamed.finalText, sseText);
+      NodeAssert.equal(buffered.finalText, streamed.finalText);
+      NodeAssert.equal(streamed.toolEvents.filter((e) => e.type === "item.started").length, 0);
+    }),
+  );
+
+  it.effect("case c: a simple Bash-shaped tool-call round maps correctly and final text lands", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-parity-tool-call");
+      yield* drainStartupEvents(adapter, threadId);
+
+      const mock = yield* Effect.promise(() =>
+        startMockMeridian({
+          textChunks: ["Ran ls: ", "3 files."],
+          toolCall: { name: "Bash", input: { command: "ls" } },
+        }),
+      );
+      const frames = yield* Effect.promise(() =>
+        postPiRequestAndReadSse(mock.baseUrl, piRequestFixture.body),
+      );
+      yield* Effect.promise(() => mock.close());
+
+      const capture = mock.captures[0];
+      NodeAssert.ok(capture);
+      assertPiRequestShape(capture, { tools: true });
+      const toolUse = sseToolUse(frames);
+      NodeAssert.deepStrictEqual(toolUse, { name: "Bash", input: { command: "ls" } });
+      const sseText = sseTextDeltas(frames).join("");
+
+      const streamed = yield* runAdapterTurn({
+        threadId,
+        turnId: asTurnId("turn-parity-c-streamed"),
+        deltas: sseTextDeltas(frames),
+        finalText: sseText,
+        tool: toolUse,
+      });
+
+      // The Bash-shaped tool round maps into the tool item lifecycle.
+      const toolStarted = streamed.events.find((event) => event.type === "item.started");
+      NodeAssert.ok(toolStarted && toolStarted.type === "item.started");
+      NodeAssert.equal(toolStarted.payload.itemType, "dynamic_tool_call");
+      NodeAssert.equal(toolStarted.payload.title, "Bash");
+      NodeAssert.equal(toolStarted.itemId, "pi-tool:toolu_mock_1");
+      const toolCompleted = streamed.events.find(
+        (event) =>
+          event.type === "item.completed" && event.payload.itemType === "dynamic_tool_call",
+      );
+      NodeAssert.ok(toolCompleted && toolCompleted.type === "item.completed");
+      NodeAssert.equal(toolCompleted.payload.status, "completed");
+
+      // ...and the final text still lands with stream parity.
+      NodeAssert.equal(streamed.streamedText, sseText);
+      NodeAssert.equal(streamed.finalText, sseText);
+
+      const buffered = yield* runAdapterTurn({
+        threadId,
+        turnId: asTurnId("turn-parity-c-buffered"),
+        deltas: [],
+        finalText: sseText,
+        tool: toolUse,
+      });
+      NodeAssert.equal(buffered.finalText, streamed.finalText);
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
 // PiSessionRuntime integration against a scripted fake `pi --mode rpc` binary
 // ---------------------------------------------------------------------------
 
