@@ -18,6 +18,7 @@ import {
   registerThreadRunTask,
   type ThreadTransport,
 } from "./thread-driver.ts";
+import { startSupervisedWorker } from "./worker-supervisor.ts";
 import { type LazyWsRpcTransport, makeWsRpcTransportFromEnv } from "./ws-rpc-transport.ts";
 
 export type StartAbsurdRuntimeOptions = {
@@ -57,8 +58,6 @@ export function startAbsurdRuntime(
   const queueName = options.queueName ?? "default";
   const concurrency = options.concurrency ?? 1;
 
-  const app = new Absurd({ queueName });
-  registerHealthProbeTask(app);
   // Transport priority (TQ-039 slice 1): an explicitly-injected transport (the
   // server-owned in-process rail) wins; else the env-gated WS door
   // (T3_THREAD_TRANSPORT=ws, lazy connect so boot never blocks); else LocalEcho.
@@ -67,15 +66,25 @@ export function startAbsurdRuntime(
     explicitTransport === null && process.env["T3_THREAD_TRANSPORT"] === "ws"
       ? makeWsRpcTransportFromEnv()
       : null;
-  registerThreadRunTask(app, explicitTransport ?? wsTransport ?? makeLocalEchoTransport());
-  // agent-queue (T2.2): fan-out parents run on THIS queue; their children run
-  // on the dedicated agent queue below (cross-queue joins are deadlock-free).
-  registerAgentFanoutTask(app);
+  const transport = explicitTransport ?? wsTransport ?? makeLocalEchoTransport();
 
-  // Poll forever in the background of the host process — do not await.
-  app
-    .startWorker({ concurrency })
-    .catch((err) => console.error("[absurd-runtime] worker error:", err));
+  // Pool-recovery supervision (landing defect fix): the worker runs under a
+  // supervisor that recreates the app (fresh pg pool) on a dead-pool error
+  // streak. Consumers reach the live generation through the handle's `app`
+  // getter — never capture the app object across turns.
+  const supervisor = startSupervisedWorker({
+    label: `absurd-runtime:${queueName}`,
+    createApp: () => new Absurd({ queueName }),
+    registerTasks: (app) => {
+      registerHealthProbeTask(app);
+      registerThreadRunTask(app, transport);
+      // agent-queue (T2.2): fan-out parents run on THIS queue; their children
+      // run on the dedicated agent queue below (cross-queue joins are
+      // deadlock-free).
+      registerAgentFanoutTask(app);
+    },
+    concurrency,
+  });
 
   // Dedicated fan-out worker (backpressure bound lives on its concurrency).
   const agentQueue = startAgentQueueWorker({
@@ -83,12 +92,14 @@ export function startAbsurdRuntime(
   });
 
   return {
-    app,
+    get app() {
+      return supervisor.app;
+    },
     queueName,
     close: async () => {
       await agentQueue.close();
       if (wsTransport) await wsTransport.close();
-      await app.close();
+      await supervisor.close();
     },
   };
 }

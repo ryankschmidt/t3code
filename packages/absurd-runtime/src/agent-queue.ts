@@ -25,6 +25,8 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Absurd } from "absurd-sdk";
 
+import { startSupervisedWorker } from "./worker-supervisor.ts";
+
 /** Dedicated queue for fanned-out agent work. */
 export const AGENT_QUEUE = "t3-agent-queue" as const;
 /** Parent task: fans out N children and durably joins them. */
@@ -160,28 +162,34 @@ export type AgentQueueWorkerHandle = {
  */
 export function startAgentQueueWorker(options: { concurrency?: number } = {}): AgentQueueWorkerHandle {
   const concurrency = options.concurrency ?? 4;
-  const app = new Absurd({ queueName: AGENT_QUEUE });
-  registerAgentWorkTask(app);
-  // The queue's Postgres surface must exist before the worker polls it (the
-  // engine does not auto-create on claim). Creation is treated as idempotent:
-  // an already-existing queue is the normal warm-boot case.
-  app
-    .createQueue(AGENT_QUEUE)
-    .catch((err: unknown) => {
-      const msg = String(err instanceof Error ? err.message : err);
-      if (!/already exists|duplicate/i.test(msg)) {
-        console.error("[agent-queue] createQueue failed:", err);
+  // Pool-recovery supervision (landing defect fix): recreate the app (fresh pg
+  // pool) on a dead-pool error streak instead of retrying into dead
+  // connections forever. The queue's Postgres surface must exist before each
+  // generation's worker polls it (the engine does not auto-create on claim);
+  // creation is idempotent — "already exists" is the normal warm-boot case,
+  // while infra errors bubble out so the supervisor re-enters backoff instead
+  // of polling a queue that may not exist.
+  const supervisor = startSupervisedWorker({
+    label: `agent-queue:${AGENT_QUEUE}`,
+    createApp: () => new Absurd({ queueName: AGENT_QUEUE }),
+    registerTasks: registerAgentWorkTask,
+    prepareQueue: async (app) => {
+      try {
+        await app.createQueue(AGENT_QUEUE);
+      } catch (err: unknown) {
+        const msg = String(err instanceof Error ? err.message : err);
+        if (/already exists|duplicate/i.test(msg)) return;
+        throw err;
       }
-    })
-    .then(() =>
-      app.startWorker({ concurrency }).catch((err) => console.error("[agent-queue] worker error:", err)),
-    );
+    },
+    concurrency,
+  });
   console.log(`[agent-queue] worker starting (queue ${AGENT_QUEUE}, concurrency ${concurrency})`);
   return {
-    app,
-    queueName: AGENT_QUEUE,
-    close: async () => {
-      await app.close();
+    get app() {
+      return supervisor.app;
     },
+    queueName: AGENT_QUEUE,
+    close: () => supervisor.close(),
   };
 }
