@@ -1515,8 +1515,57 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       })),
     );
 
+  // ── Protected-workspace guard (landing slice) ─────────────────────────
+  // Commit preparation runs `git reset` + `git add -A` in the project's
+  // workspace. Against the operator's CANONICAL repo that is a destructive
+  // sweep: it clobbers manually staged work and stages every concurrent
+  // agent's in-flight edits. The dangerous state is unrepresentable at this
+  // driver seam — preparation REFUSES any workspace whose git common-dir
+  // belongs to a protected root. Matching is by resolved common-dir
+  // EQUALITY, never path prefix, so independent checkouts nested under the
+  // canonical tree (this fork itself, for example) remain fully usable.
+  const DEFAULT_PROTECTED_VCS_ROOTS: ReadonlyArray<string> = ["/Users/Admin/core-root"];
+  const protectedVcsRoots = (): ReadonlyArray<string> => {
+    const raw = process.env["T3_VCS_PROTECTED_ROOTS"];
+    if (raw === undefined) return DEFAULT_PROTECTED_VCS_ROOTS;
+    return raw
+      .split(":")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  };
+
+  const assertWorkspaceNotProtected = (operation: string, cwd: string) =>
+    Effect.gen(function* () {
+      const roots = protectedVcsRoots();
+      if (roots.length === 0) return;
+      const commonDir = yield* runGitStdout(operation, cwd, [
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
+      ]).pipe(
+        Effect.map((stdout) => stdout.trim()),
+        // Not a git workspace at all → nothing to protect here.
+        Effect.catchTags({ GitCommandError: () => Effect.succeed("") }),
+      );
+      if (commonDir.length === 0) return;
+      const repoRoot = commonDir.endsWith("/.git")
+        ? commonDir.slice(0, -"/.git".length)
+        : commonDir;
+      if (roots.includes(repoRoot)) {
+        return yield* new GitCommandError({
+          operation,
+          command: "git",
+          cwd,
+          detail:
+            `Refused: '${repoRoot}' is a protected workspace — T3 auto-stage/commit ` +
+            `preparation is disabled for it (T3_VCS_PROTECTED_ROOTS overrides).`,
+        });
+      }
+    });
+
   const prepareCommitContext: GitVcsDriver.GitVcsDriver["Service"]["prepareCommitContext"] =
     Effect.fn("prepareCommitContext")(function* (cwd, filePaths) {
+      yield* assertWorkspaceNotProtected("GitVcsDriver.prepareCommitContext.protectedGuard", cwd);
       if (filePaths && filePaths.length > 0) {
         yield* runGit("GitVcsDriver.prepareCommitContext.reset", cwd, ["reset"]).pipe(
           Effect.catchTags({
