@@ -56,7 +56,12 @@ import {
   type TerminalMetadataStreamEvent,
   WS_METHODS,
   WsRpcGroup,
+  SYMPHONY_WS_METHODS,
+  SymphonySpawnError,
+  SymphonyTaskStatusError,
+  RuntimeNotReady,
 } from "@t3tools/contracts";
+import { AbsurdRuntime, THREAD_RUN_TASK } from "@t3tools/absurd-runtime";
 import { clamp } from "effect/Number";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
@@ -66,6 +71,18 @@ import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import {
+  assertRoutedSymphonyModel,
+  mapSymphonyTaskSnapshot,
+  resolveSymphonyRuntime,
+} from "./orchestration/symphonyHandlers.ts";
+import {
+  computeRuntimeReadiness,
+  makeQueueReachabilityProbe,
+  readinessBlockingChecks,
+  sliceOneRSessionBoundaryState,
+  type RuntimeReadinessDeps,
+} from "./orchestration/runtimeReadiness.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -276,6 +293,9 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [ORCHESTRATION_WS_METHODS.dispatchCommand, AuthOrchestrationOperateScope],
+  [SYMPHONY_WS_METHODS.spawnThreadRun, AuthOrchestrationOperateScope],
+  [SYMPHONY_WS_METHODS.taskStatus, AuthOrchestrationReadScope],
+  [SYMPHONY_WS_METHODS.runtimeReady, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.getTurnDiff, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.getFullThreadDiff, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.replayEvents, AuthOrchestrationReadScope],
@@ -392,6 +412,17 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+      // TQ-039 slice 1: optionally resolve the server-owned Absurd worker. When
+      // absent, symphony spawn/status fail closed with a typed error (NC1).
+      const absurdRuntimeOption = yield* Effect.serviceOption(AbsurdRuntime);
+      // TQ-039 slice 1R: readiness deps consumed by symphony.runtimeReady and by
+      // the spawn fail-closed guard. session-boundary reports the protected-lane
+      // state as not-ready (visibility before repair — not repaired here).
+      const readinessDeps: RuntimeReadinessDeps = {
+        absurdRuntime: absurdRuntimeOption,
+        probeQueueReachable: makeQueueReachabilityProbe(),
+        sessionBoundaryState: sliceOneRSessionBoundaryState,
+      };
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
@@ -940,6 +971,68 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
+        [SYMPHONY_WS_METHODS.spawnThreadRun]: (request) =>
+          observeRpcEffect(
+            SYMPHONY_WS_METHODS.spawnThreadRun,
+            Effect.gen(function* () {
+              // Slice 1R fail-closed guard: never enqueue a spawn while a required
+              // readiness check is not-ready. Returns RuntimeNotReady naming the
+              // failing checks only; nothing is enqueued, no claim/lease consumed.
+              const readiness = yield* Effect.promise(() => computeRuntimeReadiness(readinessDeps));
+              const blocking = readinessBlockingChecks(readiness);
+              if (blocking.length > 0) {
+                return yield* new RuntimeNotReady({
+                  message: `runtime not ready: ${blocking.join(", ")}`,
+                  notReady: blocking,
+                });
+              }
+              const runtime = yield* resolveSymphonyRuntime(absurdRuntimeOption);
+              yield* assertRoutedSymphonyModel(request.model);
+              const spawned = yield* Effect.tryPromise({
+                try: () =>
+                  runtime.app.spawn(
+                    THREAD_RUN_TASK,
+                    { prompt: request.prompt, model: request.model, holdMs: request.holdMs },
+                    { queue: runtime.queueName },
+                  ),
+                catch: (cause) =>
+                  new SymphonySpawnError({
+                    message: "Failed to spawn symphony thread-run",
+                    cause,
+                  }),
+              });
+              return { taskID: spawned.taskID };
+            }),
+            { "rpc.aggregate": "symphony" },
+          ),
+        [SYMPHONY_WS_METHODS.runtimeReady]: (_input) =>
+          observeRpcEffect(
+            SYMPHONY_WS_METHODS.runtimeReady,
+            Effect.promise(() => computeRuntimeReadiness(readinessDeps)),
+            { "rpc.aggregate": "symphony" },
+          ),
+        [SYMPHONY_WS_METHODS.taskStatus]: (input) =>
+          observeRpcEffect(
+            SYMPHONY_WS_METHODS.taskStatus,
+            Effect.gen(function* () {
+              const runtime = yield* resolveSymphonyRuntime(absurdRuntimeOption);
+              const snapshot = yield* Effect.tryPromise({
+                try: () => runtime.app.fetchTaskResult(input.taskID, { queue: runtime.queueName }),
+                catch: (cause) =>
+                  new SymphonyTaskStatusError({
+                    message: "Failed to read symphony task status",
+                    cause,
+                  }),
+              });
+              if (snapshot === null) {
+                return yield* new SymphonyTaskStatusError({
+                  message: `Unknown symphony task: ${input.taskID}`,
+                });
+              }
+              return mapSymphonyTaskSnapshot(snapshot);
+            }),
+            { "rpc.aggregate": "symphony" },
+          ),
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
