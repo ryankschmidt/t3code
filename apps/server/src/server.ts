@@ -58,7 +58,7 @@ import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
-import { AbsurdRuntimeLive } from "@t3tools/absurd-runtime/layer";
+import { AbsurdRuntimeInProcessLive } from "./orchestration/AbsurdRuntimeInProcess.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
@@ -475,10 +475,13 @@ export const makeServerLayer = Layer.unwrap(
       runtimeStateLayer,
       tailscaleServeLayer,
       cloudDesiredLinkReconcileLayer,
-      AbsurdRuntimeLive({ queueName: "t3-absurd-runtime" }),
     );
 
     return serverApplicationLayer.pipe(
+      // TQ-039 slice 1: AbsurdRuntimeInProcessLive requires OrchestrationEngineService
+      // (satisfied by RuntimeServicesLive below) and PROVIDES the AbsurdRuntime service
+      // up into serverApplicationLayer so the symphony.* WS methods can spawn in-process.
+      Layer.provideMerge(AbsurdRuntimeInProcessLive),
       Layer.provideMerge(RuntimeServicesLive),
       Layer.provideMerge(serverRelayBrokerTracingLayer),
       Layer.provideMerge(HttpServerLive),

@@ -49,6 +49,12 @@ export type ThreadRunParams = {
     /** Work-surface paths relative to cwd; the scoped alternative to add -A over everything. */
     scopePaths?: string[];
   };
+  /**
+   * Explicit model id for this run's turn (TQ-039 slice 1). The server-owned
+   * in-process transport REQUIRES it at resolve time — there is no default on
+   * that path. LocalEcho and WS transports ignore it.
+   */
+  model?: string;
 };
 
 export type ThreadRunResult = {
@@ -60,7 +66,7 @@ export type ThreadRunResult = {
 
 export interface ThreadTransport {
   resolveThread(
-    params: Pick<ThreadRunParams, "threadId" | "projectPath">,
+    params: Pick<ThreadRunParams, "threadId" | "projectPath" | "model">,
   ): Promise<{ threadId: string; created: boolean }>;
   dispatchTurn(threadId: string, prompt: string): Promise<{ turnId: string; dispatchedAt: string }>;
   awaitTurnComplete(

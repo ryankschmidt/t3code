@@ -58,6 +58,19 @@ import {
   OrchestrationReplayEventsInput,
   OrchestrationRpcSchemas,
 } from "./orchestration.ts";
+import {
+  RuntimeNotReady,
+  SYMPHONY_WS_METHODS,
+  SymphonyRuntimeReadyInput,
+  SymphonyRuntimeReadyOutput,
+  SymphonyRuntimeUnavailableError,
+  SymphonySpawnError,
+  SymphonySpawnThreadRunInput,
+  SymphonySpawnThreadRunOutput,
+  SymphonyTaskStatusError,
+  SymphonyTaskStatusInput,
+  SymphonyTaskStatusOutput,
+} from "./symphony.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   RelayClientInstallFailedError,
@@ -679,6 +692,33 @@ export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess,
   stream: true,
 });
 
+export const WsSymphonySpawnThreadRunRpc = Rpc.make(SYMPHONY_WS_METHODS.spawnThreadRun, {
+  payload: SymphonySpawnThreadRunInput,
+  success: SymphonySpawnThreadRunOutput,
+  error: Schema.Union([
+    RuntimeNotReady,
+    SymphonyRuntimeUnavailableError,
+    SymphonySpawnError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
+export const WsSymphonyRuntimeReadyRpc = Rpc.make(SYMPHONY_WS_METHODS.runtimeReady, {
+  payload: SymphonyRuntimeReadyInput,
+  success: SymphonyRuntimeReadyOutput,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsSymphonyTaskStatusRpc = Rpc.make(SYMPHONY_WS_METHODS.taskStatus, {
+  payload: SymphonyTaskStatusInput,
+  success: SymphonyTaskStatusOutput,
+  error: Schema.Union([
+    SymphonyRuntimeUnavailableError,
+    SymphonyTaskStatusError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
@@ -748,4 +788,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsSymphonySpawnThreadRunRpc,
+  WsSymphonyRuntimeReadyRpc,
+  WsSymphonyTaskStatusRpc,
 );

@@ -13,7 +13,11 @@
 import { Absurd } from "absurd-sdk";
 import { registerAgentFanoutTask, startAgentQueueWorker } from "./agent-queue.ts";
 import { registerHealthProbeTask } from "./task.ts";
-import { makeLocalEchoTransport, registerThreadRunTask } from "./thread-driver.ts";
+import {
+  makeLocalEchoTransport,
+  registerThreadRunTask,
+  type ThreadTransport,
+} from "./thread-driver.ts";
 import { type LazyWsRpcTransport, makeWsRpcTransportFromEnv } from "./ws-rpc-transport.ts";
 
 export type StartAbsurdRuntimeOptions = {
@@ -23,6 +27,12 @@ export type StartAbsurdRuntimeOptions = {
   concurrency?: number;
   /** Concurrency bound for the dedicated agent fan-out queue. Defaults to 4. */
   agentQueueConcurrency?: number;
+  /**
+   * Server-owned in-process turn rail (TQ-039 slice 1). When provided, it takes
+   * priority over the env-gated WS transport and the LocalEcho fallback, so the
+   * server hosts the durable thread-run against its own orchestration layer.
+   */
+  transport?: ThreadTransport;
 };
 
 export type AbsurdRuntimeHandle = {
@@ -49,12 +59,15 @@ export function startAbsurdRuntime(
 
   const app = new Absurd({ queueName });
   registerHealthProbeTask(app);
-  // durable-thread-driver (T1.3/T1.3b): LocalEcho by default; opt in to REAL
-  // provider turns with T3_THREAD_TRANSPORT=ws (WS RPC door, lazy connect on
-  // first task use so boot never blocks on the door being up).
+  // Transport priority (TQ-039 slice 1): an explicitly-injected transport (the
+  // server-owned in-process rail) wins; else the env-gated WS door
+  // (T3_THREAD_TRANSPORT=ws, lazy connect so boot never blocks); else LocalEcho.
+  const explicitTransport = options.transport ?? null;
   const wsTransport: LazyWsRpcTransport | null =
-    process.env["T3_THREAD_TRANSPORT"] === "ws" ? makeWsRpcTransportFromEnv() : null;
-  registerThreadRunTask(app, wsTransport ?? makeLocalEchoTransport());
+    explicitTransport === null && process.env["T3_THREAD_TRANSPORT"] === "ws"
+      ? makeWsRpcTransportFromEnv()
+      : null;
+  registerThreadRunTask(app, explicitTransport ?? wsTransport ?? makeLocalEchoTransport());
   // agent-queue (T2.2): fan-out parents run on THIS queue; their children run
   // on the dedicated agent queue below (cross-queue joins are deadlock-free).
   registerAgentFanoutTask(app);
