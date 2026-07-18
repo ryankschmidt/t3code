@@ -28,10 +28,11 @@ export class AbsurdRuntime extends Context.Service<AbsurdRuntime, AbsurdRuntimeH
  * runs when the layer's owning scope closes. Uses Effect.log (not console) so it
  * satisfies @effect/language-service.
  *
- * `options.transport` lets a caller inject the server-owned in-process turn
- * rail; when omitted the worker uses the env-gated WS door or LocalEcho.
+ * `options.transport` is REQUIRED (bypass unrepresentable): every runtime is
+ * constructed against an explicitly-injected turn rail — there is no env-gated
+ * door and no ambient fallback.
  */
-export const AbsurdRuntimeLive = (options: StartAbsurdRuntimeOptions = {}) =>
+export const AbsurdRuntimeLive = (options: StartAbsurdRuntimeOptions) =>
   Layer.effect(
     AbsurdRuntime,
     Effect.acquireRelease(

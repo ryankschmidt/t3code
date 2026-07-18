@@ -14,6 +14,7 @@
  * Run:  corepack pnpm -C packages/absurd-runtime smoke
  */
 import { spawnSync } from "node:child_process";
+import { makeLocalEchoTransport } from "./thread-driver.ts";
 import { startAbsurdRuntime } from "./worker.ts";
 import { HEALTH_PROBE_TASK, type HealthProbeParams } from "./task.ts";
 
@@ -51,7 +52,13 @@ function ensureQueue(queueName: string): void {
 async function main(): Promise<void> {
   ensureQueue(QUEUE_NAME);
 
-  const runtime = startAbsurdRuntime({ queueName: QUEUE_NAME, concurrency: 1 });
+  // Transport is required (bypass unrepresentable): the smoke run makes its
+  // choice explicit — LocalEcho exercises the durable stack without a provider.
+  const runtime = startAbsurdRuntime({
+    queueName: QUEUE_NAME,
+    concurrency: 1,
+    transport: makeLocalEchoTransport(),
+  });
 
   const params: HealthProbeParams = {
     probeId: `probe-${Date.now()}`,

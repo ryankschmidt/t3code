@@ -74,7 +74,12 @@ export const AbsurdRuntimeInProcessLive = Layer.effect(
     });
 
     return yield* Effect.acquireRelease(
-      Effect.sync(() => startAbsurdRuntime({ queueName: QUEUE_NAME, transport })),
+      // Concurrency 8: client turns run on this rail (landing slice) — the
+      // proof-era default of 1 would serialize interactive turns across
+      // threads. Long turns hold worker slots for their full duration
+      // (heartbeat keeps the lease), so the bound must cover concurrent
+      // conversations, not just queued proofs.
+      Effect.sync(() => startAbsurdRuntime({ queueName: QUEUE_NAME, transport, concurrency: 8 })),
       (handle) => Effect.promise(() => handle.close()),
     );
   }),

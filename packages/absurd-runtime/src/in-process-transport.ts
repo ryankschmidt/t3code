@@ -93,8 +93,19 @@ export function makeInProcessTransport(deps: InProcessTransportDeps): ThreadTran
       return { threadId, created: true };
     },
 
-    async dispatchTurn(threadId, prompt) {
+    async dispatchTurn(threadId, prompt, turnCommand) {
       const turnCursor = await currentSequence();
+      // Client turn rail (landing slice): when the caller supplies the full
+      // encoded thread.turn.start command, dispatch it VERBATIM — full parity
+      // with the client's message shape, no field drift. The command's own
+      // messageId is preserved in the turn handle.
+      if (turnCommand) {
+        const message = turnCommand["message"] as { messageId?: unknown } | undefined;
+        const messageId =
+          typeof message?.messageId === "string" ? message.messageId : randomUUID();
+        await deps.dispatchCommand(turnCommand);
+        return { turnId: `seq:${turnCursor}:${messageId}`, dispatchedAt: new Date().toISOString() };
+      }
       const messageId = randomUUID();
       // modelSelection is intentionally omitted: the turn inherits the thread's
       // model set at create time. Keeping it off this command means there is no

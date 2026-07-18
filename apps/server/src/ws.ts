@@ -24,7 +24,7 @@ import {
   CommandId,
   type DiscoveredLocalServerList,
   EventId,
-  type OrchestrationCommand,
+  OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
   OrchestrationDispatchCommandError,
@@ -896,7 +896,9 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
 
             yield* runSetupProgram();
 
-            return yield* orchestrationEngine.dispatch(finalTurnStartCommand);
+            // Landing slice: the bootstrap arm's final turn dispatch also goes
+            // through the absurd rail — same durable task, same ack.
+            return yield* spawnTurnOnAbsurdRail(finalTurnStartCommand);
           });
 
           return yield* bootstrapProgram.pipe(
@@ -910,19 +912,126 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
           );
         });
 
+      // ── Absurd-native turn rail (landing slice) ─────────────────────────
+      // `thread.turn.start` NEVER dispatches directly into the engine from
+      // this layer: it spawns the durable `t3.thread-run` task, whose
+      // in-process transport is the ONLY place a turn.start command enters
+      // the engine. The direct arm below types its parameter as
+      // Exclude<…, thread.turn.start>, so writing a direct turn dispatch in
+      // this handler stops compiling — bypass is unrepresentable, not merely
+      // discouraged. There is no env/config gate on this routing.
+      const encodeOrchestrationCommand = Schema.encodeUnknownEffect(OrchestrationCommand);
+      // Deadline backstop for the durable turn's await step; the task
+      // heartbeats its lease, so this only bounds a turn that never settles.
+      const TURN_RUN_HOLD_MS = 6 * 60 * 60 * 1000;
+      // The ack waits for the worker to claim + dispatch (claim poll is
+      // 250ms; sub-second in practice). On timeout the turn still runs and
+      // the client renders it from subscriptions — only the ack degrades.
+      const TURN_START_ACK_TIMEOUT_MS = 30_000;
+
+      const spawnTurnOnAbsurdRail = (
+        command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
+      ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
+        Effect.gen(function* () {
+          // Slice-1R fail-closed guard: nothing spawns while a required
+          // readiness check is not-ready.
+          const readiness = yield* Effect.promise(() => computeRuntimeReadiness(readinessDeps));
+          const blocking = readinessBlockingChecks(readiness);
+          if (blocking.length > 0) {
+            return yield* new OrchestrationDispatchCommandError({
+              message: `turn rail not ready: ${blocking.join(", ")}`,
+            });
+          }
+          const runtime = yield* resolveSymphonyRuntime(absurdRuntimeOption).pipe(
+            Effect.mapError(
+              (error) =>
+                new OrchestrationDispatchCommandError({
+                  message: `turn rail unavailable: ${error.message}`,
+                }),
+            ),
+          );
+          const { bootstrap: _bootstrap, ...turnStart } = command;
+          const encoded = yield* encodeOrchestrationCommand(turnStart).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationDispatchCommandError({
+                  message: "Failed to encode the turn command for the absurd rail",
+                  cause,
+                }),
+            ),
+          );
+          const messageId = command.message.messageId;
+          // The ack subscribes to the HOT domain-event stream and the spawn
+          // runs concurrently. The subscription's first step is microtask-
+          // scale while the spawn needs a Postgres round-trip plus a worker
+          // claim poll (≥250ms) before the transport can dispatch — so the
+          // subscription is established long before the event can exist.
+          const awaitTurnStartAck = Stream.runCollect(
+            orchestrationEngine.streamDomainEvents.pipe(
+              Stream.filter(
+                (event) =>
+                  event.type === "thread.turn-start-requested" &&
+                  event.payload.messageId === messageId,
+              ),
+              Stream.take(1),
+            ),
+          ).pipe(
+            Effect.map((events) => Array.from(events).at(0)),
+            Effect.timeoutOption(TURN_START_ACK_TIMEOUT_MS),
+            Effect.map(Option.getOrUndefined),
+          );
+          const spawnTask = Effect.tryPromise({
+            try: () =>
+              runtime.app.spawn(
+                THREAD_RUN_TASK,
+                {
+                  prompt: command.message.text,
+                  threadId: command.threadId,
+                  turnCommand: encoded as Record<string, unknown>,
+                  holdMs: TURN_RUN_HOLD_MS,
+                },
+                { queue: runtime.queueName },
+              ),
+            catch: (cause) =>
+              new OrchestrationDispatchCommandError({
+                message: "Failed to spawn the turn on the absurd rail",
+                cause,
+              }),
+          });
+          const [acked] = yield* Effect.all([awaitTurnStartAck, spawnTask], {
+            concurrency: 2,
+          });
+          if (acked === undefined) {
+            return yield* new OrchestrationDispatchCommandError({
+              message:
+                "Turn spawned on the absurd rail but the turn-start event was not observed in time",
+            });
+          }
+          return { sequence: acked.sequence };
+        });
+
+      // Every non-turn command dispatches directly; the parameter type makes
+      // a direct `thread.turn.start` dispatch unrepresentable in this handler.
+      const dispatchDirect = (
+        command: Exclude<OrchestrationCommand, { type: "thread.turn.start" }>,
+      ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
+        orchestrationEngine
+          .dispatch(command)
+          .pipe(
+            Effect.mapError((cause) =>
+              toDispatchCommandError(cause, "Failed to dispatch orchestration command"),
+            ),
+          );
+
       const dispatchNormalizedCommand = (
         normalizedCommand: OrchestrationCommand,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> => {
         const dispatchEffect =
-          normalizedCommand.type === "thread.turn.start" && normalizedCommand.bootstrap
-            ? dispatchBootstrapTurnStart(normalizedCommand)
-            : orchestrationEngine
-                .dispatch(normalizedCommand)
-                .pipe(
-                  Effect.mapError((cause) =>
-                    toDispatchCommandError(cause, "Failed to dispatch orchestration command"),
-                  ),
-                );
+          normalizedCommand.type === "thread.turn.start"
+            ? normalizedCommand.bootstrap
+              ? dispatchBootstrapTurnStart(normalizedCommand)
+              : spawnTurnOnAbsurdRail(normalizedCommand)
+            : dispatchDirect(normalizedCommand);
 
         return startup
           .enqueueCommand(dispatchEffect)

@@ -55,6 +55,17 @@ export type ThreadRunParams = {
    * that path. LocalEcho and WS transports ignore it.
    */
   model?: string;
+  /**
+   * Full encoded `thread.turn.start` command for the client turn rail (landing
+   * slice). When present, the in-process transport dispatches THIS command
+   * verbatim instead of synthesizing a minimal one — full parity with the
+   * client's message shape (attachments, modes, sourceProposedPlan) with no
+   * field drift as the command schema evolves. Opaque to this package by
+   * design: the server encodes it, the server decodes it; the dependency
+   * direction (absurd-runtime never imports server code or contracts) is
+   * preserved. LocalEcho and WS transports ignore it.
+   */
+  turnCommand?: Record<string, unknown>;
 };
 
 export type ThreadRunResult = {
@@ -68,7 +79,11 @@ export interface ThreadTransport {
   resolveThread(
     params: Pick<ThreadRunParams, "threadId" | "projectPath" | "model">,
   ): Promise<{ threadId: string; created: boolean }>;
-  dispatchTurn(threadId: string, prompt: string): Promise<{ turnId: string; dispatchedAt: string }>;
+  dispatchTurn(
+    threadId: string,
+    prompt: string,
+    turnCommand?: Record<string, unknown>,
+  ): Promise<{ turnId: string; dispatchedAt: string }>;
   awaitTurnComplete(
     threadId: string,
     turnId: string,
@@ -116,7 +131,7 @@ export function registerThreadRunTask(app: Absurd, transport: ThreadTransport): 
 
       const turn = await ctx.step("dispatch-turn", async () => {
         console.log(`[thread-run ${ctx.taskID}] EXECUTING dispatch-turn (thread ${thread.threadId})`);
-        return transport.dispatchTurn(thread.threadId, params.prompt);
+        return transport.dispatchTurn(thread.threadId, params.prompt, params.turnCommand);
       });
 
       if (params.checkpoint) {

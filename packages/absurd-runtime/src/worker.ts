@@ -13,13 +13,8 @@
 import { Absurd } from "absurd-sdk";
 import { registerAgentFanoutTask, startAgentQueueWorker } from "./agent-queue.ts";
 import { registerHealthProbeTask } from "./task.ts";
-import {
-  makeLocalEchoTransport,
-  registerThreadRunTask,
-  type ThreadTransport,
-} from "./thread-driver.ts";
+import { registerThreadRunTask, type ThreadTransport } from "./thread-driver.ts";
 import { startSupervisedWorker } from "./worker-supervisor.ts";
-import { type LazyWsRpcTransport, makeWsRpcTransportFromEnv } from "./ws-rpc-transport.ts";
 
 export type StartAbsurdRuntimeOptions = {
   /** Queue name to bind the app and worker to. Defaults to "default". */
@@ -29,11 +24,14 @@ export type StartAbsurdRuntimeOptions = {
   /** Concurrency bound for the dedicated agent fan-out queue. Defaults to 4. */
   agentQueueConcurrency?: number;
   /**
-   * Server-owned in-process turn rail (TQ-039 slice 1). When provided, it takes
-   * priority over the env-gated WS transport and the LocalEcho fallback, so the
-   * server hosts the durable thread-run against its own orchestration layer.
+   * The turn rail (REQUIRED — bypass unrepresentable). Every runtime hosts the
+   * durable thread-run against an explicitly-injected transport; there is no
+   * env-gated door and no ambient fallback, so a rail-less runtime does not
+   * compile. Production injects the server-owned in-process rail
+   * (AbsurdRuntimeInProcessLive); proofs and smoke inject their transport
+   * explicitly at their own call sites.
    */
-  transport?: ThreadTransport;
+  transport: ThreadTransport;
 };
 
 export type AbsurdRuntimeHandle = {
@@ -52,21 +50,15 @@ export type AbsurdRuntimeHandle = {
  * cleanly. The worker promise is deliberately not awaited (it polls forever);
  * errors are surfaced to the console so a boot-time failure is visible.
  */
-export function startAbsurdRuntime(
-  options: StartAbsurdRuntimeOptions = {},
-): AbsurdRuntimeHandle {
+export function startAbsurdRuntime(options: StartAbsurdRuntimeOptions): AbsurdRuntimeHandle {
   const queueName = options.queueName ?? "default";
   const concurrency = options.concurrency ?? 1;
 
-  // Transport priority (TQ-039 slice 1): an explicitly-injected transport (the
-  // server-owned in-process rail) wins; else the env-gated WS door
-  // (T3_THREAD_TRANSPORT=ws, lazy connect so boot never blocks); else LocalEcho.
-  const explicitTransport = options.transport ?? null;
-  const wsTransport: LazyWsRpcTransport | null =
-    explicitTransport === null && process.env["T3_THREAD_TRANSPORT"] === "ws"
-      ? makeWsRpcTransportFromEnv()
-      : null;
-  const transport = explicitTransport ?? wsTransport ?? makeLocalEchoTransport();
+  // Bypass unrepresentable: the transport is a required constructor input.
+  // The old env-gated WS door (T3_THREAD_TRANSPORT=ws) and LocalEcho fallback
+  // are gone — no config or environment value can route a runtime off the
+  // injected rail.
+  const transport = options.transport;
 
   // Pool-recovery supervision (landing defect fix): the worker runs under a
   // supervisor that recreates the app (fresh pg pool) on a dead-pool error
@@ -98,7 +90,6 @@ export function startAbsurdRuntime(
     queueName,
     close: async () => {
       await agentQueue.close();
-      if (wsTransport) await wsTransport.close();
       await supervisor.close();
     },
   };
