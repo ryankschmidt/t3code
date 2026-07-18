@@ -76,6 +76,13 @@ const { values: args } = parseArgs({
     model: { type: "string", default: "claude-fable-5" },
     instance: { type: "string" }, // provider instance override
     "dry-run": { type: "boolean", default: false },
+    // Maintenance: delete one thread (by id) before importing — recovery path
+    // for a partially-imported session (thread.create is otherwise idempotent
+    // and would skip it forever).
+    "delete-thread": { type: "string" },
+    // Maintenance: reuse an existing import project instead of creating one
+    // (recovery reruns would otherwise mint a duplicate project shell).
+    "project-id": { type: "string" },
   },
 });
 
@@ -311,27 +318,26 @@ class ServerHoldsStateError extends Schema.TaggedErrorClass<ServerHoldsStateErro
 ) {}
 
 /**
- * Only a clean connection-refused proves the SQLite files are free. A serving
- * server AND a wedged-but-listening one (observed twice today) both hold them.
+ * The three observed :13773 states map to safety like this: a RESPONSE means
+ * a server is serving (holds SQLite); a TIMEOUT means a wedged-but-listening
+ * server (observed twice today — still holds SQLite); a fast TRANSPORT ERROR
+ * (connection refused) means nothing is bound — safe to proceed. SQLite's own
+ * open would still fail loudly if some other process held the files.
  */
 const assertNoLiveServer = Effect.fn(function* () {
   const client = yield* HttpClient.HttpClient;
   const outcome = yield* client.get("http://127.0.0.1:13773/").pipe(
     Effect.timeoutOption(1_500),
-    Effect.map(() => "responded" as const),
-    Effect.catch((error) => {
-      const detail = String((error as { cause?: unknown }).cause ?? error);
-      return /ECONNREFUSED|ConnectionRefused/i.test(detail)
-        ? Effect.succeed("refused" as const)
-        : Effect.succeed("ambiguous" as const);
-    }),
+    Effect.map((response) =>
+      Option.isSome(response) ? ("serving" as const) : ("wedged-listening" as const),
+    ),
+    Effect.orElseSucceed(() => "unbound" as const),
   );
-  if (outcome !== "refused") {
+  if (outcome !== "unbound") {
     return yield* new ServerHoldsStateError({
       message:
-        `REFUSED: :13773 did not cleanly refuse connections (${outcome}) — a serving or ` +
-        `wedged T3 server still holds the SQLite state. Stop it first: ` +
-        `launchctl bootout gui/$(id -u)/com.ryan.t3-absurd-dev-server`,
+        `REFUSED: :13773 is ${outcome} — that server still holds the SQLite state. ` +
+        `Stop it first: launchctl bootout gui/$(id -u)/com.ryan.t3-absurd-dev-server`,
     });
   }
 });
@@ -390,6 +396,11 @@ const program = Effect.fn(function* (sessions: ReadonlyArray<ParsedSession>) {
       Effect.flatMap((decoded) => engine.dispatch(decoded)),
     );
 
+  if (args["delete-thread"]) {
+    yield* dispatch({ type: "thread.delete", threadId: args["delete-thread"] });
+    yield* Effect.log(`[import] deleted thread ${args["delete-thread"]} (recovery)`);
+  }
+
   // Provider identity template: prefer a real Claude row over guessed enums.
   const existingRows = yield* runtimeRepo.list();
   const template = existingRows.find((row) => /claude/i.test(row.providerName));
@@ -401,17 +412,22 @@ const program = Effect.fn(function* (sessions: ReadonlyArray<ParsedSession>) {
       (template ? " (templated from existing row)" : " (defaults — no existing Claude row)"),
   );
 
-  // Target project for the imported history.
-  const projectRoot = args["project-root"]!;
-  const projectId = yield* cryptoService.randomUUIDv4;
-  yield* dispatch({
-    type: "project.create",
-    projectId,
-    title: args["project-title"]!,
-    workspaceRoot: projectRoot,
-    createdAt: yield* nowIso,
-  });
-  const createdProject = projectId;
+  // Target project for the imported history (reused on recovery reruns).
+  let createdProject: string;
+  if (args["project-id"]) {
+    createdProject = args["project-id"];
+  } else {
+    const projectRoot = args["project-root"]!;
+    const projectId = yield* cryptoService.randomUUIDv4;
+    yield* dispatch({
+      type: "project.create",
+      projectId,
+      title: args["project-title"]!,
+      workspaceRoot: projectRoot,
+      createdAt: yield* nowIso,
+    });
+    createdProject = projectId;
+  }
 
   // The repo row is decoded through its own schema for the same reason.
   const decodeRuntimeRow = Schema.decodeUnknownEffect(ProviderSessionRuntime);
@@ -470,19 +486,19 @@ const program = Effect.fn(function* (sessions: ReadonlyArray<ParsedSession>) {
         createdAt: turn.user.timestamp,
       });
       if (turn.assistant) {
+        // turnId is omitted (schema: string | undefined) — imported history
+        // has no live turn; the decider stamps payload turnId null itself.
         yield* dispatch({
           type: "thread.message.assistant.delta",
           threadId,
           messageId: turn.assistant.uuid,
           delta: turn.assistant.text,
-          turnId: null,
           createdAt: turn.assistant.timestamp,
         });
         yield* dispatch({
           type: "thread.message.assistant.complete",
           threadId,
           messageId: turn.assistant.uuid,
-          turnId: null,
           createdAt: turn.assistant.timestamp,
         });
       }
