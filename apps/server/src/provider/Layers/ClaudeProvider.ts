@@ -85,6 +85,35 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     }),
   },
   {
+    slug: "claude-sonnet-5",
+    name: "Claude Sonnet 5",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "max", label: "Max" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
+          promptInjectedValues: ["ultrathink"],
+        }),
+        buildSelectOptionDescriptor({
+          id: "contextWindow",
+          label: "Context Window",
+          options: [
+            { value: "200k", label: "200k", isDefault: true },
+            { value: "1m", label: "1M" },
+          ],
+        }),
+      ],
+    }),
+  },
+  {
     slug: "claude-opus-4-8",
     name: "Claude Opus 4.8",
     isCustom: false,
@@ -253,7 +282,8 @@ function getBuiltInClaudeModelsForVersion(
   version: string | null | undefined,
 ): ReadonlyArray<ServerProviderModel> {
   return BUILT_IN_MODELS.filter((model) => {
-    if (model.slug === "claude-fable-5") {
+    if (model.slug === "claude-fable-5" || model.slug === "claude-sonnet-5") {
+      // Both Claude 5 family models shipped behind the same CLI floor.
       return supportsClaudeFable5(version);
     }
     if (model.slug === "claude-opus-4-8") {

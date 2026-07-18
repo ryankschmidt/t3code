@@ -137,8 +137,10 @@ export const DEFAULT_MODEL = "gpt-5.4";
 export const DEFAULT_GIT_TEXT_GENERATION_MODEL = "gpt-5.4-mini";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
-  [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
-  [CLAUDE_DRIVER_KIND]: "claude-sonnet-4-6",
+  // Landing slice: new conversations default to the current flagship of each
+  // provider — Claude Fable 5 and GPT-5.6 Sol (the operator's daily drivers).
+  [CODEX_DRIVER_KIND]: "gpt-5.6-sol",
+  [CLAUDE_DRIVER_KIND]: "claude-fable-5",
   [CURSOR_DRIVER_KIND]: "auto",
   [GROK_DRIVER_KIND]: "grok-build",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
@@ -164,8 +166,21 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "gpt-5.3": "gpt-5.3-codex",
     "5.3-spark": "gpt-5.3-codex-spark",
     "gpt-5.3-spark": "gpt-5.3-codex-spark",
+    "5.6": "gpt-5.6-sol",
+    sol: "gpt-5.6-sol",
+    "5.6-sol": "gpt-5.6-sol",
+    "gpt-5.6": "gpt-5.6-sol",
+    luna: "gpt-5.6-luna",
+    "5.6-luna": "gpt-5.6-luna",
+    terra: "gpt-5.6-terra",
+    "5.6-terra": "gpt-5.6-terra",
   },
   [CLAUDE_DRIVER_KIND]: {
+    fable: "claude-fable-5",
+    "fable-5": "claude-fable-5",
+    "claude-fable": "claude-fable-5",
+    "sonnet-5": "claude-sonnet-5",
+    "claude-sonnet-5": "claude-sonnet-5",
     opus: "claude-opus-4-8",
     "opus-4.8": "claude-opus-4-8",
     "claude-opus-4.8": "claude-opus-4-8",
