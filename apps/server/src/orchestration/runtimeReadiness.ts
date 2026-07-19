@@ -84,17 +84,34 @@ export async function computeRuntimeReadiness(
 }
 
 /**
+ * The client turn rail's required checks — the rail's REAL preconditions
+ * (worker present, queue answering). `session-boundary` is deliberately
+ * absent: that signal names the protected interactive-session lane that
+ * SYMPHONY campaign spawns must verify before entering. The client's own
+ * interactive turn IS that protected lane, so the rail must not fail closed
+ * on the slice-1R placeholder (hardcoded not-ready pending the slice-1S
+ * verification probe) — gating the rail on it refuses every client turn.
+ */
+export const TURN_RAIL_REQUIRED_READINESS_CHECKS = [
+  "absurd-worker-layer",
+  "queue-reachability",
+] as const satisfies ReadonlyArray<SymphonyReadinessCheckName>;
+
+/**
  * The required-check NAMES that are `not-ready` — the fail-closed guard for
  * spawn. Empty array => clear to proceed. Per the contract, only `not-ready`
  * blocks a spawn (an `unknown` check does not); the returned names are what a
- * `RuntimeNotReady` error carries.
+ * `RuntimeNotReady` error carries. `required` scopes the guard to the
+ * caller's real preconditions: symphony spawns use the full set (default),
+ * the client turn rail passes TURN_RAIL_REQUIRED_READINESS_CHECKS.
  */
 export function readinessBlockingChecks(
   readiness: SymphonyRuntimeReadyOutput,
+  required: ReadonlyArray<SymphonyReadinessCheckName> = SYMPHONY_REQUIRED_READINESS_CHECKS,
 ): SymphonyReadinessCheckName[] {
-  const required = new Set<string>(SYMPHONY_REQUIRED_READINESS_CHECKS);
+  const requiredSet = new Set<string>(required);
   return readiness.checks
-    .filter((check) => required.has(check.name) && check.state === "not-ready")
+    .filter((check) => requiredSet.has(check.name) && check.state === "not-ready")
     .map((check) => check.name);
 }
 

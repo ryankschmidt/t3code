@@ -81,6 +81,7 @@ import {
   makeQueueReachabilityProbe,
   readinessBlockingChecks,
   sliceOneRSessionBoundaryState,
+  TURN_RAIL_REQUIRED_READINESS_CHECKS,
   type RuntimeReadinessDeps,
 } from "./orchestration/runtimeReadiness.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
@@ -933,10 +934,13 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
         command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
         Effect.gen(function* () {
-          // Slice-1R fail-closed guard: nothing spawns while a required
-          // readiness check is not-ready.
+          // Fail-closed guard scoped to the rail's REAL preconditions
+          // (worker + queue). session-boundary is symphony's protected-lane
+          // signal — the interactive turn IS the lane it protects, and its
+          // slice-1R placeholder is hardcoded not-ready, so the full
+          // symphony set here would refuse every client turn.
           const readiness = yield* Effect.promise(() => computeRuntimeReadiness(readinessDeps));
-          const blocking = readinessBlockingChecks(readiness);
+          const blocking = readinessBlockingChecks(readiness, TURN_RAIL_REQUIRED_READINESS_CHECKS);
           if (blocking.length > 0) {
             return yield* new OrchestrationDispatchCommandError({
               message: `turn rail not ready: ${blocking.join(", ")}`,

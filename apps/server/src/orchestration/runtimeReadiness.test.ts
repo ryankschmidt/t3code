@@ -12,6 +12,7 @@ import {
   computeRuntimeReadiness,
   readinessBlockingChecks,
   sliceOneRSessionBoundaryState,
+  TURN_RAIL_REQUIRED_READINESS_CHECKS,
 } from "./runtimeReadiness.ts";
 
 const fakeHandle = {
@@ -103,6 +104,36 @@ describe("fail-closed spawn guard (TQ-039 Slice 1R — NC4: zero enqueue)", () =
       ],
     };
     assert.strictEqual(readinessBlockingChecks(withUnknown).length, 0);
+  });
+});
+
+describe("turn-rail readiness scope (landing slice — rail vs symphony split)", () => {
+  it("clears the rail when worker + queue are ready even while session-boundary is not-ready", async () => {
+    const readiness = await computeRuntimeReadiness({
+      absurdRuntime: Option.some(fakeHandle),
+      probeQueueReachable: async () => true,
+      sessionBoundaryState: sliceOneRSessionBoundaryState,
+    });
+    // The same live state blocks a symphony spawn (full set)...
+    assert.isTrue(readinessBlockingChecks(readiness).includes("session-boundary"));
+    // ...and clears the client turn rail (its real preconditions only).
+    assert.strictEqual(
+      readinessBlockingChecks(readiness, TURN_RAIL_REQUIRED_READINESS_CHECKS).length,
+      0,
+    );
+  });
+
+  it("still fails the rail closed on its real preconditions", async () => {
+    const readiness = await computeRuntimeReadiness({
+      absurdRuntime: Option.none(),
+      probeQueueReachable: async () => true,
+      sessionBoundaryState: sliceOneRSessionBoundaryState,
+    });
+    const blocking = readinessBlockingChecks(readiness, TURN_RAIL_REQUIRED_READINESS_CHECKS);
+    assert.isTrue(blocking.includes("absurd-worker-layer"));
+    // queue-reachability is `unknown` when the worker is absent — unknown never blocks.
+    assert.isFalse(blocking.includes("queue-reachability"));
+    assert.isFalse(blocking.includes("session-boundary"));
   });
 });
 
