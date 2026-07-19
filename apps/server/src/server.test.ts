@@ -3,6 +3,7 @@ import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "node:crypto";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { AbsurdRuntime, type AbsurdRuntimeHandle } from "@t3tools/absurd-runtime";
 
 import {
   AuthAccessTokenType,
@@ -18,7 +19,7 @@ import {
   ExternalLauncherCommandNotFoundError,
   type OrchestrationThreadShell,
   TerminalNotRunningError,
-  type OrchestrationCommand,
+  OrchestrationCommand,
   type OrchestrationEvent,
   ORCHESTRATION_WS_METHODS,
   type PreviewEvent,
@@ -51,6 +52,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -672,12 +674,44 @@ const buildAppUnderTest = (options?: {
         ),
       ),
       Layer.provide(
-        Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
-          readEvents: () => Stream.empty,
-          dispatch: () => Effect.succeed({ sequence: 0 }),
-          streamDomainEvents: Stream.empty,
-          ...options?.layers?.orchestrationEngine,
-        }),
+        // Landing slice: the ws turn rail requires the AbsurdRuntime service
+        // (readiness guard + spawn). Tests get a transport-faithful fake whose
+        // spawn decodes params.turnCommand and dispatches it into the (mock)
+        // engine — the same contract AbsurdRuntimeInProcessLive wires in
+        // production. Rail tests must also emit thread.turn-start-requested on
+        // their engine's streamDomainEvents so the rail's ack resolves. The
+        // engine mock rides the same pipe argument via provideMerge (pipe's
+        // typed overloads cap at 20 arguments).
+        Layer.effect(
+          AbsurdRuntime,
+          Effect.gen(function* () {
+            const engine = yield* OrchestrationEngine.OrchestrationEngineService;
+            const decodeCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
+            return {
+              app: {
+                spawn: (_task: string, params: { turnCommand: Record<string, unknown> }) =>
+                  Effect.runPromise(
+                    decodeCommand(params.turnCommand).pipe(
+                      Effect.flatMap((command) => engine.dispatch(command)),
+                      Effect.map((result) => ({ taskID: `test-rail-task-${result.sequence}` })),
+                    ),
+                  ),
+                listQueues: () => Promise.resolve([]),
+              },
+              queueName: "t3-absurd-runtime",
+              close: () => Promise.resolve(),
+            } as unknown as AbsurdRuntimeHandle;
+          }),
+        ).pipe(
+          Layer.provideMerge(
+            Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
+              readEvents: () => Stream.empty,
+              dispatch: () => Effect.succeed({ sequence: 0 }),
+              streamDomainEvents: Stream.empty,
+              ...options?.layers?.orchestrationEngine,
+            }),
+          ),
+        ),
       ),
       Layer.provide(
         Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
@@ -6026,6 +6060,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     () =>
       Effect.gen(function* () {
         const dispatchedCommands: Array<OrchestrationCommand> = [];
+        const turnStartAck = yield* Deferred.make<OrchestrationEvent>();
         const bootstrapGitOperations: string[] = [];
         const refreshStatus = vi.fn((_: string) =>
           Effect.succeed({
@@ -6101,11 +6136,20 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             },
             orchestrationEngine: {
               dispatch: (command) =>
-                Effect.sync(() => {
+                Effect.gen(function* () {
                   dispatchedCommands.push(command);
-                  return { sequence: dispatchedCommands.length };
+                  const sequence = dispatchedCommands.length;
+                  if (command.type === "thread.turn.start") {
+                    yield* Deferred.succeed(turnStartAck, {
+                      sequence,
+                      type: "thread.turn-start-requested",
+                      payload: { messageId: command.message.messageId },
+                    } as unknown as OrchestrationEvent);
+                  }
+                  return { sequence };
                 }),
               readEvents: () => Stream.empty,
+              streamDomainEvents: Stream.fromEffect(Deferred.await(turnStartAck)),
             },
             projectSetupScriptRunner: {
               runForThread,
@@ -6213,6 +6257,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("records setup-script failures without aborting bootstrap turn start", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const turnStartAck = yield* Deferred.make<OrchestrationEvent>();
       const createWorktree = vi.fn(
         (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>[0]) =>
           Effect.succeed({
@@ -6245,11 +6290,20 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           },
           orchestrationEngine: {
             dispatch: (command) =>
-              Effect.sync(() => {
+              Effect.gen(function* () {
                 dispatchedCommands.push(command);
-                return { sequence: dispatchedCommands.length };
+                const sequence = dispatchedCommands.length;
+                if (command.type === "thread.turn.start") {
+                  yield* Deferred.succeed(turnStartAck, {
+                    sequence,
+                    type: "thread.turn-start-requested",
+                    payload: { messageId: command.message.messageId },
+                  } as unknown as OrchestrationEvent);
+                }
+                return { sequence };
               }),
             readEvents: () => Stream.empty,
+            streamDomainEvents: Stream.fromEffect(Deferred.await(turnStartAck)),
           },
           projectSetupScriptRunner: {
             runForThread,
@@ -6318,6 +6372,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("does not misattribute setup activity dispatch failures as setup launch failures", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const turnStartAck = yield* Deferred.make<OrchestrationEvent>();
       const createWorktree = vi.fn(
         (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>[0]) =>
           Effect.succeed({
@@ -6365,12 +6420,21 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 }
               }
 
-              return Effect.sync(() => {
+              return Effect.gen(function* () {
                 dispatchedCommands.push(command);
-                return { sequence: dispatchedCommands.length };
+                const sequence = dispatchedCommands.length;
+                if (command.type === "thread.turn.start") {
+                  yield* Deferred.succeed(turnStartAck, {
+                    sequence,
+                    type: "thread.turn-start-requested",
+                    payload: { messageId: command.message.messageId },
+                  } as unknown as OrchestrationEvent);
+                }
+                return { sequence };
               });
             },
             readEvents: () => Stream.empty,
+            streamDomainEvents: Stream.fromEffect(Deferred.await(turnStartAck)),
           },
           projectSetupScriptRunner: {
             runForThread,
