@@ -83,6 +83,12 @@ const { values: args } = parseArgs({
     // Maintenance: reuse an existing import project instead of creating one
     // (recovery reruns would otherwise mint a duplicate project shell).
     "project-id": { type: "string" },
+    // Maintenance: re-import ONE session under a FRESH threadId — recovery for
+    // a burned thread identity (thread.create identity survives deletion, so
+    // the deterministic threadId=sessionId can never be reused). Selection is
+    // narrowed to exactly this session; the resume cursor still carries the
+    // real session uuid, so provider resumption is unaffected.
+    "remap-thread": { type: "string" },
   },
 });
 
@@ -435,7 +441,13 @@ const program = Effect.fn(function* (sessions: ReadonlyArray<ParsedSession>) {
   let imported = 0;
   const receipts: Array<Record<string, unknown>> = [];
   for (const session of sessions) {
-    const threadId = session.sessionId;
+    const threadId =
+      args["remap-thread"] === session.sessionId
+        ? yield* cryptoService.randomUUIDv4
+        : session.sessionId;
+    if (threadId !== session.sessionId) {
+      yield* Effect.log(`[import] remap ${session.sessionId} -> fresh thread ${threadId}`);
+    }
     const turns = toTurns(session.messages);
     const title = (session.summary ?? turns[0]?.user.text ?? "Imported session")
       .replace(/\s+/g, " ")
@@ -541,7 +553,18 @@ const program = Effect.fn(function* (sessions: ReadonlyArray<ParsedSession>) {
 const main = Effect.gen(function* () {
   yield* assertNoLiveServer();
 
-  const sessions = yield* selectSessions();
+  const selected = yield* selectSessions();
+  // Remap recovery narrows the run to exactly the burned session — nothing
+  // else imports, no matter what else the selection window picked up.
+  const sessions = args["remap-thread"]
+    ? selected.filter((session) => session.sessionId === args["remap-thread"])
+    : selected;
+  if (args["remap-thread"] && sessions.length === 0) {
+    logLine(
+      `[import] remap target ${args["remap-thread"]} not in the selection window — ` +
+        `raise --limit (selection is most-recent-first)`,
+    );
+  }
   logLine(
     `[import] selected ${sessions.length} meaningful sessions (limit ${LIMIT}, ` +
       `min user turns ${MIN_USER_TURNS}, profile ${PROFILE})`,
