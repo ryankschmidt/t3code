@@ -8,12 +8,14 @@ import {
   ThreadId,
   TurnId,
   ProviderInstanceId,
+  type ProviderSessionRuntimeStatus,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -24,6 +26,9 @@ import {
   SqlitePersistenceMemory,
 } from "../../persistence/Layers/Sqlite.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
+// ThroughLine: seeds/reads the resume-bookkeeping table directly in the
+// new provider-session-runtime-close tests below.
+import { ProviderSessionRuntimeRepository } from "../../persistence/ProviderSessionRuntime.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import {
@@ -2641,5 +2646,394 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
         },
       ]);
     }),
+  );
+});
+
+// ThroughLine: provider_session_runtime is upstream's resume-bookkeeping
+// table. ProviderService.sendTurn hardcodes status "running" at turn
+// start and nothing upstream ever clears it, so the row was stuck
+// "running" forever after an ordinary completed turn. These tests cover
+// the close-on-terminal fix in applyThreadSessionsProjection.
+it.layer(
+  Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-provider-session-runtime-close-")),
+)("OrchestrationProjectionPipeline", (it) => {
+  const seedProviderSessionRuntimeRow = (
+    threadId: ThreadId,
+    status: ProviderSessionRuntimeStatus,
+    lastSeenAt: string,
+  ) => ({
+    threadId,
+    providerName: "codex",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    adapterKey: "codex",
+    runtimeMode: "full-access" as const,
+    status,
+    lastSeenAt,
+    resumeCursor: { sessionId: "resume-cursor-abc" },
+    runtimePayload: { activeTurnId: null },
+  });
+
+  it.effect(
+    "closes the resume-bookkeeping row (zero running rows) when a turn reaches a terminal thread.session-set",
+    () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const providerSessionRuntimeRepository = yield* ProviderSessionRuntimeRepository;
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = ThreadId.make("thread-runtime-close");
+        const turnId = TurnId.make("turn-runtime-close-1");
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        const startedAt = "2026-01-01T00:00:01.000Z";
+        const settledAt = "2026-01-01T00:00:02.000Z";
+
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make("evt-rc1"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: createdAt,
+          commandId: CommandId.make("cmd-rc1"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-rc1"),
+          metadata: {},
+          payload: {
+            threadId,
+            projectId: ProjectId.make("project-runtime-close"),
+            title: "Runtime close",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+
+        // Seed the row the way ProviderService.sendTurn does at turn
+        // start. That write path is upstream of the projection pipeline
+        // (see the slice's admission receipt), so the test seeds it
+        // directly rather than round-tripping through ProviderService.
+        yield* providerSessionRuntimeRepository.upsert(
+          seedProviderSessionRuntimeRow(threadId, "running", startedAt),
+        );
+
+        yield* eventStore.append({
+          type: "thread.session-set",
+          eventId: EventId.make("evt-rc2"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: startedAt,
+          commandId: CommandId.make("cmd-rc2"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-rc2"),
+          metadata: {},
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status: "running",
+              providerName: "codex",
+              runtimeMode: "full-access",
+              activeTurnId: turnId,
+              lastError: null,
+              updatedAt: startedAt,
+            },
+          },
+        });
+
+        yield* eventStore.append({
+          type: "thread.session-set",
+          eventId: EventId.make("evt-rc3"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: settledAt,
+          commandId: CommandId.make("cmd-rc3"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-rc3"),
+          metadata: {},
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status: "ready",
+              providerName: "codex",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: settledAt,
+            },
+          },
+        });
+
+        yield* projectionPipeline.bootstrap;
+
+        const runningRows = yield* sql<{ readonly count: number }>`
+          SELECT COUNT(*) AS "count"
+          FROM provider_session_runtime
+          WHERE thread_id = ${threadId} AND status = 'running'
+        `;
+        assert.equal(runningRows[0]?.count, 0);
+
+        const runtimeRows = yield* sql<{ readonly status: string }>`
+          SELECT status FROM provider_session_runtime WHERE thread_id = ${threadId}
+        `;
+        assert.deepEqual(runtimeRows, [{ status: "stopped" }]);
+
+        // Status-flip only: read back through the repository's own
+        // codec (rather than the raw JSON column) to confirm
+        // resumeCursor/adapterKey survived the close untouched.
+        const closedRuntime = yield* providerSessionRuntimeRepository.getByThreadId({
+          threadId,
+        });
+        assert.isTrue(Option.isSome(closedRuntime));
+        if (Option.isSome(closedRuntime)) {
+          assert.deepEqual(closedRuntime.value.resumeCursor, { sessionId: "resume-cursor-abc" });
+          assert.equal(closedRuntime.value.adapterKey, "codex");
+        }
+      }),
+  );
+
+  it.effect(
+    "leaves the resume-bookkeeping row untouched when the session status is not terminal",
+    () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const providerSessionRuntimeRepository = yield* ProviderSessionRuntimeRepository;
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = ThreadId.make("thread-runtime-non-terminal");
+        const turnId = TurnId.make("turn-runtime-non-terminal-1");
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        const startedAt = "2026-01-01T00:00:01.000Z";
+
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make("evt-nt1"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: createdAt,
+          commandId: CommandId.make("cmd-nt1"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-nt1"),
+          metadata: {},
+          payload: {
+            threadId,
+            projectId: ProjectId.make("project-runtime-non-terminal"),
+            title: "Runtime non-terminal",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+
+        yield* providerSessionRuntimeRepository.upsert(
+          seedProviderSessionRuntimeRow(threadId, "running", startedAt),
+        );
+
+        yield* eventStore.append({
+          type: "thread.session-set",
+          eventId: EventId.make("evt-nt2"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: startedAt,
+          commandId: CommandId.make("cmd-nt2"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-nt2"),
+          metadata: {},
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status: "running",
+              providerName: "codex",
+              runtimeMode: "full-access",
+              activeTurnId: turnId,
+              lastError: null,
+              updatedAt: startedAt,
+            },
+          },
+        });
+
+        yield* projectionPipeline.bootstrap;
+
+        const runtimeRows = yield* sql<{
+          readonly status: string;
+          readonly lastSeenAt: string;
+        }>`
+          SELECT status, last_seen_at AS "lastSeenAt"
+          FROM provider_session_runtime
+          WHERE thread_id = ${threadId}
+        `;
+        assert.deepEqual(runtimeRows, [{ status: "running", lastSeenAt: startedAt }]);
+
+        const untouchedRuntime = yield* providerSessionRuntimeRepository.getByThreadId({
+          threadId,
+        });
+        assert.isTrue(Option.isSome(untouchedRuntime));
+        if (Option.isSome(untouchedRuntime)) {
+          assert.deepEqual(untouchedRuntime.value.resumeCursor, {
+            sessionId: "resume-cursor-abc",
+          });
+        }
+      }),
+  );
+
+  it.effect("maps an error session status to the error runtime status, not stopped", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const providerSessionRuntimeRepository = yield* ProviderSessionRuntimeRepository;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-runtime-error");
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const startedAt = "2026-01-01T00:00:01.000Z";
+      const erroredAt = "2026-01-01T00:00:02.000Z";
+
+      yield* eventStore.append({
+        type: "thread.created",
+        eventId: EventId.make("evt-err1"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: createdAt,
+        commandId: CommandId.make("cmd-err1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-err1"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-runtime-error"),
+          title: "Runtime error",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
+
+      yield* providerSessionRuntimeRepository.upsert(
+        seedProviderSessionRuntimeRow(threadId, "running", startedAt),
+      );
+
+      yield* eventStore.append({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-err2"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: erroredAt,
+        commandId: CommandId.make("cmd-err2"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-err2"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "error",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: "provider crashed",
+            updatedAt: erroredAt,
+          },
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const runtimeRows = yield* sql<{ readonly status: string }>`
+        SELECT status FROM provider_session_runtime WHERE thread_id = ${threadId}
+      `;
+      assert.deepEqual(runtimeRows, [{ status: "error" }]);
+    }),
+  );
+
+  it.effect(
+    "does not fabricate a resume-bookkeeping row for a thread with no bound provider session",
+    () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = ThreadId.make("thread-runtime-unbound");
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        const settledAt = "2026-01-01T00:00:01.000Z";
+
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make("evt-ub1"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: createdAt,
+          commandId: CommandId.make("cmd-ub1"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-ub1"),
+          metadata: {},
+          payload: {
+            threadId,
+            projectId: ProjectId.make("project-runtime-unbound"),
+            title: "Runtime unbound",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+
+        // No provider_session_runtime row is ever seeded for this thread
+        // — mirrors a thread whose turns never attached a provider
+        // session binding.
+        yield* eventStore.append({
+          type: "thread.session-set",
+          eventId: EventId.make("evt-ub2"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: settledAt,
+          commandId: CommandId.make("cmd-ub2"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-ub2"),
+          metadata: {},
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status: "ready",
+              providerName: "codex",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: settledAt,
+            },
+          },
+        });
+
+        yield* projectionPipeline.bootstrap;
+
+        const runtimeRows = yield* sql<{ readonly count: number }>`
+          SELECT COUNT(*) AS "count"
+          FROM provider_session_runtime
+          WHERE thread_id = ${threadId}
+        `;
+        assert.equal(runtimeRows[0]?.count, 0);
+      }),
   );
 });

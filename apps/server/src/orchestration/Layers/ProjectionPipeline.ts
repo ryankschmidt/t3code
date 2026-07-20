@@ -34,6 +34,10 @@ import {
   ProjectionTurnRepository,
 } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
+// ThroughLine: resume-bookkeeping repository, not part of upstream's
+// Projection* read-model family — see the close-on-terminal block in
+// applyThreadSessionsProjection below.
+import { ProviderSessionRuntimeRepository } from "../../persistence/ProviderSessionRuntime.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layers/ProjectionPendingApprovals.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
@@ -43,6 +47,7 @@ import { ProjectionThreadProposedPlanRepositoryLive } from "../../persistence/La
 import { ProjectionThreadSessionRepositoryLive } from "../../persistence/Layers/ProjectionThreadSessions.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import { ProjectionThreadRepositoryLive } from "../../persistence/Layers/ProjectionThreads.ts";
+import { ProviderSessionRuntimeRepositoryLive } from "../../persistence/Layers/ProviderSessionRuntime.ts";
 import { ServerConfig } from "../../config.ts";
 import {
   OrchestrationProjectionPipeline,
@@ -480,6 +485,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
+    // ThroughLine: needed to close the resume-bookkeeping row on terminal
+    // thread.session-set — see applyThreadSessionsProjection below.
+    const providerSessionRuntimeRepository = yield* ProviderSessionRuntimeRepository;
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -1005,6 +1013,30 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         lastError: event.payload.session.lastError,
         updatedAt: event.payload.session.updatedAt,
       });
+
+      // ThroughLine: provider_session_runtime never receives a terminal
+      // write from the orchestration event stream — ProviderService
+      // .sendTurn hardcodes status "running" at turn start and nothing
+      // upstream clears it, so the resume-bookkeeping row is stuck
+      // "running" after every completed turn. Close it here on the same
+      // terminal signal the turn-settling logic below already uses.
+      // Status-flip only: spreading the existing row preserves
+      // resumeCursor and adapterKey; a thread with no bound row (no
+      // provider session was ever attached) is left untouched, never
+      // fabricated.
+      const settledTurnState = settledTurnStateForSessionStatus(event.payload.session.status);
+      if (settledTurnState !== null) {
+        const existingRuntime = yield* providerSessionRuntimeRepository.getByThreadId({
+          threadId: event.payload.threadId,
+        });
+        if (Option.isSome(existingRuntime)) {
+          yield* providerSessionRuntimeRepository.upsert({
+            ...existingRuntime.value,
+            status: settledTurnState === "error" ? "error" : "stopped",
+            lastSeenAt: event.payload.session.updatedAt,
+          });
+        }
+      }
     });
 
     const applyThreadTurnsProjection: ProjectorDefinition["apply"] = Effect.fn(
@@ -1599,4 +1631,7 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
+  // ThroughLine: see the close-on-terminal block in
+  // applyThreadSessionsProjection above.
+  Layer.provideMerge(ProviderSessionRuntimeRepositoryLive),
 );
