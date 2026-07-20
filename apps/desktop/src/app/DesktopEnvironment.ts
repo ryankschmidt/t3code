@@ -158,8 +158,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
   });
   const displayName = branding.displayName;
   const stateDir = path.join(baseDir, isDevelopment ? "dev" : "userdata");
-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
-  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+  // ThroughLine: own Electron userData identity. Sharing upstream's "t3code" dir made the
+  // single-instance lock (keyed on the userData path) collide with an installed upstream
+  // Nightly — launching ThroughLine quit immediately and focused the other app. Server-side
+  // data in ~/.t3 is unaffected; only renderer-local state re-homes. The legacy name is
+  // deliberately inert (never shipped) so the adopt-in-place migration below cannot grab
+  // the shared upstream dir.
+  const userDataDirName = isDevelopment ? "throughline-dev" : "throughline";
+  const legacyUserDataDirName = isDevelopment ? "ThroughLine (Dev)" : "ThroughLine (Alpha)";
   const resourcesPath = input.resourcesPath;
 
   return DesktopEnvironment.of({
