@@ -30,7 +30,9 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.t3tools.t3code";
+// ThroughLine: fork-owned bundle id. Upstream's com.t3tools.t3code collides with the upstream
+// Nightly installed on the same machine (ambiguous launch-by-bundle + indistinguishable app allowlists).
+const DESKTOP_APP_ID = "com.ryankschmidt.throughline";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -1299,7 +1301,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    artifactName: "ThroughLine-${version}-${arch}.${ext}", // ThroughLine: product identity (artifact filename)
     asarUnpack: [...DESKTOP_ASAR_UNPACK],
     directories: {
       buildResources: "apps/desktop/resources",

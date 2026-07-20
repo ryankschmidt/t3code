@@ -76,7 +76,9 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "T3 Code";
+// ThroughLine: product identity — this base name feeds the branding IPC and cascades to the
+// renderer header, window title, and About surfaces. userData dir names below stay upstream.
+const APP_BASE_NAME = "ThroughLine";
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
