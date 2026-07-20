@@ -34,3 +34,11 @@ export type {
 } from "./thread-driver.ts";
 export { makeInProcessTransport } from "./in-process-transport.ts";
 export type { InProcessTransportDeps, ReplayEvent } from "./in-process-transport.ts";
+// Slice 1S (design: Slice-1S-Session-Boundary-Design.md,
+// symphony-typescript-port) ruling #4 — dispatcher-authorized minimal barrel
+// addition: apps/server needs the queue name to rebind the symphony spawn +
+// taskStatus call sites (D4). Its sibling AGENT_QUEUE is intentionally NOT
+// barrel-exported (agent-queue.ts is a same-package-only consumer today);
+// SYMPHONY_QUEUE differs only because a different package (apps/server)
+// genuinely needs it.
+export { SYMPHONY_QUEUE } from "./symphony-queue.ts";

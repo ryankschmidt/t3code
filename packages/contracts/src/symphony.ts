@@ -12,7 +12,11 @@
  * Ryan's routing explicitly. The transport-level default model is unreachable
  * from this rail.
  */
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
+import * as SchemaIssue from "effect/SchemaIssue";
 
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
@@ -48,7 +52,7 @@ export function isRoutedSymphonyModel(model: string): boolean {
   );
 }
 
-export const SymphonySpawnThreadRunInput = Schema.Struct({
+const SymphonySpawnThreadRunFields = Schema.Struct({
   /** The user prompt / instruction for the turn. */
   prompt: TrimmedNonEmptyString,
   /** REQUIRED model id (no default). Rejected if absent or off routing table. */
@@ -58,6 +62,59 @@ export const SymphonySpawnThreadRunInput = Schema.Struct({
   /** Optional caller correlation id, echoed only in logs/traces. */
   operationId: Schema.optional(TrimmedNonEmptyString),
 });
+
+/** The only keys a symphony spawn request may carry (Slice 1S D1). */
+const SYMPHONY_SPAWN_ALLOWED_KEYS = new Set(
+  Object.keys(SymphonySpawnThreadRunFields.fields),
+);
+
+/**
+ * Fresh-thread-only, structurally enforced (Slice 1S D1). `effect`'s
+ * `onExcessProperty` is a decode-CALL option (default `"ignore"`, confirmed in
+ * `effect/src/SchemaAST.ts`) — it is never a property of the schema value
+ * itself, and the WsRpcGroup RPC binding
+ * (`effect/src/unstable/rpc/RpcServer.ts:632`,
+ * `Schema.decodeUnknownEffect(Schema.toCodecJson(rpc.payloadSchema))`) decodes
+ * with ZERO ParseOptions and no per-Rpc override surface — so a bare
+ * `Schema.Struct` here would silently accept and strip an excess `threadId`
+ * on the real spawn path regardless of any caller-side decode option. The fix
+ * has to live IN the schema value: reject any key outside the declared set
+ * before the inner struct's own (permissive-by-default) decode ever runs, so
+ * every decoder that binds this schema — the RPC server, this file's own
+ * tests, anything else — inherits the same rejection for free. A valid
+ * payload (only `prompt`/`model`/`holdMs`/`operationId`) passes through this
+ * check untouched and then decodes exactly as it did before this change —
+ * this only ever REJECTS extra keys, it never alters accepted ones.
+ */
+export const SymphonySpawnThreadRunInput = Schema.Unknown.pipe(
+  Schema.decodeTo(SymphonySpawnThreadRunFields, {
+    decode: SchemaGetter.transformOrFail((input: unknown) => {
+      // Cast target: the inner struct's own decode (run automatically as the
+      // second pass of `decodeTo`) does the REAL field-by-field validation
+      // (trims, non-empty, non-negative-int checks). This getter's only job
+      // is the excess-key check below; the cast just satisfies the pipeline
+      // shape, it performs no validation of its own.
+      type Encoded = typeof SymphonySpawnThreadRunFields.Encoded;
+      if (typeof input !== "object" || input === null || Array.isArray(input)) {
+        // Not a plain object — let the inner struct's own decode produce its
+        // normal "expected an object" error; this check only polices keys.
+        return Effect.succeed(input as Encoded);
+      }
+      const excessKeys = Object.keys(input).filter(
+        (key) => !SYMPHONY_SPAWN_ALLOWED_KEYS.has(key),
+      );
+      if (excessKeys.length > 0) {
+        return Effect.fail(
+          new SchemaIssue.InvalidValue(Option.some(input), {
+            message: `Unexpected key(s) on a symphony spawn request: ${excessKeys.join(", ")} (fresh-thread-only — a campaign spawn cannot name an existing thread)`,
+          }),
+        );
+      }
+      return Effect.succeed(input as Encoded);
+    }),
+    encode: SchemaGetter.passthrough(),
+  }),
+);
 export type SymphonySpawnThreadRunInput = typeof SymphonySpawnThreadRunInput.Type;
 
 export const SymphonySpawnThreadRunOutput = Schema.Struct({

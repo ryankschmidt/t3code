@@ -49,6 +49,7 @@ import {
   AssetWorkspaceContextNotFoundError,
   AssetWorkspaceContextResolutionError,
   EnvironmentAuthorizationError,
+  ProjectId,
   ThreadId,
   type TerminalAttachStreamEvent,
   type TerminalError,
@@ -61,7 +62,7 @@ import {
   SymphonyTaskStatusError,
   RuntimeNotReady,
 } from "@t3tools/contracts";
-import { AbsurdRuntime, THREAD_RUN_TASK } from "@t3tools/absurd-runtime";
+import { AbsurdRuntime, SYMPHONY_QUEUE, THREAD_RUN_TASK } from "@t3tools/absurd-runtime";
 import { clamp } from "effect/Number";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
@@ -79,8 +80,8 @@ import {
 import {
   computeRuntimeReadiness,
   makeQueueReachabilityProbe,
+  makeSessionBoundaryProbe,
   readinessBlockingChecks,
-  sliceOneRSessionBoundaryState,
   TURN_RAIL_REQUIRED_READINESS_CHECKS,
   type RuntimeReadinessDeps,
 } from "./orchestration/runtimeReadiness.ts";
@@ -416,13 +417,59 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
       // TQ-039 slice 1: optionally resolve the server-owned Absurd worker. When
       // absent, symphony spawn/status fail closed with a typed error (NC1).
       const absurdRuntimeOption = yield* Effect.serviceOption(AbsurdRuntime);
-      // TQ-039 slice 1R: readiness deps consumed by symphony.runtimeReady and by
-      // the spawn fail-closed guard. session-boundary reports the protected-lane
-      // state as not-ready (visibility before repair — not repaired here).
+
+      // Slice 1S (design: Slice-1S-Session-Boundary-Design.md,
+      // symphony-typescript-port) ruling #2 — Effect<->Promise bridge, same
+      // pattern AbsurdRuntimeInProcess.ts already uses for the ClaudeAdapter
+      // seam: capture the live context once so a plain-async dep
+      // (`projectExists`) can run an Effect-typed service call
+      // (ProjectionSnapshotQuery) without runtimeReadiness.ts needing to know
+      // about Effect services at all — it only sees a `(projectId) =>
+      // Promise<boolean>` function.
+      const runtimeContext = yield* Effect.context<never>();
+      const runPromise = Effect.runPromiseWith(runtimeContext);
+
+      // The dedicated symphony-queue handle (Slice 1S ruling #3 — additive
+      // AbsurdRuntimeHandle.symphonyQueue field). Option.none when the runtime
+      // layer never initialized, or when it initialized before the symphony
+      // worker existed — either way the probe below reports not-ready.
+      const symphonyQueueHandle = absurdRuntimeOption.pipe(
+        Option.flatMap((handle) => Option.fromUndefinedOr(handle.symphonyQueue)),
+      );
+
+      // D5's project-resolution leg: decode the raw env value into a real
+      // ProjectId and do one bounded projection-snapshot lookup. Never
+      // throws — a bad/unresolvable id resolves `false`, matching the queue
+      // probe's ≤2s bounded-IO budget.
+      const resolveSymphonyProject = (rawProjectId: string): Promise<boolean> => {
+        let projectId: ProjectId;
+        try {
+          projectId = Schema.decodeUnknownSync(ProjectId)(rawProjectId);
+        } catch {
+          return Promise.resolve(false);
+        }
+        return runPromise(
+          projectionSnapshotQuery.getProjectShellById(projectId).pipe(
+            Effect.map(Option.isSome),
+            Effect.timeout("2 seconds"),
+            Effect.orElseSucceed(() => false),
+          ),
+        );
+      };
+
+      // TQ-039 slice 1R / Slice 1S: readiness deps consumed by
+      // symphony.runtimeReady and by the spawn fail-closed guard.
+      // session-boundary now reports a genuinely computed state (D5) instead
+      // of the Slice 1R visibility-only placeholder.
       const readinessDeps: RuntimeReadinessDeps = {
         absurdRuntime: absurdRuntimeOption,
         probeQueueReachable: makeQueueReachabilityProbe(),
-        sessionBoundaryState: sliceOneRSessionBoundaryState,
+        sessionBoundaryState: makeSessionBoundaryProbe({
+          symphonyQueueHandle,
+          probeSymphonyQueueReachable: makeQueueReachabilityProbe(),
+          symphonyProjectId: process.env["T3_SYMPHONY_PROJECT_ID"] ?? "",
+          projectExists: resolveSymphonyProject,
+        }),
       };
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
@@ -1106,7 +1153,10 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
                   runtime.app.spawn(
                     THREAD_RUN_TASK,
                     { prompt: request.prompt, model: request.model, holdMs: request.holdMs },
-                    { queue: runtime.queueName },
+                    // D4: symphony spawns target the dedicated lane, not the
+                    // interactive rail's queue — this IS the lane separation
+                    // the session-boundary probe verifies.
+                    { queue: SYMPHONY_QUEUE },
                   ),
                 catch: (cause) =>
                   new SymphonySpawnError({
@@ -1130,7 +1180,10 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
             Effect.gen(function* () {
               const runtime = yield* resolveSymphonyRuntime(absurdRuntimeOption);
               const snapshot = yield* Effect.tryPromise({
-                try: () => runtime.app.fetchTaskResult(input.taskID, { queue: runtime.queueName }),
+                // D4: status lookups are queue-scoped — must match the
+                // symphony spawn's queue or every campaign task is invisible
+                // to symphony.taskStatus.
+                try: () => runtime.app.fetchTaskResult(input.taskID, { queue: SYMPHONY_QUEUE }),
                 catch: (cause) =>
                   new SymphonyTaskStatusError({
                     message: "Failed to read symphony task status",

@@ -24,12 +24,14 @@ export interface RuntimeReadinessDeps {
   /** Bounded queue-reachability probe. The real one lists queues under a timeout. */
   readonly probeQueueReachable: (handle: AbsurdRuntimeHandle) => Promise<boolean>;
   /**
-   * Session-boundary readiness signal. Slice 1R (visibility before repair)
-   * reports `not-ready`: the protected-lane session boundary is unverified and is
-   * NOT repaired here. Injectable so tests can exercise every state; the server
-   * binds the honest current signal WITHOUT adding any protected-surface code.
+   * Session-boundary readiness signal. Slice 1S (design:
+   * Slice-1S-Session-Boundary-Design.md, symphony-typescript-port) —
+   * implemented: a real, bounded, dependency-injected check (see
+   * `makeSessionBoundaryProbe` below), same injectability pattern as
+   * `probeQueueReachable` above — async so it can do bounded IO. Injectable so
+   * tests can exercise every state without a live server.
    */
-  readonly sessionBoundaryState: () => SymphonyReadinessState;
+  readonly sessionBoundaryState: () => Promise<SymphonyReadinessState>;
 }
 
 /**
@@ -66,7 +68,7 @@ export async function computeRuntimeReadiness(
   }
 
   // session-boundary: NAME the protected-lane state; never repair or detail it.
-  const sb = deps.sessionBoundaryState();
+  const sb = await deps.sessionBoundaryState();
   checks.push(
     sb === "ready"
       ? { name: "session-boundary", state: "ready" }
@@ -116,16 +118,65 @@ export function readinessBlockingChecks(
 }
 
 /**
- * Slice 1R session-boundary signal: the protected-lane boundary is unverified
- * and is NOT repaired in this slice, so it is honestly `not-ready`. Slice 1S
- * replaces this with a real verification probe — UNBLOCKED (Ryan, 2026-07-20)
- * and fully designed; implement from the settled design at
- * vault/01_Projects/workbench/orchestrators/symphony-typescript-port/
- * Slice-1S-Session-Boundary-Design.md (lane separation via a dedicated
- * t3-symphony queue + a real two-leg probe). Kept as a named function so the
- * reason is explicit and the swap point is obvious.
+ * Slice 1S (design: Slice-1S-Session-Boundary-Design.md,
+ * symphony-typescript-port) — implemented. Injected deps for the real
+ * session-boundary probe: a queue-reachability leg (reusing
+ * `makeQueueReachabilityProbe`, pointed at the dedicated symphony-queue
+ * handle instead of the interactive rail's) and a project-resolution leg.
+ * `projectExists` is a plain-async function so this file stays free of any
+ * server-specific Effect service dependency — the caller (ws.ts) bridges the
+ * Effect-typed `ProjectionSnapshotQuery` lookup to a plain Promise at the
+ * wiring site (the same `Effect.runPromiseWith(runtimeContext)` pattern
+ * `AbsurdRuntimeInProcess.ts` already uses) before injecting it here.
  */
-export const sliceOneRSessionBoundaryState = (): SymphonyReadinessState => "not-ready";
+export interface SessionBoundaryProbeDeps {
+  /** The dedicated symphony-queue worker handle, if the runtime initialized it. */
+  readonly symphonyQueueHandle: Option.Option<AbsurdRuntimeHandle>;
+  /** Bounded queue-reachability probe (same shape/budget as `probeQueueReachable`). */
+  readonly probeSymphonyQueueReachable: (handle: AbsurdRuntimeHandle) => Promise<boolean>;
+  /** Raw `T3_SYMPHONY_PROJECT_ID` env value — may be empty or unset. */
+  readonly symphonyProjectId: string;
+  /**
+   * Plain-async, already-bridged project-existence lookup. Never throws —
+   * resolves `false` on any lookup failure so the probe stays bounded and
+   * honest under the "never throws" budget below.
+   */
+  readonly projectExists: (projectId: string) => Promise<boolean>;
+}
+
+/**
+ * The real session-boundary check (D5): `ready` iff the symphony queue
+ * worker is reachable AND `T3_SYMPHONY_PROJECT_ID` is non-empty and resolves
+ * to an existing project; `not-ready` otherwise (the caller maps this to
+ * category `protected-lane` — see `computeRuntimeReadiness` above). Probe
+ * budget matches the existing queue probe: bounded IO, never throws.
+ */
+export function makeSessionBoundaryProbe(
+  deps: SessionBoundaryProbeDeps,
+): () => Promise<SymphonyReadinessState> {
+  return async () => {
+    if (Option.isNone(deps.symphonyQueueHandle)) return "not-ready";
+
+    let queueReachable = false;
+    try {
+      queueReachable = await deps.probeSymphonyQueueReachable(deps.symphonyQueueHandle.value);
+    } catch {
+      queueReachable = false;
+    }
+    if (!queueReachable) return "not-ready";
+
+    const projectId = deps.symphonyProjectId.trim();
+    if (projectId.length === 0) return "not-ready";
+
+    let projectResolved = false;
+    try {
+      projectResolved = await deps.projectExists(projectId);
+    } catch {
+      projectResolved = false;
+    }
+    return projectResolved ? "ready" : "not-ready";
+  };
+}
 
 /**
  * Bounded, non-protected queue-reachability probe: list queues, resolve true on
