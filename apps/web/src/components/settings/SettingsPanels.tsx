@@ -1137,14 +1137,19 @@ export function ProviderSettingsPanel() {
     const driver = providerSettings.provider;
     const defaultInstanceId = defaultInstanceIdForDriver(driver);
     const explicitInstance = settings.providerInstances?.[defaultInstanceId];
-    const legacyConfig = legacyProviders[providerSettings.provider]!;
-    const defaultLegacyConfig = defaultLegacyProviders[providerSettings.provider]!;
+    // ThroughLine: fork-added drivers (pi) have no entry in the legacy
+    // `providers` defaults map, so the previous non-null assertions crashed
+    // the whole Providers panel for any profile without an explicit instance
+    // entry ("Cannot read properties of undefined (reading 'enabled')").
+    // Post-legacy drivers synthesize an enabled default with an empty config.
+    const legacyConfig = legacyProviders[providerSettings.provider];
+    const defaultLegacyConfig = defaultLegacyProviders[providerSettings.provider];
     const effectiveInstance: ProviderInstanceConfig =
       explicitInstance ??
       ({
         driver,
-        enabled: legacyConfig.enabled,
-        config: legacyConfig,
+        enabled: legacyConfig?.enabled ?? true,
+        config: legacyConfig ?? {},
       } satisfies ProviderInstanceConfig);
     const isDirty =
       explicitInstance !== undefined || !Equal.equals(legacyConfig, defaultLegacyConfig);
