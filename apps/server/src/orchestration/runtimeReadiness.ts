@@ -118,8 +118,12 @@ export function readinessBlockingChecks(
 /**
  * Slice 1R session-boundary signal: the protected-lane boundary is unverified
  * and is NOT repaired in this slice, so it is honestly `not-ready`. Slice 1S
- * (Ryan-gated repair) replaces this with a real verification probe. Kept as a
- * named function so the reason is explicit and the swap point is obvious.
+ * replaces this with a real verification probe — UNBLOCKED (Ryan, 2026-07-20)
+ * and fully designed; implement from the settled design at
+ * vault/01_Projects/workbench/orchestrators/symphony-typescript-port/
+ * Slice-1S-Session-Boundary-Design.md (lane separation via a dedicated
+ * t3-symphony queue + a real two-leg probe). Kept as a named function so the
+ * reason is explicit and the swap point is obvious.
  */
 export const sliceOneRSessionBoundaryState = (): SymphonyReadinessState => "not-ready";
 
