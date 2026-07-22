@@ -59,6 +59,7 @@ import {
   WsRpcGroup,
   SYMPHONY_WS_METHODS,
   SymphonySpawnError,
+  SymphonyRuntimeUnavailableError,
   SymphonyTaskStatusError,
   RuntimeNotReady,
 } from "@t3tools/contracts";
@@ -1148,9 +1149,27 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
               }
               const runtime = yield* resolveSymphonyRuntime(absurdRuntimeOption);
               yield* assertRoutedSymphonyModel(request.model);
+              // ThroughLine: slice-7 row-4 live-proof fix (2026-07-22). The
+              // spawn must go through the SYMPHONY worker's own app: the SDK
+              // refuses `spawn(task, …, { queue })` when the task is
+              // registered on the calling app for a different queue
+              // (absurd-sdk dist/index.js queue guard), and on the rail app
+              // `t3.thread-run` is registered for the rail queue — so the
+              // previous `runtime.app.spawn(…, { queue: SYMPHONY_QUEUE })`
+              // threw on every live call. `symphonyQueue.app` is the
+              // dedicated-lane app (ruling #3 handle field) whose registered
+              // queue IS t3-symphony; the explicit queue option is kept and
+              // now passes the guard (D4's queue-scoped intent, unchanged).
+              const symphonyApp = runtime.symphonyQueue?.app;
+              if (symphonyApp === undefined) {
+                return yield* new SymphonyRuntimeUnavailableError({
+                  message:
+                    "Symphony queue worker is unavailable; symphony spawn failed closed.",
+                });
+              }
               const spawned = yield* Effect.tryPromise({
                 try: () =>
-                  runtime.app.spawn(
+                  symphonyApp.spawn(
                     THREAD_RUN_TASK,
                     { prompt: request.prompt, model: request.model, holdMs: request.holdMs },
                     // D4: symphony spawns target the dedicated lane, not the
