@@ -79,15 +79,59 @@ export type SupervisedWorkerHandle<A extends SupervisableApp> = {
 const INFRA_ERROR_PATTERN =
   /connection terminated|connection ended|connection closed|terminating connection|econnrefused|econnreset|epipe|enotfound|etimedout|timeout exceeded when trying to connect|client has encountered a connection error|the database system is (?:starting|shutting) up/i;
 
+function walkErrorGraph(error: unknown, visit: (value: unknown) => boolean): boolean {
+  const pending: unknown[] = [error];
+  const seen = new Set<unknown>();
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (current === null || current === undefined || seen.has(current)) continue;
+    seen.add(current);
+    if (visit(current)) return true;
+    if (typeof current !== "object") continue;
+    const record = current as {
+      readonly cause?: unknown;
+      readonly errors?: unknown;
+    };
+    if (record.cause !== undefined) pending.push(record.cause);
+    if (Array.isArray(record.errors)) pending.push(...record.errors);
+  }
+  return false;
+}
+
+function infraSignal(error: unknown): string | null {
+  let signal: string | null = null;
+  walkErrorGraph(error, (value) => {
+    const candidates =
+      typeof value === "string"
+        ? [value]
+        : typeof value === "object" && value !== null
+          ? [
+              (value as { readonly message?: unknown }).message,
+              (value as { readonly code?: unknown }).code,
+            ].filter((candidate): candidate is string => typeof candidate === "string")
+          : [];
+    for (const candidate of candidates) {
+      const match = candidate.match(INFRA_ERROR_PATTERN);
+      if (match) {
+        signal = match[0].toUpperCase();
+        return true;
+      }
+    }
+    return false;
+  });
+  return signal;
+}
+
 /** Connection-class (infra) error vs task-execution error. Exported for checks. */
 export function isInfraConnectionError(error: unknown): boolean {
-  if (error instanceof Error) {
-    if (INFRA_ERROR_PATTERN.test(error.message)) return true;
-    const cause = (error as { cause?: unknown }).cause;
-    if (cause instanceof Error && INFRA_ERROR_PATTERN.test(cause.message)) return true;
-    return false;
-  }
-  return typeof error === "string" && INFRA_ERROR_PATTERN.test(error);
+  return infraSignal(error) !== null;
+}
+
+function describeWorkerError(error: Error): string {
+  const message = error.message.trim();
+  if (message.length > 0) return message;
+  const signal = infraSignal(error);
+  return signal ? `${error.name || "Error"} (${signal})` : error.name || "Error";
 }
 
 const defaultSleep = (ms: number): Promise<void> =>
@@ -119,7 +163,9 @@ export function startSupervisedWorker<A extends SupervisableApp>(
   let lastInfraErrorAt = 0;
 
   const onWorkerError = (error: Error): void => {
-    log(`[${options.label}] worker error (generation ${generation}): ${error.message}`);
+    log(
+      `[${options.label}] worker error (generation ${generation}): ${describeWorkerError(error)}`,
+    );
     if (closed || !isInfraConnectionError(error)) {
       streak = 0;
       return;
@@ -171,7 +217,9 @@ export function startSupervisedWorker<A extends SupervisableApp>(
         streak = 0;
         lastInfraErrorAt = 0;
         await startGeneration();
-        log(`[${options.label}] recovered: generation ${generation} worker started on a fresh pool`);
+        log(
+          `[${options.label}] recovered: generation ${generation} worker started on a fresh pool`,
+        );
         recreating = false;
         return;
       } catch (error) {

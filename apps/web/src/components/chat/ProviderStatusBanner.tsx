@@ -1,4 +1,4 @@
-import { type ServerProvider } from "@t3tools/contracts";
+import { type ServerProvider, type SymphonyRuntimeReadyOutput } from "@t3tools/contracts";
 import { memo } from "react";
 import { InfoIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
@@ -7,31 +7,55 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   status,
+  runtimeReadiness,
 }: {
   status: ServerProvider | null;
+  runtimeReadiness?: SymphonyRuntimeReadyOutput | null;
 }) {
-  if (!status || status.status === "ready" || status.status === "disabled") {
+  const turnRailBlockingChecks =
+    status?.status === "disabled"
+      ? []
+      : (runtimeReadiness?.checks
+          .filter(
+            (check) =>
+              (check.name === "absurd-worker-layer" || check.name === "queue-reachability") &&
+              check.state !== "ready",
+          )
+          .map((check) => check.name) ?? []);
+  const runtimeNotReady = turnRailBlockingChecks.length > 0;
+
+  if ((!status || status.status === "ready" || status.status === "disabled") && !runtimeNotReady) {
     return null;
   }
 
-  const providerName = status.displayName?.trim() || formatProviderDriverKindLabel(status.driver);
-  const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
-  const title = isUnauthenticated
-    ? `${providerName} is unauthenticated`
-    : `${providerName} provider status`;
-  const message = isUnauthenticated
+  const providerName = status
+    ? status.displayName?.trim() || formatProviderDriverKindLabel(status.driver)
+    : "Selected provider";
+  const isUnauthenticated = status?.status === "error" && status.auth.status === "unauthenticated";
+  const title = runtimeNotReady
+    ? "Message execution unavailable"
+    : isUnauthenticated
+      ? `${providerName} is unauthenticated`
+      : `${providerName} provider status`;
+  const providerIssueMessage = isUnauthenticated
     ? "Sign in via the CLI to authenticate again."
-    : (status.message ??
-      (status.status === "error"
+    : (status?.message ??
+      (status?.status === "error"
         ? `${providerName} provider is unavailable.`
         : `${providerName} provider has limited availability.`));
+  const message = runtimeNotReady
+    ? status?.status === "ready"
+      ? `${providerName} is reachable, but the durable task runtime is not ready: ${turnRailBlockingChecks.join(", ")}.`
+      : `${providerIssueMessage} The durable task runtime is also not ready: ${turnRailBlockingChecks.join(", ")}.`
+    : providerIssueMessage;
 
   return (
     <div className="mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">
       <div
+        data-runtime-readiness={runtimeNotReady ? "not-ready" : "ready"}
         className={cn(
           "inline-flex items-center gap-3 rounded-xl border px-3.5 py-3 text-card-foreground text-sm",
-          status.status === "warning"
+          !runtimeNotReady && status?.status === "warning"
             ? "border-warning/32 bg-warning/4 [&_svg]:text-warning"
             : "border-destructive/32 bg-destructive/4 text-destructive-foreground [&_svg]:text-destructive",
         )}

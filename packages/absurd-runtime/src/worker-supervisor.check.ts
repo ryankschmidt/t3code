@@ -19,12 +19,10 @@ import {
 type FakeApp = SupervisableApp & {
   id: number;
   closed: boolean;
-  emitError: (message: string) => void;
+  emitError: (error: Error | string) => void;
 };
 
-function makeFakeAppFactory(behavior?: {
-  failStartForAppIds?: ReadonlyArray<number>;
-}): {
+function makeFakeAppFactory(behavior?: { failStartForAppIds?: ReadonlyArray<number> }): {
   apps: FakeApp[];
   createApp: () => FakeApp;
 } {
@@ -35,7 +33,8 @@ function makeFakeAppFactory(behavior?: {
     const app: FakeApp = {
       id,
       closed: false,
-      emitError: (message: string) => onError?.(new Error(message)),
+      emitError: (error: Error | string) =>
+        onError?.(typeof error === "string" ? new Error(error) : error),
       startWorker: async (options) => {
         if (behavior?.failStartForAppIds?.includes(id)) {
           throw new Error("Connection terminated unexpectedly");
@@ -54,10 +53,13 @@ function makeFakeAppFactory(behavior?: {
 }
 
 /** Deterministic harness: manual clock, instant sleep, captured logs. */
-function makeHarness(factory: ReturnType<typeof makeFakeAppFactory>, opts?: {
-  registered?: number[];
-  prepareQueueCalls?: number[];
-}) {
+function makeHarness(
+  factory: ReturnType<typeof makeFakeAppFactory>,
+  opts?: {
+    registered?: number[];
+    prepareQueueCalls?: number[];
+  },
+) {
   let clock = 0;
   const logs: string[] = [];
   const handle = startSupervisedWorker({
@@ -111,9 +113,37 @@ const checks: Array<[string, () => Promise<void>]> = [
         isInfraConnectionError(new Error("wrapped", { cause: new Error("Connection terminated") })),
         true,
       );
+      assert.equal(
+        isInfraConnectionError(
+          new AggregateError([new Error("connect ECONNREFUSED 127.0.0.1:5432")]),
+        ),
+        true,
+      );
       assert.equal(isInfraConnectionError(new Error("injected first-attempt failure")), false);
       assert.equal(isInfraConnectionError(new Error("task handler threw")), false);
       assert.equal(isInfraConnectionError(null), false);
+    },
+  ],
+  [
+    "blank AggregateError connection failures log a safe class and trigger recovery",
+    async () => {
+      const factory = makeFakeAppFactory();
+      const h = makeHarness(factory);
+      await settle();
+      for (let i = 0; i < 3; i++) {
+        factory.apps[0]!.emitError(
+          new AggregateError([new Error("connect ECONNREFUSED 127.0.0.1:5432")]),
+        );
+        h.tick(250);
+      }
+      await settle();
+      await settle();
+      assert.equal(h.handle.generation(), 2, "aggregate connection errors must recreate the pool");
+      assert.ok(
+        h.logs.some((line) => line.includes("AggregateError") && line.includes("ECONNREFUSED")),
+        `expected a non-blank safe aggregate error class, got: ${h.logs.join(" | ")}`,
+      );
+      await h.handle.close();
     },
   ],
   [
