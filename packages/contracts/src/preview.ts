@@ -9,13 +9,138 @@
  * @module Preview
  */
 import { Schema } from "effect";
-import { ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-const Url = TrimmedNonEmptyString.check(Schema.isMaxLength(2048));
+export const PREVIEW_URL_MAX_LENGTH = 2_048;
+export const CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS = 32;
+
+const Url = TrimmedNonEmptyString.check(Schema.isMaxLength(PREVIEW_URL_MAX_LENGTH));
+
+export const ConfiguredLocalServerUrls = Schema.Array(Url).check(
+  Schema.isMaxLength(CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS),
+);
 const Title = Schema.String.check(Schema.isMaxLength(512));
 
 export const PreviewTabId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
 export type PreviewTabId = typeof PreviewTabId.Type;
+
+export const PREVIEW_VIEWPORT_MIN_DIMENSION = 240;
+export const PREVIEW_VIEWPORT_MAX_DIMENSION = 3840;
+export const PREVIEW_VIEWPORT_MAX_AREA = 3840 * 2160;
+
+const PreviewViewportDimension = Schema.Int.check(
+  Schema.isBetween({
+    minimum: PREVIEW_VIEWPORT_MIN_DIMENSION,
+    maximum: PREVIEW_VIEWPORT_MAX_DIMENSION,
+  }),
+);
+
+const viewportAreaFilter = Schema.makeFilter(
+  ({ width, height }: { readonly width: number; readonly height: number }) =>
+    width * height <= PREVIEW_VIEWPORT_MAX_AREA ||
+    `Viewport area must not exceed ${PREVIEW_VIEWPORT_MAX_AREA} pixels.`,
+);
+
+export const PreviewViewportSize = Schema.Struct({
+  width: PreviewViewportDimension,
+  height: PreviewViewportDimension,
+}).check(viewportAreaFilter);
+export type PreviewViewportSize = typeof PreviewViewportSize.Type;
+
+/**
+ * The page's measured viewport can be smaller than the minimum selectable
+ * fixed size while fill mode follows a narrow panel. Keep measurement
+ * validation separate from the stricter user-selectable size constraints.
+ */
+export const PreviewRenderedViewportSize = Schema.Struct({
+  width: Schema.Int.check(Schema.isGreaterThan(0)),
+  height: Schema.Int.check(Schema.isGreaterThan(0)),
+});
+export type PreviewRenderedViewportSize = typeof PreviewRenderedViewportSize.Type;
+
+export const PREVIEW_VIEWPORT_PRESET_IDS = [
+  "iphone-se",
+  "iphone-xr",
+  "iphone-12-pro",
+  "iphone-14-pro-max",
+  "pixel-7",
+  "samsung-galaxy-s8-plus",
+  "samsung-galaxy-s20-ultra",
+  "ipad-mini",
+  "ipad-air",
+  "ipad-pro",
+  "surface-pro-7",
+  "surface-duo",
+  "galaxy-z-fold-5",
+  "asus-zenbook-fold",
+  "samsung-galaxy-a51-71",
+  "nest-hub",
+  "nest-hub-max",
+] as const;
+
+export const PreviewViewportPresetId = Schema.Literals(PREVIEW_VIEWPORT_PRESET_IDS);
+export type PreviewViewportPresetId = typeof PreviewViewportPresetId.Type;
+
+/**
+ * Preset IDs shipped before the Chrome-compatible catalog. Existing sessions
+ * can still reconnect with these values, but new resize requests only expose
+ * PREVIEW_VIEWPORT_PRESET_IDS.
+ */
+const LEGACY_PREVIEW_VIEWPORT_PRESET_IDS = [
+  "desktop-1920x1080",
+  "desktop-1440x900",
+  "laptop-1366x768",
+  "laptop-1280x800",
+  "ipad-pro-11",
+  "iphone-15-pro",
+  "pixel-8",
+  "galaxy-s24",
+] as const;
+
+const StoredPreviewViewportPresetId = Schema.Literals([
+  ...PREVIEW_VIEWPORT_PRESET_IDS,
+  ...LEGACY_PREVIEW_VIEWPORT_PRESET_IDS,
+]);
+
+export const PreviewViewportSetting = Schema.Union([
+  Schema.TaggedStruct("fill", {}),
+  Schema.TaggedStruct("freeform", {
+    ...PreviewViewportSize.fields,
+  }).check(viewportAreaFilter),
+  Schema.TaggedStruct("preset", {
+    ...PreviewViewportSize.fields,
+    presetId: StoredPreviewViewportPresetId,
+  }).check(viewportAreaFilter),
+]);
+export type PreviewViewportSetting = typeof PreviewViewportSetting.Type;
+
+export const FILL_PREVIEW_VIEWPORT = {
+  _tag: "fill",
+} as const satisfies PreviewViewportSetting;
+
+/**
+ * Discrete zoom levels mirroring Chrome's preset ladder. Zoom is applied by the
+ * desktop main process to the Chromium guest, but the ladder lives here so the
+ * settings UI can offer exactly the steps the zoom controls step through.
+ */
+export const PREVIEW_ZOOM_LEVELS = [
+  0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0,
+] as const;
+
+export const PreviewZoomFactor = Schema.Literals(PREVIEW_ZOOM_LEVELS);
+export type PreviewZoomFactor = typeof PreviewZoomFactor.Type;
+
+export const DEFAULT_PREVIEW_ZOOM_FACTOR: PreviewZoomFactor = 1.0;
+
+/**
+ * Preferred `prefers-color-scheme` for preview guests. `system` clears the
+ * emulation override so the guest follows the OS. Structurally identical to
+ * `DesktopPreviewColorScheme`, which is the IPC-layer spelling of the same set.
+ */
+export const PreviewAppearancePreference = Schema.Literals(["system", "light", "dark"]);
+export type PreviewAppearancePreference = typeof PreviewAppearancePreference.Type;
+
+export const DEFAULT_PREVIEW_APPEARANCE: PreviewAppearancePreference = "system";
 
 export const PreviewNavStatus = Schema.Union([
   Schema.TaggedStruct("Idle", {}),
@@ -42,6 +167,8 @@ export const PreviewSessionSnapshot = Schema.Struct({
   navStatus: PreviewNavStatus,
   canGoBack: Schema.Boolean,
   canGoForward: Schema.Boolean,
+  /** Missing snapshots from older servers are treated as fill-panel mode. */
+  viewport: Schema.optional(PreviewViewportSetting),
   updatedAt: Schema.String,
 });
 export type PreviewSessionSnapshot = typeof PreviewSessionSnapshot.Type;
@@ -50,6 +177,13 @@ export const PreviewOpenInput = Schema.Struct({
   threadId: ThreadId,
   /** Omit to create an empty (Idle) tab the user can type into. */
   url: Schema.optional(Url),
+  /**
+   * Initial viewport for the new tab. Omitting it keeps the historical
+   * fill-panel behaviour; clients that have a configured default send it here
+   * so the session is born at the right size instead of being resized a frame
+   * later (which the user would see as a visible reflow).
+   */
+  viewport: Schema.optional(PreviewViewportSetting),
 });
 export type PreviewOpenInput = typeof PreviewOpenInput.Type;
 
@@ -76,6 +210,13 @@ export const PreviewRefreshInput = Schema.Struct({
 });
 export type PreviewRefreshInput = typeof PreviewRefreshInput.Type;
 
+export const PreviewResizeInput = Schema.Struct({
+  threadId: ThreadId,
+  tabId: PreviewTabId,
+  viewport: PreviewViewportSetting,
+});
+export type PreviewResizeInput = typeof PreviewResizeInput.Type;
+
 export const PreviewCloseInput = Schema.Struct({
   threadId: ThreadId,
   tabId: Schema.optional(PreviewTabId),
@@ -89,6 +230,10 @@ export type PreviewListInput = typeof PreviewListInput.Type;
 
 export const PreviewListResult = Schema.Struct({
   sessions: Schema.Array(PreviewSessionSnapshot),
+  /** Identifies the current server process so revision resets are safe. */
+  serverEpoch: TrimmedNonEmptyString,
+  /** Monotonic server state revision used to reject stale list responses. */
+  revision: NonNegativeInt,
 });
 export type PreviewListResult = typeof PreviewListResult.Type;
 
@@ -96,6 +241,10 @@ const PreviewEventBaseSchema = Schema.Struct({
   threadId: TrimmedNonEmptyString,
   tabId: PreviewTabId,
   createdAt: Schema.String,
+  /** Identifies the server process that emitted this event. */
+  serverEpoch: TrimmedNonEmptyString,
+  /** Monotonic server state revision shared with PreviewListResult. */
+  revision: PositiveInt,
 });
 
 const PreviewOpenedEvent = Schema.Struct({
@@ -107,6 +256,12 @@ const PreviewOpenedEvent = Schema.Struct({
 const PreviewNavigatedEvent = Schema.Struct({
   ...PreviewEventBaseSchema.fields,
   type: Schema.Literal("navigated"),
+  snapshot: PreviewSessionSnapshot,
+});
+
+const PreviewResizedEvent = Schema.Struct({
+  ...PreviewEventBaseSchema.fields,
+  type: Schema.Literal("resized"),
   snapshot: PreviewSessionSnapshot,
 });
 
@@ -127,6 +282,7 @@ const PreviewClosedEvent = Schema.Struct({
 export const PreviewEvent = Schema.Union([
   PreviewOpenedEvent,
   PreviewNavigatedEvent,
+  PreviewResizedEvent,
   PreviewFailedEvent,
   PreviewClosedEvent,
 ]);
@@ -154,6 +310,7 @@ export type DiscoveredLocalServer = typeof DiscoveredLocalServer.Type;
 export const DiscoveredLocalServerList = Schema.Struct({
   servers: Schema.Array(DiscoveredLocalServer),
   scannedAt: Schema.String,
+  configuredUrlProbing: Schema.optional(Schema.Literal(true)),
 });
 export type DiscoveredLocalServerList = typeof DiscoveredLocalServerList.Type;
 

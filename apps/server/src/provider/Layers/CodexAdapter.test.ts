@@ -32,6 +32,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
@@ -279,6 +280,7 @@ validationLayer("CodexAdapterLive validation", (it) => {
       NodeAssert.deepStrictEqual(validationRuntimeFactory.factory.mock.calls[0]?.[0], {
         binaryPath: "codex",
         cwd: process.cwd(),
+        launchArgs: "",
         model: "gpt-5.3-codex",
         providerInstanceId: ProviderInstanceId.make("codex"),
         serviceTier: "priority",
@@ -358,6 +360,69 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
       });
     }),
   );
+
+  it.effect("passes configured launch args into the session runtime", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      Effect.gen(function* () {
+        const codexConfig = decodeCodexSettings({ launchArgs: "--strict-config --enable foo" });
+        return yield* makeCodexAdapter(codexConfig, {
+          makeRuntime: runtimeFactory.factory,
+        });
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("sess-launch-args"),
+        runtimeMode: "full-access",
+      });
+
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      NodeAssert.equal(runtime.options.launchArgs, "--strict-config --enable foo");
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("uses T3CODE_CODEX_LAUNCH_ARGS for the session runtime", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      Effect.gen(function* () {
+        const codexConfig = decodeCodexSettings({ launchArgs: "--enable settings-feature" });
+        return yield* makeCodexAdapter(codexConfig, {
+          environment: { T3CODE_CODEX_LAUNCH_ARGS: " --strict-config --enable env-feature " },
+          makeRuntime: runtimeFactory.factory,
+        });
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("sess-launch-args-env"),
+        runtimeMode: "full-access",
+      });
+
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      NodeAssert.equal(runtime.options.launchArgs, "--strict-config --enable env-feature");
+    }).pipe(Effect.provide(layer));
+  });
 
   it.effect("maps codex model options for the adapter's bound custom instance id", () => {
     const customInstanceId = ProviderInstanceId.make("codex_personal");
@@ -1086,6 +1151,63 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       });
     }),
   );
+
+  // Production calls startSession from a request fiber that finishes as soon as
+  // the session exists. `Effect.forkChild` made the runtime event consumer a
+  // child of that fiber, and Effect interrupts a fiber's children when it
+  // completes, so the consumer died on return and every event the session
+  // emitted afterwards was dropped. The other tests here start the session from
+  // the test fiber, which never completes, so the consumer survived and the bug
+  // stayed invisible. Starting it in a fiber that finishes reproduces
+  // production.
+  it.effect("keeps consuming runtime events after the startSession fiber completes", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const startSessionFiber = yield* adapter
+        .startSession({
+          provider: ProviderDriverKind.make("codex"),
+          threadId: asThreadId("thread-outlives-start"),
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.forkChild);
+      yield* Fiber.join(startSessionFiber);
+
+      const runtime = lifecycleRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+      yield* runtime.emit({
+        id: asEventId("evt-after-start-session"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/completed",
+        threadId: asThreadId("thread-outlives-start"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("msg_after_start"),
+        payload: {
+          completedAtMs: 1_778_000_000_000,
+          threadId: "thread-outlives-start",
+          turnId: "turn-1",
+          item: {
+            type: "agentMessage",
+            id: "msg_after_start",
+            text: "emitted after startSession returned",
+          },
+        },
+      });
+
+      const firstEvent = yield* Fiber.join(firstEventFiber).pipe(Effect.timeout("10 seconds"));
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.type, "item.completed");
+      // Live clock so the timeout above is real: under the default test clock it
+      // waits on virtual time that never advances, and a regression would hang
+      // until the suite timeout instead of failing here.
+    }).pipe(TestClock.withLive),
+  );
 });
 
 const scopedLifecycleRuntimeFactory = makeScopedRuntimeFactory();
@@ -1227,7 +1349,7 @@ it.effect("flushes managed native logs when the adapter layer shuts down", () =>
       yield* Scope.close(scope, Exit.void);
       scopeClosed = true;
 
-      const threadLogPath = NodePath.join(tempDir, "thread-logger.log");
+      const threadLogPath = NodePath.join(tempDir, "provider-native.thread-logger.log");
       NodeAssert.equal(NodeFS.existsSync(threadLogPath), true);
       const contents = NodeFS.readFileSync(threadLogPath, "utf8");
       NodeAssert.match(contents, /NTIVE: .*"message":"native flush test"/);

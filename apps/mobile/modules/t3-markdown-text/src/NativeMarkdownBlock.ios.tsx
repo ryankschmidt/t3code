@@ -4,16 +4,13 @@ import type { MarkdownNode } from "react-native-nitro-markdown/headless";
 
 import { CopyTextButton } from "./CopyTextButton";
 import { MarkdownTextPrimitive } from "./MarkdownTextPrimitive";
-import {
-  nativeMarkdownDocumentRuns,
-  nativeMarkdownListItemBlocks,
-  nativeMarkdownTextRuns,
-} from "./nativeMarkdownText";
+import { nativeMarkdownDocumentRuns, nativeMarkdownListItemBlocks } from "./nativeMarkdownText";
 import { NativeMarkdownSelectableText } from "./NativeMarkdownSelectableText.ios";
 import type {
   MarkdownCodeHighlighter,
   MarkdownHighlightedToken,
   NativeMarkdownTextStyle,
+  SelectableMarkdownSkill,
 } from "./SelectableMarkdownText.types";
 
 type HighlightedCode = ReadonlyArray<ReadonlyArray<MarkdownHighlightedToken>>;
@@ -24,6 +21,15 @@ const HIGHLIGHTED_CODE_CACHE_LIMIT = 64;
 
 function nodeKey(node: MarkdownNode, index: number): string {
   return `${node.type}:${node.beg ?? index}:${node.end ?? index}`;
+}
+
+/** Code inside markdown scales with the base text size (12pt at the default 15pt body). */
+function codeBlockFontSize(textStyle: NativeMarkdownTextStyle): number {
+  return Math.max(10, Math.round(textStyle.fontSize * 0.8));
+}
+
+function codeBlockLineHeight(textStyle: NativeMarkdownTextStyle): number {
+  return codeBlockFontSize(textStyle) + 6;
 }
 
 function nodeText(node: MarkdownNode): string {
@@ -39,12 +45,13 @@ function documentFor(node: MarkdownNode): MarkdownNode {
 
 function SelectableNode(props: {
   readonly node: MarkdownNode;
+  readonly skills: ReadonlyArray<SelectableMarkdownSkill>;
   readonly textStyle: NativeMarkdownTextStyle;
   readonly onLinkPress?: (href: string) => void;
 }) {
   return (
     <NativeMarkdownSelectableText
-      runs={nativeMarkdownDocumentRuns(documentFor(props.node))}
+      runs={nativeMarkdownDocumentRuns(documentFor(props.node), props.skills)}
       textStyle={props.textStyle}
       onLinkPress={props.onLinkPress}
     />
@@ -161,8 +168,8 @@ function HighlightedCodeText(props: {
         style={{
           color: props.textStyle.codeColor,
           fontFamily: "ui-monospace",
-          fontSize: 12,
-          lineHeight: 18,
+          fontSize: codeBlockFontSize(props.textStyle),
+          lineHeight: codeBlockLineHeight(props.textStyle),
         }}
       >
         {props.content}
@@ -196,8 +203,8 @@ function HighlightedCodeText(props: {
       style={{
         color: props.textStyle.codeColor,
         fontFamily: "ui-monospace",
-        fontSize: 12,
-        lineHeight: 18,
+        fontSize: codeBlockFontSize(props.textStyle),
+        lineHeight: codeBlockLineHeight(props.textStyle),
       }}
     >
       {keyedLines.map((line, lineIndex) => (
@@ -264,7 +271,7 @@ function NativeCodeBlock(props: {
             flex: 1,
             color: props.textStyle.mutedColor,
             fontFamily: "ui-monospace",
-            fontSize: 12,
+            fontSize: codeBlockFontSize(props.textStyle),
           }}
         >
           {languageLabel}
@@ -313,6 +320,7 @@ function collectTableRows(node: MarkdownNode): MarkdownNode[] {
 
 function NativeTable(props: {
   readonly node: MarkdownNode;
+  readonly skills: ReadonlyArray<SelectableMarkdownSkill>;
   readonly textStyle: NativeMarkdownTextStyle;
   readonly onLinkPress?: (href: string) => void;
 }) {
@@ -350,7 +358,7 @@ function NativeTable(props: {
                 }}
               >
                 <NativeMarkdownSelectableText
-                  runs={nativeMarkdownTextRuns(cell).map((run) =>
+                  runs={nativeMarkdownDocumentRuns(documentFor(cell), props.skills).map((run) =>
                     rowIndex === 0 || cell.isHeader ? { ...run, bold: true } : run,
                   )}
                   textStyle={props.textStyle}
@@ -367,6 +375,7 @@ function NativeTable(props: {
 
 function NativeMarkdownImage(props: {
   readonly node: MarkdownNode;
+  readonly skills: ReadonlyArray<SelectableMarkdownSkill>;
   readonly textStyle: NativeMarkdownTextStyle;
   readonly onLinkPress?: (href: string) => void;
 }) {
@@ -375,6 +384,7 @@ function NativeMarkdownImage(props: {
     return (
       <SelectableNode
         node={props.node}
+        skills={props.skills}
         textStyle={props.textStyle}
         onLinkPress={props.onLinkPress}
       />
@@ -436,6 +446,7 @@ function inlineGroups(nodes: ReadonlyArray<MarkdownNode>): MarkdownNode[] {
 
 function NativeMixedParagraph(props: {
   readonly node: MarkdownNode;
+  readonly skills: ReadonlyArray<SelectableMarkdownSkill>;
   readonly textStyle: NativeMarkdownTextStyle;
   readonly onLinkPress?: (href: string) => void;
 }) {
@@ -446,6 +457,7 @@ function NativeMixedParagraph(props: {
           <NativeMarkdownImage
             key={nodeKey(child, index)}
             node={child}
+            skills={props.skills}
             textStyle={props.textStyle}
             onLinkPress={props.onLinkPress}
           />
@@ -453,6 +465,7 @@ function NativeMixedParagraph(props: {
           <SelectableNode
             key={nodeKey(child, index)}
             node={child}
+            skills={props.skills}
             textStyle={props.textStyle}
             onLinkPress={props.onLinkPress}
           />
@@ -464,6 +477,7 @@ function NativeMixedParagraph(props: {
 
 function NativeList(props: {
   readonly node: MarkdownNode;
+  readonly skills: ReadonlyArray<SelectableMarkdownSkill>;
   readonly textStyle: NativeMarkdownTextStyle;
   readonly highlightCode: MarkdownCodeHighlighter;
   readonly onLinkPress?: (href: string) => void;
@@ -525,6 +539,7 @@ function NativeList(props: {
                 <NativeMarkdownBlock
                   key={nodeKey(child, childIndex)}
                   node={child}
+                  skills={props.skills}
                   textStyle={props.textStyle}
                   highlightCode={props.highlightCode}
                   onLinkPress={props.onLinkPress}
@@ -542,6 +557,7 @@ function NativeList(props: {
 
 export function NativeMarkdownBlock(props: {
   readonly node: MarkdownNode;
+  readonly skills: ReadonlyArray<SelectableMarkdownSkill>;
   readonly textStyle: NativeMarkdownTextStyle;
   readonly highlightCode: MarkdownCodeHighlighter;
   readonly onLinkPress?: (href: string) => void;
@@ -557,6 +573,7 @@ export function NativeMarkdownBlock(props: {
             <NativeMarkdownBlock
               key={nodeKey(child, index)}
               node={child}
+              skills={props.skills}
               textStyle={props.textStyle}
               highlightCode={props.highlightCode}
               onLinkPress={props.onLinkPress}
@@ -578,6 +595,7 @@ export function NativeMarkdownBlock(props: {
       return (
         <NativeTable
           node={props.node}
+          skills={props.skills}
           textStyle={props.textStyle}
           onLinkPress={props.onLinkPress}
         />
@@ -586,6 +604,7 @@ export function NativeMarkdownBlock(props: {
       return (
         <NativeMarkdownImage
           node={props.node}
+          skills={props.skills}
           textStyle={props.textStyle}
           onLinkPress={props.onLinkPress}
         />
@@ -615,6 +634,7 @@ export function NativeMarkdownBlock(props: {
             <NativeMarkdownBlock
               key={nodeKey(child, index)}
               node={child}
+              skills={props.skills}
               textStyle={props.textStyle}
               highlightCode={props.highlightCode}
               onLinkPress={props.onLinkPress}
@@ -628,6 +648,7 @@ export function NativeMarkdownBlock(props: {
       return (
         <NativeList
           node={props.node}
+          skills={props.skills}
           textStyle={props.textStyle}
           highlightCode={props.highlightCode}
           onLinkPress={props.onLinkPress}
@@ -638,12 +659,14 @@ export function NativeMarkdownBlock(props: {
       return (props.node.children ?? []).some((child) => child.type === "image") ? (
         <NativeMixedParagraph
           node={props.node}
+          skills={props.skills}
           textStyle={props.textStyle}
           onLinkPress={props.onLinkPress}
         />
       ) : (
         <SelectableNode
           node={props.node}
+          skills={props.skills}
           textStyle={props.textStyle}
           onLinkPress={props.onLinkPress}
         />
@@ -664,6 +687,7 @@ export function NativeMarkdownBlock(props: {
         >
           <SelectableNode
             node={props.node}
+            skills={props.skills}
             textStyle={props.textStyle}
             onLinkPress={props.onLinkPress}
           />
@@ -681,6 +705,7 @@ export function NativeMarkdownBlock(props: {
             <NativeMarkdownBlock
               key={nodeKey(child, index)}
               node={child}
+              skills={props.skills}
               textStyle={props.textStyle}
               highlightCode={props.highlightCode}
               onLinkPress={props.onLinkPress}
@@ -694,6 +719,7 @@ export function NativeMarkdownBlock(props: {
       return (
         <SelectableNode
           node={props.node}
+          skills={props.skills}
           textStyle={props.textStyle}
           onLinkPress={props.onLinkPress}
         />

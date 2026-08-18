@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { showContextMenuFallback } from "./contextMenuFallback";
+import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
 
 type FakeListener = (event: FakeDomEvent) => void;
 
@@ -196,6 +196,23 @@ describe("showContextMenuFallback", () => {
     await expect(selectionPromise).resolves.toBe("rename");
   });
 
+  it("ignores a click from the gesture that opened the menu", async () => {
+    let enablePointerSelection: ((time: number) => void) | undefined;
+    vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
+      enablePointerSelection = callback;
+      return 0;
+    });
+
+    const selectionPromise = showContextMenuFallback([{ id: "rename", label: "Rename" }]);
+    const renameButton = findButton("Rename");
+
+    renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    enablePointerSelection?.(0);
+    renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    await expect(selectionPromise).resolves.toBe("rename");
+  });
+
   it("opens nested submenus and resolves the clicked leaf id", async () => {
     const selectionPromise = showContextMenuFallback([
       {
@@ -217,5 +234,39 @@ describe("showContextMenuFallback", () => {
     childButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     await expect(selectionPromise).resolves.toBe("rename:project-b");
+  });
+});
+
+describe("dismissContextMenu", () => {
+  it("resolves an open menu with null", async () => {
+    const selectionPromise = showContextMenuFallback([
+      { id: "rename", label: "Rename" },
+      { id: "delete", label: "Delete" },
+    ]);
+    expect(findButton("Rename")).toBeTruthy();
+
+    dismissContextMenu();
+
+    await expect(selectionPromise).resolves.toBeNull();
+    expect(findButton("Rename")).toBeUndefined();
+  });
+
+  it("is a no-op when no menu is open", async () => {
+    dismissContextMenu();
+    expect(findButton("Rename")).toBeUndefined();
+  });
+
+  it("dismisses the prior menu when a new one opens", async () => {
+    const firstPromise = showContextMenuFallback([{ id: "first", label: "First" }]);
+    expect(findButton("First")).toBeTruthy();
+
+    const secondPromise = showContextMenuFallback([{ id: "second", label: "Second" }]);
+
+    await expect(firstPromise).resolves.toBeNull();
+    expect(findButton("First")).toBeUndefined();
+    expect(findButton("Second")).toBeTruthy();
+
+    dismissContextMenu();
+    await expect(secondPromise).resolves.toBeNull();
   });
 });

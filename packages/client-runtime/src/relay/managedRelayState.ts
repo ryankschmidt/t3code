@@ -2,6 +2,7 @@ import type {
   RelayClientEnvironmentRecord,
   RelayEnvironmentStatusResponse,
 } from "@t3tools/contracts/relay";
+import type { EnvironmentId } from "@t3tools/contracts";
 import {
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
@@ -123,7 +124,7 @@ export function createManagedRelaySession(input: ManagedRelaySessionInput): Mana
         try: () => readCachedClerkToken(nowMillis),
         catch: (cause) =>
           new ManagedRelaySessionError({
-            message: "Could not obtain the T3 Cloud session token.",
+            message: "Could not obtain the T3 Connect session token.",
             cause,
           }),
       });
@@ -181,7 +182,7 @@ function readSessionClerkToken(
         ? Effect.succeed(token)
         : Effect.fail(
             new ManagedRelaySessionError({
-              message: "The T3 Cloud session token is unavailable.",
+              message: "The T3 Connect session token is unavailable.",
             }),
           ),
     ),
@@ -218,6 +219,24 @@ export const waitForManagedRelayClerkToken = Effect.fn(
   });
 });
 
+/** Removes an environment from the signed-in account without contacting that environment. */
+export const deregisterManagedRelayEnvironment = Effect.fn(
+  "clientRuntime.managedRelaySession.deregisterEnvironment",
+)(function* (
+  registry: AtomRegistry.AtomRegistry,
+  input: { readonly accountId: string; readonly environmentId: EnvironmentId },
+) {
+  const session = registry.get(managedRelaySessionAtom);
+  if (!session || session.accountId !== input.accountId) {
+    return yield* new ManagedRelaySessionError({
+      message: "Sign in to T3 Connect before deregistering an environment.",
+    });
+  }
+  const clerkToken = yield* readSessionClerkToken(session);
+  const relay = yield* ManagedRelay.ManagedRelayClient;
+  yield* relay.unlinkEnvironment({ clerkToken, environmentId: input.environmentId });
+});
+
 function requireClerkToken(
   get: Atom.AtomContext,
   accountId: string,
@@ -226,7 +245,7 @@ function requireClerkToken(
   if (!session || session.accountId !== accountId) {
     return Effect.fail(
       new ManagedRelaySessionError({
-        message: "Sign in to T3 Cloud before loading relay data.",
+        message: "Sign in to T3 Connect before loading relay data.",
       }),
     );
   }
@@ -296,7 +315,7 @@ export function readManagedRelaySnapshotState<A>(
   let errorTraceId: string | null = null;
   if (result._tag === "Failure") {
     const cause = Cause.squash(result.cause);
-    error = cause instanceof Error ? cause.message : "Could not load T3 Cloud data.";
+    error = cause instanceof Error ? cause.message : "Could not load T3 Connect data.";
     errorTraceId = findErrorTraceId(cause);
   }
   return {

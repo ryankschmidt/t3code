@@ -7,6 +7,7 @@ import {
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateInstallConfirmationMessage,
+  getDesktopUpdateReleaseUrl,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
@@ -24,6 +25,7 @@ const baseState: DesktopUpdateState = {
   runningUnderArm64Translation: false,
   availableVersion: null,
   downloadedVersion: null,
+  releaseNotes: [],
   downloadPercent: null,
   checkedAt: null,
   message: null,
@@ -157,6 +159,23 @@ describe("getDesktopUpdateActionError", () => {
 });
 
 describe("desktop update UI helpers", () => {
+  it("builds the stable release URL for a downloaded version", () => {
+    expect(getDesktopUpdateReleaseUrl("0.0.30")).toBe(
+      "https://github.com/pingdotgg/t3code/releases/tag/v0.0.30",
+    );
+  });
+
+  it("builds the nightly release URL without dropping its version suffix", () => {
+    expect(getDesktopUpdateReleaseUrl("0.0.30-nightly.20260728.931")).toBe(
+      "https://github.com/pingdotgg/t3code/releases/tag/v0.0.30-nightly.20260728.931",
+    );
+  });
+
+  it("omits the release URL when the updater does not report a version", () => {
+    expect(getDesktopUpdateReleaseUrl(null)).toBeNull();
+    expect(getDesktopUpdateReleaseUrl("  ")).toBeNull();
+  });
+
   it("toasts only for actionable updater errors", () => {
     expect(
       shouldToastDesktopUpdateActionResult({
@@ -223,6 +242,17 @@ describe("desktop update UI helpers", () => {
         downloadedVersion: null,
       }),
     ).toContain("Install update and restart T3 Code?");
+  });
+
+  it("keeps the same install confirmation copy across desktop platforms", () => {
+    expect(
+      getDesktopUpdateInstallConfirmationMessage({
+        availableVersion: "1.1.0",
+        downloadedVersion: "1.1.0",
+      }),
+    ).toBe(
+      "Install update 1.1.0 and restart T3 Code?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.",
+    );
   });
 });
 

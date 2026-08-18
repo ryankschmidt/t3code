@@ -13,14 +13,31 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopClientSettings from "./DesktopClientSettings.ts";
 
 const clientSettings: ClientSettings = {
-  autoOpenPlanSidebar: false,
+  browserDefaultViewport: { _tag: "preset", width: 1024, height: 600, presetId: "nest-hub" },
+  browserDefaultZoomFactor: 1.25,
+  browserDefaultAppearance: "dark",
+  browserAutoShowFloatingPreview: false,
+  confirmQuit: true,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   dismissedProviderUpdateNotificationKeys: [],
   diffIgnoreWhitespace: true,
-  diffWordWrap: true,
+  environmentIdentificationMode: "artwork",
   favorites: [],
+  fontFamilyCode: "",
+  fontFamilyComposer: "",
+  fontFamilySans: "",
+  fontFamilyTerminal: "",
+  fontSizeCode: 13,
+  fontSizeInterface: 16,
+  fontSizePrompt: 14,
+  fontSizeTerminal: 12,
+  fontSmoothing: true,
+  glassOpacity: 80,
+  planModeEnabled: false,
   providerModelPreferences: {},
+  sidebarAutoSettleAfterDays: 3,
+  sidebarAutoSettleOnMerge: true,
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",
@@ -28,7 +45,9 @@ const clientSettings: ClientSettings = {
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",
   sidebarThreadPreviewCount: 6,
+  legacySidebarEnabled: false,
   timestampFormat: "24-hour",
+  wordWrap: true,
 };
 
 const decodeClientSettingsJson = Schema.decodeEffect(Schema.fromJsonString(ClientSettingsSchema));

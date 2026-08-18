@@ -8,7 +8,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
+  type DesktopPreviewColorScheme,
+  type DesktopPreviewFavicon,
   type PreviewEvent,
+  type PreviewListResult,
   type PreviewSessionSnapshot,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
@@ -18,11 +21,15 @@ import { PREVIEW_RECENT_URL_LIMIT } from "./components/preview/previewConstants"
 import { appAtomRegistry } from "./rpc/atomRegistry";
 
 export interface DesktopPreviewOverlay {
+  hasWebContents: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
   loading: boolean;
   zoomFactor: number;
+  pictureInPicture: boolean;
+  colorScheme: DesktopPreviewColorScheme;
   controller: "human" | "agent" | "none";
+  favicon: DesktopPreviewFavicon | null;
 }
 
 export interface ThreadPreviewState {
@@ -34,6 +41,10 @@ export interface ThreadPreviewState {
   desktopOverlay: DesktopPreviewOverlay | null;
   desktopByTabId: Record<string, DesktopPreviewOverlay>;
   recentlySeenUrls: string[];
+  /** Server process currently authoritative for revision ordering. */
+  serverEpoch: string | null;
+  /** Latest ordered server revision applied from a list response or event. */
+  serverRevision: number;
 }
 
 const EMPTY_THREAD_PREVIEW_STATE: ThreadPreviewState = Object.freeze({
@@ -44,6 +55,8 @@ const EMPTY_THREAD_PREVIEW_STATE: ThreadPreviewState = Object.freeze({
   desktopOverlay: null,
   desktopByTabId: {},
   recentlySeenUrls: [] as string[],
+  serverEpoch: null,
+  serverRevision: 0,
 });
 
 const emptyPreviewStateAtom = Atom.make<ThreadPreviewState>(EMPTY_THREAD_PREVIEW_STATE).pipe(
@@ -112,14 +125,26 @@ const dedupeRecentUrls = (existing: string[], url: string): string[] => {
   return next.slice(0, PREVIEW_RECENT_URL_LIMIT);
 };
 
+const rememberSnapshotUrl = (
+  recentlySeenUrls: string[],
+  snapshot: PreviewSessionSnapshot,
+): string[] =>
+  snapshot.navStatus._tag === "Idle"
+    ? recentlySeenUrls
+    : dedupeRecentUrls(recentlySeenUrls, snapshot.navStatus.url);
+
+const latestSnapshot = (
+  sessions: Record<string, PreviewSessionSnapshot>,
+): PreviewSessionSnapshot | null =>
+  Object.values(sessions)
+    .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+    .at(-1) ?? null;
+
 const removeSession = (current: ThreadPreviewState, tabId: string): ThreadPreviewState => {
   if (!current.sessions[tabId]) return current;
   const { [tabId]: _closed, ...sessions } = current.sessions;
   const { [tabId]: _desktop, ...desktopByTabId } = current.desktopByTabId;
-  const nextSnapshot =
-    Object.values(sessions)
-      .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt))
-      .at(-1) ?? null;
+  const nextSnapshot = latestSnapshot(sessions);
   const activeTabId =
     current.activeTabId === tabId ? (nextSnapshot?.tabId ?? null) : current.activeTabId;
   const snapshot = activeTabId ? (sessions[activeTabId] ?? nextSnapshot) : nextSnapshot;
@@ -161,51 +186,68 @@ export function subscribeThreadPreviewState(
 
 export function applyPreviewServerEvent(ref: ScopedThreadRef, event: PreviewEvent): void {
   updateThreadPreviewState(ref, (current) => {
-    switch (event.type) {
-      case "opened":
-      case "navigated": {
-        const snapshot = event.snapshot;
-        if (current.suppressedTabIds.has(snapshot.tabId)) return current;
-        const recentlySeenUrls =
-          snapshot.navStatus._tag === "Idle"
-            ? current.recentlySeenUrls
-            : dedupeRecentUrls(current.recentlySeenUrls, snapshot.navStatus.url);
-        const sessions = { ...current.sessions, [snapshot.tabId]: snapshot };
-        const activeTabId = event.type === "opened" ? snapshot.tabId : current.activeTabId;
-        const activeSnapshot = sessions[activeTabId ?? snapshot.tabId] ?? snapshot;
-        return {
-          ...current,
-          sessions,
-          activeTabId: activeTabId ?? snapshot.tabId,
-          snapshot: activeSnapshot,
-          desktopOverlay: current.desktopByTabId[activeSnapshot.tabId] ?? null,
-          recentlySeenUrls,
-        };
+    if (current.serverEpoch !== null && event.serverEpoch !== current.serverEpoch) return current;
+    if (event.revision < current.serverRevision) return current;
+    const next = (() => {
+      switch (event.type) {
+        case "opened":
+        case "navigated":
+        case "resized": {
+          const snapshot = event.snapshot;
+          if (current.suppressedTabIds.has(snapshot.tabId)) return current;
+          const recentlySeenUrls =
+            snapshot.navStatus._tag === "Idle"
+              ? current.recentlySeenUrls
+              : dedupeRecentUrls(current.recentlySeenUrls, snapshot.navStatus.url);
+          const sessions = { ...current.sessions, [snapshot.tabId]: snapshot };
+          const activeTabId = event.type === "opened" ? snapshot.tabId : current.activeTabId;
+          const activeSnapshot = sessions[activeTabId ?? snapshot.tabId] ?? snapshot;
+          return {
+            ...current,
+            sessions,
+            activeTabId: activeTabId ?? snapshot.tabId,
+            snapshot: activeSnapshot,
+            desktopOverlay: current.desktopByTabId[activeSnapshot.tabId] ?? null,
+            recentlySeenUrls,
+          };
+        }
+        case "failed": {
+          const existing = current.sessions[event.tabId];
+          if (!existing) return current;
+          const failedSnapshot = {
+            ...existing,
+            navStatus: {
+              _tag: "LoadFailed" as const,
+              url: event.url,
+              title: event.title,
+              code: event.code,
+              description: event.description,
+            },
+            updatedAt: event.createdAt,
+          };
+          const sessions = { ...current.sessions, [event.tabId]: failedSnapshot };
+          return {
+            ...current,
+            sessions,
+            snapshot: current.activeTabId === event.tabId ? failedSnapshot : current.snapshot,
+          };
+        }
+        case "closed": {
+          const closed = removeSession(current, event.tabId);
+          if (!closed.suppressedTabIds.has(event.tabId)) return closed;
+          const suppressedTabIds = new Set(closed.suppressedTabIds);
+          suppressedTabIds.delete(event.tabId);
+          return { ...closed, suppressedTabIds };
+        }
       }
-      case "failed": {
-        const existing = current.sessions[event.tabId];
-        if (!existing) return current;
-        const failedSnapshot = {
-          ...existing,
-          navStatus: {
-            _tag: "LoadFailed" as const,
-            url: event.url,
-            title: event.title,
-            code: event.code,
-            description: event.description,
-          },
-          updatedAt: event.createdAt,
+    })();
+    return next.serverRevision === event.revision && next.serverEpoch === event.serverEpoch
+      ? next
+      : {
+          ...next,
+          serverEpoch: event.serverEpoch,
+          serverRevision: event.revision,
         };
-        const sessions = { ...current.sessions, [event.tabId]: failedSnapshot };
-        return {
-          ...current,
-          sessions,
-          snapshot: current.activeTabId === event.tabId ? failedSnapshot : current.snapshot,
-        };
-      }
-      case "closed":
-        return removeSession(current, event.tabId);
-    }
   });
 }
 
@@ -228,10 +270,7 @@ export function applyPreviewServerSnapshot(
     if (current.suppressedTabIds.has(snapshot.tabId)) return current;
     const existing = current.sessions[snapshot.tabId];
     if (existing && existing.updatedAt > snapshot.updatedAt) return current;
-    const recentlySeenUrls =
-      snapshot.navStatus._tag !== "Idle"
-        ? dedupeRecentUrls(current.recentlySeenUrls, snapshot.navStatus.url)
-        : current.recentlySeenUrls;
+    const recentlySeenUrls = rememberSnapshotUrl(current.recentlySeenUrls, snapshot);
     return {
       ...current,
       snapshot,
@@ -239,6 +278,90 @@ export function applyPreviewServerSnapshot(
       activeTabId: snapshot.tabId,
       desktopOverlay: current.desktopByTabId[snapshot.tabId] ?? null,
       recentlySeenUrls,
+    };
+  });
+}
+
+/**
+ * Merge a server mutation without changing which tab the user is viewing.
+ *
+ * Commands such as resize can target background tabs. Their response is
+ * authoritative for that tab, but it is not a request to focus the tab.
+ */
+export function updatePreviewServerSnapshot(
+  ref: ScopedThreadRef,
+  snapshot: PreviewSessionSnapshot,
+): void {
+  updateThreadPreviewState(ref, (current) => {
+    if (current.suppressedTabIds.has(snapshot.tabId)) return current;
+    const existing = current.sessions[snapshot.tabId];
+    if (existing && existing.updatedAt > snapshot.updatedAt) return current;
+    const sessions = { ...current.sessions, [snapshot.tabId]: snapshot };
+    const activeTabId =
+      current.activeTabId && sessions[current.activeTabId] ? current.activeTabId : snapshot.tabId;
+    const activeSnapshot = sessions[activeTabId] ?? snapshot;
+    return {
+      ...current,
+      sessions,
+      activeTabId,
+      snapshot: activeSnapshot,
+      desktopOverlay: current.desktopByTabId[activeTabId] ?? null,
+      recentlySeenUrls: rememberSnapshotUrl(current.recentlySeenUrls, snapshot),
+    };
+  });
+}
+
+/**
+ * Replace the local session index from an authoritative preview.list result.
+ * Missing tabs are removed while the current active tab is preserved whenever
+ * it still exists in the server result.
+ */
+export function reconcilePreviewServerSessions(
+  ref: ScopedThreadRef,
+  result: PreviewListResult,
+): void {
+  updateThreadPreviewState(ref, (current) => {
+    const sameServer = current.serverEpoch === result.serverEpoch;
+    if (sameServer && result.revision < current.serverRevision) return current;
+    const snapshots = result.sessions;
+    const sessions: Record<string, PreviewSessionSnapshot> = {};
+    const currentSuppressedTabIds = sameServer ? current.suppressedTabIds : new Set<string>();
+    let recentlySeenUrls = current.recentlySeenUrls;
+    for (const snapshot of snapshots) {
+      if (currentSuppressedTabIds.has(snapshot.tabId)) continue;
+      const existing = sameServer ? current.sessions[snapshot.tabId] : undefined;
+      const next = existing && existing.updatedAt > snapshot.updatedAt ? existing : snapshot;
+      sessions[next.tabId] = next;
+      recentlySeenUrls = rememberSnapshotUrl(recentlySeenUrls, next);
+    }
+
+    const fallback = latestSnapshot(sessions);
+    const activeTabId =
+      current.activeTabId && sessions[current.activeTabId]
+        ? current.activeTabId
+        : (fallback?.tabId ?? null);
+    const snapshot = activeTabId ? (sessions[activeTabId] ?? null) : null;
+    const desktopByTabId = sameServer
+      ? Object.fromEntries(
+          Object.entries(current.desktopByTabId).filter(([tabId]) => sessions[tabId] !== undefined),
+        )
+      : {};
+    const suppressedTabIds = new Set(
+      [...currentSuppressedTabIds].filter((tabId) =>
+        snapshots.some((snapshot) => snapshot.tabId === tabId),
+      ),
+    );
+    return {
+      ...current,
+      sessions,
+      suppressedTabIds,
+      activeTabId,
+      snapshot,
+      desktopByTabId,
+      desktopOverlay: activeTabId ? (desktopByTabId[activeTabId] ?? null) : null,
+      recentlySeenUrls,
+      serverEpoch: result.serverEpoch,
+      serverRevision: result.revision,
     };
   });
 }

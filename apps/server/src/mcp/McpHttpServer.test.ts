@@ -1,10 +1,11 @@
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, PreviewTabId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { McpSchema, McpServer } from "effect/unstable/ai";
+import { McpProtocol, McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
 import * as McpHttpServer from "./McpHttpServer.ts";
@@ -14,6 +15,7 @@ import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
 const tabId = PreviewTabId.make("tab-mcp-test");
+const alternateTabId = PreviewTabId.make("tab-mcp-alternate");
 const invocation = {
   environmentId,
   threadId,
@@ -21,12 +23,12 @@ const invocation = {
   providerInstanceId: ProviderInstanceId.make("codex"),
   capabilities: new Set(["preview"] as const),
   issuedAt: 1,
-  expiresAt: Number.MAX_SAFE_INTEGER,
 };
 const client = McpSchema.McpServerClient.of({
   clientId: 1,
+  protocolVersion: "2025-06-18",
   initializePayload: {
-    protocolVersion: "2025-03-26",
+    protocolVersion: "2025-06-18",
     capabilities: {},
     clientInfo: { name: "mcp-test", version: "1.0.0" },
   },
@@ -34,7 +36,7 @@ const client = McpSchema.McpServerClient.of({
 });
 const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
-  Layer.provideMerge(PreviewAutomationBroker.layer),
+  Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
 );
 
 it("normalizes empty successful notification responses to accepted", () => {
@@ -54,36 +56,26 @@ it.effect("returns bounded structural preview snapshot failures", () =>
     Effect.gen(function* () {
       const server = yield* McpServer.McpServer;
       const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
-      const requests = yield* broker.connect({
+      const events = yield* broker.connect({
         clientId: "mcp-failure-client",
         environmentId,
-        threadId,
-        tabId,
-        visible: true,
-        supportsAutomation: true,
-        focusedAt: "2026-06-11T00:00:00.000Z",
       });
-      yield* Stream.runForEach(requests, (request) =>
-        broker.respond({
-          requestId: request.requestId,
-          ok: false,
-          error: {
-            _tag: "PreviewAutomationExecutionError",
-            message: "sensitive renderer failure",
-            detail: { consoleOutput: "sensitive browser output" },
-          },
-        }),
+      yield* Stream.runForEach(events, (event) =>
+        event.type === "connected"
+          ? Effect.void
+          : broker.respond({
+              clientId: "mcp-failure-client",
+              connectionId: event.connectionId,
+              requestId: event.request.requestId,
+              ok: false,
+              error: {
+                _tag: "PreviewAutomationExecutionError",
+                message: "sensitive renderer failure",
+                detail: { consoleOutput: "sensitive browser output" },
+              },
+            }),
       ).pipe(Effect.forkScoped);
       yield* Effect.yieldNow;
-      yield* broker.reportOwner({
-        clientId: "mcp-failure-client",
-        environmentId,
-        threadId,
-        tabId,
-        visible: true,
-        supportsAutomation: true,
-        focusedAt: "2026-06-11T00:00:00.000Z",
-      });
 
       const snapshot = yield* server
         .callTool({ name: "preview_snapshot", arguments: {} })
@@ -112,6 +104,7 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
         name: "MCP termination test",
         version: "1.0.0",
         path: "/mcp",
+        protocols: [McpProtocol.v2025_06_18],
       });
       yield* HttpRouter.serve(serverLayer, {
         disableListenLog: true,
@@ -163,21 +156,24 @@ it.effect("registers annotated tools and preserves authenticated request context
     Effect.gen(function* () {
       const server = yield* McpServer.McpServer;
       const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
-      const requests = yield* broker.connect({
+      const routedRequests: Array<{
+        readonly operation: string;
+        readonly tabId?: string | undefined;
+      }> = [];
+      const events = yield* broker.connect({
         clientId: "mcp-test-client",
         environmentId,
-        threadId,
-        tabId,
-        visible: true,
-        supportsAutomation: true,
-        focusedAt: "2026-06-11T00:00:00.000Z",
       });
-      yield* Stream.runForEach(requests, (request) =>
-        broker.respond({
-          requestId: request.requestId,
+      yield* Stream.runForEach(events, (event) => {
+        if (event.type === "connected") return Effect.void;
+        routedRequests.push(event.request);
+        return broker.respond({
+          clientId: "mcp-test-client",
+          connectionId: event.connectionId,
+          requestId: event.request.requestId,
           ok: true,
           result:
-            request.operation === "snapshot"
+            event.request.operation === "snapshot"
               ? {
                   url: "http://example.test/",
                   title: "Example",
@@ -195,7 +191,7 @@ it.effect("registers annotated tools and preserves authenticated request context
                     height: 5,
                   },
                 }
-              : request.operation === "press"
+              : event.request.operation === "press"
                 ? undefined
                 : {
                     available: true,
@@ -205,18 +201,9 @@ it.effect("registers annotated tools and preserves authenticated request context
                     title: "Example",
                     loading: false,
                   },
-        }),
-      ).pipe(Effect.forkScoped);
+        });
+      }).pipe(Effect.forkScoped);
       yield* Effect.yieldNow;
-      yield* broker.reportOwner({
-        clientId: "mcp-test-client",
-        environmentId,
-        threadId,
-        tabId,
-        visible: true,
-        supportsAutomation: true,
-        focusedAt: "2026-06-11T00:00:00.000Z",
-      });
 
       const statusTool = server.tools.find(({ tool }) => tool.name === "preview_status");
       expect(statusTool?.tool.annotations?.readOnlyHint).toBe(true);
@@ -232,6 +219,11 @@ it.effect("registers annotated tools and preserves authenticated request context
       expect(clickTool?.tool.annotations?.readOnlyHint).toBe(false);
       expect(clickTool?.tool.annotations?.destructiveHint).toBe(true);
       expect(clickTool?.tool.annotations?.openWorldHint).toBe(true);
+      expect(clickTool?.tool.outputSchema).toEqual({
+        type: "object",
+        additionalProperties: false,
+        description: "The preview action completed successfully.",
+      });
 
       const navigateTool = server.tools.find(({ tool }) => tool.name === "preview_navigate");
       expect(navigateTool?.tool.annotations?.destructiveHint).toBe(false);
@@ -254,11 +246,12 @@ it.effect("registers annotated tools and preserves authenticated request context
         .pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
           Effect.provideService(McpSchema.McpServerClient, client),
+          Effect.flip,
         );
-      expect(malformed.isError).toBe(true);
+      expect(malformed._tag).toBe("InvalidParams");
 
       const snapshot = yield* server
-        .callTool({ name: "preview_snapshot", arguments: {} })
+        .callTool({ name: "preview_snapshot", arguments: { tabId: alternateTabId } })
         .pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
           Effect.provideService(McpSchema.McpServerClient, client),
@@ -268,16 +261,28 @@ it.effect("registers annotated tools and preserves authenticated request context
       expect(snapshot.structuredContent).toMatchObject({
         screenshot: { mimeType: "image/png", width: 10, height: 5 },
       });
+      expect(routedRequests.find(({ operation }) => operation === "snapshot")?.tabId).toBe(
+        alternateTabId,
+      );
 
-      const press = yield* server
-        .callTool({ name: "preview_press", arguments: { key: "Enter" } })
-        .pipe(
-          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
-          Effect.provideService(McpSchema.McpServerClient, client),
-        );
-      expect(press.isError).toBe(false);
-      expect(press.structuredContent).toBeNull();
-      expect(press.content).toEqual([{ type: "text", text: "null" }]);
+      const actionRequests = [
+        { name: "preview_click", arguments: { x: 10, y: 10 } },
+        { name: "preview_type", arguments: { text: "Hello" } },
+        { name: "preview_press", arguments: { key: "Enter" } },
+        { name: "preview_scroll", arguments: { deltaY: 100 } },
+        { name: "preview_wait_for", arguments: { text: "Example" } },
+      ];
+      for (const request of actionRequests) {
+        const result = yield* server
+          .callTool(request)
+          .pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+            Effect.provideService(McpSchema.McpServerClient, client),
+          );
+        expect(result.isError).toBe(false);
+        expect(result.structuredContent).toEqual({});
+        expect(result.content).toEqual([{ type: "text", text: "{}" }]);
+      }
     }),
   ).pipe(Effect.provide(TestLayer)),
 );

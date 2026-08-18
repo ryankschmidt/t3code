@@ -1,18 +1,36 @@
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId, TurnId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import {
+  EnvironmentId,
+  MessageId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  TurnId,
+} from "@t3tools/contracts";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { Thread } from "../types";
+import type { Thread, ThreadShell } from "../types";
 import {
   MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
+  buildLoadingThreadFromShell,
+  buildThreadTurnInterruptInput,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  dismissBranchMismatchForSession,
+  ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
   getStartedThreadModelChangeBlockReason,
+  hasEnvironmentReconnectWarningGraceElapsed,
   hasServerAcknowledgedLocalDispatch,
+  isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
+  resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
+  scheduleEnvironmentReconnectWarning,
+  startNewThreadForProject,
+  shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
 
@@ -20,6 +38,42 @@ const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
+
+describe("environment reconnect warning grace", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("shows a persistent reconnect after the grace period", () => {
+    vi.useFakeTimers();
+    const showWarning = vi.fn();
+
+    scheduleEnvironmentReconnectWarning(showWarning);
+    vi.advanceTimersByTime(ENVIRONMENT_RECONNECT_WARNING_GRACE_MS - 1);
+    expect(showWarning).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(showWarning).toHaveBeenCalledOnce();
+  });
+
+  it("cancels the warning when the connection recovers during the grace period", () => {
+    vi.useFakeTimers();
+    const showWarning = vi.fn();
+
+    const cancel = scheduleEnvironmentReconnectWarning(showWarning);
+    cancel();
+    vi.advanceTimersByTime(ENVIRONMENT_RECONNECT_WARNING_GRACE_MS);
+
+    expect(showWarning).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse elapsed grace from another environment", () => {
+    const anotherEnvironmentId = EnvironmentId.make("environment-remote");
+
+    expect(hasEnvironmentReconnectWarningGraceElapsed(environmentId, environmentId)).toBe(true);
+    expect(hasEnvironmentReconnectWarningGraceElapsed(anotherEnvironmentId, environmentId)).toBe(
+      false,
+    );
+  });
+});
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
   return {
@@ -41,6 +95,8 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
     deletedAt: null,
     latestTurn: null,
     branch: null,
@@ -68,6 +124,103 @@ const readySession = {
   lastError: null,
   updatedAt: "2026-03-29T00:00:10.000Z",
 };
+
+describe("buildLoadingThreadFromShell", () => {
+  it("preserves shell metadata and supplies empty detail collections", () => {
+    const shell = {
+      environmentId,
+      id: threadId,
+      projectId,
+      title: "Loading thread",
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.4",
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: "main",
+      worktreePath: null,
+      latestTurn: null,
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
+      settledOverride: null,
+      settledAt: null,
+      snoozedUntil: null,
+      snoozedAt: null,
+      session: null,
+      latestUserMessageAt: now,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      hasActionableProposedPlan: false,
+    } satisfies ThreadShell;
+
+    expect(buildLoadingThreadFromShell(shell)).toMatchObject({
+      environmentId,
+      id: threadId,
+      projectId,
+      title: "Loading thread",
+      branch: "main",
+      deletedAt: null,
+      messages: [],
+      proposedPlans: [],
+      activities: [],
+      checkpoints: [],
+    });
+  });
+});
+
+describe("resolveThreadMetadataUpdateForNextTurn", () => {
+  const modelSelection = {
+    instanceId: ProviderInstanceId.make("codex"),
+    model: "gpt-5.4",
+  };
+
+  it("updates a stale local thread branch to the active checkout", () => {
+    expect(
+      resolveThreadMetadataUpdateForNextTurn({
+        currentModelSelection: modelSelection,
+        currentBranch: "feature/thread",
+        nextBranch: "feature/checkout",
+      }),
+    ).toEqual({ branch: "feature/checkout", worktreePath: null });
+  });
+
+  it("does not write metadata when the model and branch are unchanged", () => {
+    expect(
+      resolveThreadMetadataUpdateForNextTurn({
+        currentModelSelection: modelSelection,
+        nextModelSelection: modelSelection,
+        currentBranch: "feature/current",
+        nextBranch: "feature/current",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("buildThreadTurnInterruptInput", () => {
+  it("targets the session's active running turn", () => {
+    const activeTurnId = TurnId.make("turn-running");
+
+    expect(
+      buildThreadTurnInterruptInput(
+        makeThread({
+          session: {
+            ...readySession,
+            status: "running",
+            activeTurnId,
+          },
+        }),
+      ),
+    ).toEqual({ threadId, turnId: activeTurnId });
+  });
+
+  it("omits a turn id when the session is not running", () => {
+    expect(buildThreadTurnInterruptInput(makeThread({ session: readySession }))).toEqual({
+      threadId,
+    });
+  });
+});
 
 describe("deriveComposerSendState", () => {
   it("treats expired terminal pills as non-sendable content", () => {
@@ -229,6 +382,61 @@ describe("resolveSendEnvMode", () => {
   });
 });
 
+describe("branchMismatchKey", () => {
+  it("builds a key from thread id and both branches", () => {
+    expect(branchMismatchKey("thread-1", { threadBranch: "feat/a", currentBranch: "feat/b" })).toBe(
+      "thread-1:feat/a:feat/b",
+    );
+  });
+
+  it("returns null without a thread or mismatch", () => {
+    expect(branchMismatchKey(null, { threadBranch: "a", currentBranch: "b" })).toBeNull();
+    expect(branchMismatchKey("thread-1", null)).toBeNull();
+  });
+});
+
+describe("shouldShowBranchMismatchBanner", () => {
+  const base = {
+    hasMismatch: true,
+    isDismissed: false,
+    composerHasContent: false,
+    wasShownForCurrentMismatch: false,
+  };
+
+  it("stays hidden during passive browsing (even though the composer autofocuses)", () => {
+    expect(shouldShowBranchMismatchBanner(base)).toBe(false);
+  });
+
+  it("shows once the composer has draft content", () => {
+    expect(shouldShowBranchMismatchBanner({ ...base, composerHasContent: true })).toBe(true);
+  });
+
+  it("stays mounted after the draft clears once shown for the current mismatch", () => {
+    expect(shouldShowBranchMismatchBanner({ ...base, wasShownForCurrentMismatch: true })).toBe(
+      true,
+    );
+  });
+
+  it("never shows when dismissed or without a mismatch", () => {
+    expect(
+      shouldShowBranchMismatchBanner({ ...base, composerHasContent: true, isDismissed: true }),
+    ).toBe(false);
+    expect(
+      shouldShowBranchMismatchBanner({ ...base, composerHasContent: true, hasMismatch: false }),
+    ).toBe(false);
+  });
+});
+
+describe("session branch mismatch dismissal", () => {
+  it("tracks dismissed keys and treats other keys as active", () => {
+    expect(isBranchMismatchDismissedForSession("t1:a:b")).toBe(false);
+    dismissBranchMismatchForSession("t1:a:b");
+    expect(isBranchMismatchDismissedForSession("t1:a:b")).toBe(true);
+    expect(isBranchMismatchDismissedForSession("t1:a:c")).toBe(false);
+    expect(isBranchMismatchDismissedForSession(null)).toBe(false);
+  });
+});
+
 describe("reconcileMountedTerminalThreadIds", () => {
   it("keeps open threads and makes the active thread most recent", () => {
     expect(
@@ -303,23 +511,55 @@ describe("reconcileRetainedMountedThreadIds", () => {
 });
 
 describe("shouldWriteThreadErrorToCurrentServerThread", () => {
-  it("requires the environment, route thread, and target thread to match", () => {
+  it("writes errors for a shell-derived active server thread", () => {
     const routeThreadRef = { environmentId, threadId };
 
     expect(
       shouldWriteThreadErrorToCurrentServerThread({
-        serverThread: { environmentId, id: threadId },
+        activeServerThread: { environmentId, id: threadId },
         routeThreadRef,
         targetThreadId: threadId,
       }),
     ).toBe(true);
+  });
+
+  it("requires an active server thread matching the environment, route, and target", () => {
+    const routeThreadRef = { environmentId, threadId };
+
     expect(
       shouldWriteThreadErrorToCurrentServerThread({
-        serverThread: null,
+        activeServerThread: null,
         routeThreadRef,
         targetThreadId: threadId,
       }),
     ).toBe(false);
+  });
+});
+
+describe("startNewThreadForProject", () => {
+  it("starts a thread through the supplied shared handler for the active project", () => {
+    const calls: Array<{ environmentId: EnvironmentId; projectId: ProjectId }> = [];
+    const projectRef = { environmentId, projectId };
+
+    expect(
+      startNewThreadForProject(projectRef, (nextProjectRef) => {
+        calls.push(nextProjectRef);
+        return Promise.resolve();
+      }),
+    ).toBe(true);
+    expect(calls).toEqual([projectRef]);
+  });
+
+  it("does nothing when the active project is unavailable", () => {
+    let called = false;
+
+    expect(
+      startNewThreadForProject(null, () => {
+        called = true;
+        return Promise.resolve();
+      }),
+    ).toBe(false);
+    expect(called).toBe(false);
   });
 });
 
@@ -334,6 +574,7 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
         localDispatch,
         phase: "ready",
         latestTurn: completedTurn,
+        latestUserMessageId: localDispatch.latestUserMessageId,
         session: readySession,
         hasPendingApproval: false,
         hasPendingUserInput: false,
@@ -359,6 +600,7 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
         localDispatch,
         phase: "ready",
         latestTurn: newerTurn,
+        latestUserMessageId: localDispatch.latestUserMessageId,
         session: { ...readySession, updatedAt: newerTurn.completedAt },
         hasPendingApproval: false,
         hasPendingUserInput: false,
@@ -385,6 +627,7 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
         localDispatch,
         phase: "running",
         latestTurn: runningTurn,
+        latestUserMessageId: localDispatch.latestUserMessageId,
         session: {
           ...readySession,
           status: "running",
@@ -400,11 +643,55 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
         localDispatch,
         phase: "running",
         latestTurn: runningTurn,
+        latestUserMessageId: localDispatch.latestUserMessageId,
         session: {
           ...readySession,
           status: "running",
           activeTurnId: runningTurn.turnId,
         },
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        threadError: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("acknowledges a steering message projected onto the current running turn", () => {
+    const runningTurn = {
+      ...completedTurn,
+      state: "running" as const,
+      completedAt: null,
+    };
+    const runningSession = {
+      ...readySession,
+      status: "running" as const,
+      activeTurnId: runningTurn.turnId,
+    };
+    const localDispatch = createLocalDispatchSnapshot(
+      makeThread({
+        latestTurn: runningTurn,
+        session: runningSession,
+        messages: [
+          {
+            id: MessageId.make("message-before-steer"),
+            role: "user",
+            text: "Initial prompt",
+            turnId: runningTurn.turnId,
+            createdAt: runningTurn.requestedAt,
+            updatedAt: runningTurn.requestedAt,
+            streaming: false,
+          },
+        ],
+      }),
+    );
+
+    expect(
+      hasServerAcknowledgedLocalDispatch({
+        localDispatch,
+        phase: "running",
+        latestTurn: runningTurn,
+        latestUserMessageId: MessageId.make("message-steer"),
+        session: runningSession,
         hasPendingApproval: false,
         hasPendingUserInput: false,
         threadError: null,
@@ -418,6 +705,7 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
       localDispatch,
       phase: "ready" as const,
       latestTurn: null,
+      latestUserMessageId: localDispatch.latestUserMessageId,
       session: null,
       hasPendingApproval: false,
       hasPendingUserInput: false,

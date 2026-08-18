@@ -9,6 +9,14 @@ import {
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 
+export const previewAutomationHostFocusConcurrencyKey = (value: {
+  readonly environmentId: string;
+  readonly input: {
+    readonly clientId: string;
+    readonly connectionId: string;
+  };
+}): string => JSON.stringify([value.environmentId, value.input.clientId, value.input.connectionId]);
+
 export function createPreviewEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -33,6 +41,9 @@ export function createPreviewEnvironmentAtoms<R, E>(
     discoveredServers: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:preview:discovered-servers",
       tag: WS_METHODS.subscribeDiscoveredLocalServers,
+      // Configured URLs are part of this atom's key. Dispose immediately so
+      // unmounted projects stop contributing probe candidates on the server.
+      idleTtlMs: 0,
     }),
     automationRequests: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:preview:automation-requests",
@@ -51,6 +62,12 @@ export function createPreviewEnvironmentAtoms<R, E>(
     navigate: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:preview:navigate",
       tag: WS_METHODS.previewNavigate,
+      scheduler: lifecycleScheduler,
+      concurrency: lifecycleConcurrency,
+    }),
+    resize: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:preview:resize",
+      tag: WS_METHODS.previewResize,
       scheduler: lifecycleScheduler,
       concurrency: lifecycleConcurrency,
     }),
@@ -82,25 +99,17 @@ export function createPreviewEnvironmentAtoms<R, E>(
       scheduler: automationScheduler,
       concurrency: {
         mode: "singleFlight",
-        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.requestId]),
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.connectionId, input.requestId]),
       },
     }),
-    reportAutomationOwner: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:preview:automation-report-owner",
-      tag: WS_METHODS.previewAutomationReportOwner,
+    focusAutomationHost: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:preview:automation-focus-host",
+      tag: WS_METHODS.previewAutomationFocusHost,
       scheduler: automationScheduler,
       concurrency: {
-        mode: "serial",
-        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.clientId]),
-      },
-    }),
-    clearAutomationOwner: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:preview:automation-clear-owner",
-      tag: WS_METHODS.previewAutomationClearOwner,
-      scheduler: automationScheduler,
-      concurrency: {
-        mode: "serial",
-        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.clientId]),
+        mode: "latest",
+        key: previewAutomationHostFocusConcurrencyKey,
       },
     }),
   };

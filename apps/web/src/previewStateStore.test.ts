@@ -1,20 +1,27 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { type EnvironmentId, type PreviewSessionSnapshot, ThreadId } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type PreviewEvent,
+  type PreviewSessionSnapshot,
+  ThreadId,
+} from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   __testing,
   applyPreviewDesktopState,
-  applyPreviewServerEvent,
+  applyPreviewServerEvent as applyPreviewServerEventImpl,
   applyPreviewServerSnapshot,
   beginPreviewSessionClose,
   cancelPreviewSessionClose,
   previewStateAtom,
   readThreadPreviewState,
+  reconcilePreviewServerSessions,
   rememberPreviewUrl,
   removePreviewThread,
   resetPreviewStateForTests,
   setActivePreviewTab,
+  updatePreviewServerSnapshot,
 } from "./previewStateStore";
 
 const environmentId = "env-1" as EnvironmentId;
@@ -31,7 +38,25 @@ const makeSnapshot = (overrides: Partial<PreviewSessionSnapshot> = {}): PreviewS
   ...overrides,
 });
 
+type PreviewEventDraft = PreviewEvent extends infer Event
+  ? Event extends { readonly revision: number }
+    ? Omit<Event, "revision" | "serverEpoch">
+    : never
+  : never;
+
+const serverEpoch = "server-a";
+let nextServerRevision = 0;
+const applyPreviewServerEvent = (eventRef: typeof ref, event: PreviewEventDraft): void => {
+  nextServerRevision += 1;
+  applyPreviewServerEventImpl(eventRef, {
+    ...event,
+    serverEpoch,
+    revision: nextServerRevision,
+  } as PreviewEvent);
+};
+
 beforeEach(() => {
+  nextServerRevision = 0;
   resetPreviewStateForTests();
 });
 
@@ -106,6 +131,34 @@ describe("previewStateStore (single-tab)", () => {
     if (state.snapshot?.navStatus._tag === "Success") {
       expect(state.snapshot.navStatus.url).toBe("http://localhost:5173/about");
     }
+  });
+
+  it("resized event updates tab viewport without changing the active tab", () => {
+    const active = makeSnapshot({ tabId: "tab_a" });
+    const background = makeSnapshot({ tabId: "tab_b" });
+    applyPreviewServerSnapshot(ref, background);
+    applyPreviewServerSnapshot(ref, active);
+
+    applyPreviewServerEvent(ref, {
+      type: "resized",
+      threadId: "thread-1",
+      tabId: background.tabId,
+      createdAt: "2026-01-01T00:00:01.000Z",
+      snapshot: {
+        ...background,
+        viewport: { _tag: "preset", presetId: "pixel-8", width: 412, height: 915 },
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      },
+    });
+
+    const state = readThreadPreviewState(ref);
+    expect(state.activeTabId).toBe(active.tabId);
+    expect(state.sessions[background.tabId]?.viewport).toEqual({
+      _tag: "preset",
+      presetId: "pixel-8",
+      width: 412,
+      height: 915,
+    });
   });
 
   it("failed event flips the snapshot to LoadFailed when tabId matches", () => {
@@ -261,11 +314,15 @@ describe("previewStateStore (single-tab)", () => {
       snapshot,
     });
     applyPreviewDesktopState(ref, snapshot.tabId, {
+      hasWebContents: true,
       canGoBack: true,
       canGoForward: false,
       loading: false,
       zoomFactor: 1,
+      pictureInPicture: false,
+      colorScheme: "system",
       controller: "none",
+      favicon: null,
     });
     const state = readThreadPreviewState(ref);
     expect(state.desktopOverlay?.canGoBack).toBe(true);
@@ -278,11 +335,15 @@ describe("previewStateStore (single-tab)", () => {
     applyPreviewServerSnapshot(ref, first);
     applyPreviewServerSnapshot(ref, second);
     applyPreviewDesktopState(ref, first.tabId, {
+      hasWebContents: true,
       canGoBack: true,
       canGoForward: false,
       loading: false,
       zoomFactor: 1,
+      pictureInPicture: false,
+      colorScheme: "system",
       controller: "none",
+      favicon: null,
     });
     setActivePreviewTab(ref, first.tabId);
 
@@ -290,6 +351,179 @@ describe("previewStateStore (single-tab)", () => {
     expect(Object.keys(state.sessions)).toEqual([first.tabId, second.tabId]);
     expect(state.snapshot?.tabId).toBe(first.tabId);
     expect(state.desktopOverlay?.canGoBack).toBe(true);
+  });
+
+  it("updates a background snapshot without changing the active tab", () => {
+    const background = makeSnapshot({ tabId: "tab_a" });
+    const active = makeSnapshot({
+      tabId: "tab_b",
+      updatedAt: "2026-01-01T00:00:01.000Z",
+    });
+    applyPreviewServerSnapshot(ref, background);
+    applyPreviewServerSnapshot(ref, active);
+
+    const resized = {
+      ...background,
+      viewport: { _tag: "freeform" as const, width: 900, height: 700 },
+      updatedAt: "2026-01-01T00:00:02.000Z",
+    };
+    updatePreviewServerSnapshot(ref, resized);
+
+    const state = readThreadPreviewState(ref);
+    expect(state.activeTabId).toBe(active.tabId);
+    expect(state.snapshot?.tabId).toBe(active.tabId);
+    expect(state.sessions[background.tabId]).toEqual(resized);
+  });
+
+  it("reconciles an authoritative session list without focusing a background tab", () => {
+    const active = makeSnapshot({ tabId: "tab_a" });
+    const stale = makeSnapshot({
+      tabId: "tab_stale",
+      updatedAt: "2026-01-01T00:00:01.000Z",
+    });
+    applyPreviewServerSnapshot(ref, stale);
+    applyPreviewServerSnapshot(ref, active);
+    applyPreviewDesktopState(ref, stale.tabId, {
+      hasWebContents: true,
+      canGoBack: false,
+      canGoForward: false,
+      loading: false,
+      zoomFactor: 1,
+      pictureInPicture: false,
+      colorScheme: "system",
+      controller: "none",
+      favicon: null,
+    });
+
+    reconcilePreviewServerSessions(ref, { sessions: [active], serverEpoch, revision: 1 });
+
+    const state = readThreadPreviewState(ref);
+    expect(Object.keys(state.sessions)).toEqual([active.tabId]);
+    expect(state.activeTabId).toBe(active.tabId);
+    expect(state.snapshot).toEqual(active);
+    expect(state.desktopByTabId[stale.tabId]).toBeUndefined();
+  });
+
+  it("clears stale sessions when an authoritative list is empty", () => {
+    applyPreviewServerSnapshot(ref, makeSnapshot());
+
+    reconcilePreviewServerSessions(ref, { sessions: [], serverEpoch, revision: 1 });
+
+    const state = readThreadPreviewState(ref);
+    expect(state.sessions).toEqual({});
+    expect(state.activeTabId).toBeNull();
+    expect(state.snapshot).toBeNull();
+  });
+
+  it("ignores a list response older than the latest server event", () => {
+    const snapshot = makeSnapshot();
+    applyPreviewServerEvent(ref, {
+      type: "opened",
+      threadId: "thread-1",
+      tabId: snapshot.tabId,
+      createdAt: snapshot.updatedAt,
+      snapshot,
+    });
+
+    reconcilePreviewServerSessions(ref, { sessions: [], serverEpoch, revision: 0 });
+
+    expect(readThreadPreviewState(ref).sessions).toEqual({ [snapshot.tabId]: snapshot });
+  });
+
+  it("does not resurrect a tab from an event older than its close", () => {
+    const snapshot = makeSnapshot();
+    applyPreviewServerEvent(ref, {
+      type: "opened",
+      threadId: "thread-1",
+      tabId: snapshot.tabId,
+      createdAt: snapshot.updatedAt,
+      snapshot,
+    });
+    applyPreviewServerEvent(ref, {
+      type: "closed",
+      threadId: "thread-1",
+      tabId: snapshot.tabId,
+      createdAt: "2026-01-01T00:00:01.000Z",
+    });
+
+    applyPreviewServerEventImpl(ref, {
+      type: "opened",
+      threadId: "thread-1",
+      tabId: snapshot.tabId,
+      createdAt: snapshot.updatedAt,
+      serverEpoch,
+      revision: 1,
+      snapshot,
+    });
+
+    expect(readThreadPreviewState(ref).sessions).toEqual({});
+  });
+
+  it("accepts a lower revision from a newly restarted server", () => {
+    const snapshot = makeSnapshot();
+    applyPreviewServerEventImpl(ref, {
+      type: "opened",
+      threadId: "thread-1",
+      tabId: snapshot.tabId,
+      createdAt: snapshot.updatedAt,
+      serverEpoch,
+      revision: 12,
+      snapshot,
+    });
+
+    reconcilePreviewServerSessions(ref, {
+      sessions: [],
+      serverEpoch: "server-b",
+      revision: 0,
+    });
+
+    const state = readThreadPreviewState(ref);
+    expect(state.sessions).toEqual({});
+    expect(state.serverEpoch).toBe("server-b");
+    expect(state.serverRevision).toBe(0);
+  });
+
+  it("does not carry raw-tab state across a server restart", () => {
+    const previous = makeSnapshot({
+      navStatus: { _tag: "Success", url: "https://old.example", title: "Old" },
+      updatedAt: "2026-01-01T00:00:02.000Z",
+    });
+    applyPreviewServerEventImpl(ref, {
+      type: "opened",
+      threadId: "thread-1",
+      tabId: previous.tabId,
+      createdAt: previous.updatedAt,
+      serverEpoch,
+      revision: 12,
+      snapshot: previous,
+    });
+    beginPreviewSessionClose(ref, previous.tabId);
+    applyPreviewDesktopState(ref, previous.tabId, {
+      hasWebContents: true,
+      canGoBack: false,
+      canGoForward: false,
+      loading: false,
+      zoomFactor: 1,
+      pictureInPicture: false,
+      colorScheme: "system",
+      controller: "none",
+      favicon: null,
+    });
+    const restarted = makeSnapshot({
+      navStatus: { _tag: "Success", url: "https://new.example", title: "New" },
+      updatedAt: "2026-01-01T00:00:01.000Z",
+    });
+    reconcilePreviewServerSessions(ref, {
+      sessions: [restarted],
+      serverEpoch: "server-b",
+      revision: 0,
+    });
+
+    const state = readThreadPreviewState(ref);
+    expect(state.sessions[restarted.tabId]).toEqual(restarted);
+    expect(state.suppressedTabIds).toEqual(new Set());
+    expect(state.desktopByTabId).toEqual({});
+    expect(state.desktopOverlay).toBeNull();
   });
 
   it("applyServerSnapshot null clears snapshot for a thread that had one", () => {

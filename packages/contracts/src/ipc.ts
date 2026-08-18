@@ -18,7 +18,12 @@ import type {
   VcsStatusInput,
   VcsStatusResult,
 } from "./git.ts";
-import type { ReviewDiffPreviewInput, ReviewDiffPreviewResult } from "./review.ts";
+import type {
+  ReviewDiffFileContentsInput,
+  ReviewDiffFileContentsResult,
+  ReviewDiffPreviewInput,
+  ReviewDiffPreviewResult,
+} from "./review.ts";
 import type { FilesystemBrowseInput, FilesystemBrowseResult } from "./filesystem.ts";
 import type { AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
 import type {
@@ -31,20 +36,6 @@ import type {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
-import type { ProviderInstanceId } from "./providerInstance.ts";
-import type {
-  ServerConfig,
-  ServerProcessDiagnosticsResult,
-  ServerProcessResourceHistoryInput,
-  ServerProcessResourceHistoryResult,
-  ServerProviderUpdateInput,
-  ServerProviderUpdatedPayload,
-  ServerRemoveKeybindingResult,
-  ServerSignalProcessInput,
-  ServerSignalProcessResult,
-  ServerTraceDiagnosticsResult,
-  ServerUpsertKeybindingResult,
-} from "./server.ts";
 import type {
   TerminalAttachInput,
   TerminalAttachStreamEvent,
@@ -57,7 +48,6 @@ import type {
   TerminalSessionSnapshot,
   TerminalWriteInput,
 } from "./terminal.ts";
-import type { ServerRemoveKeybindingInput, ServerUpsertKeybindingInput } from "./server.ts";
 import * as Schema from "effect/Schema";
 import type {
   DiscoveredLocalServerList,
@@ -69,19 +59,20 @@ import type {
   PreviewOpenInput,
   PreviewRefreshInput,
   PreviewReportStatusInput,
+  PreviewResizeInput,
   PreviewSessionSnapshot,
 } from "./preview.ts";
 import {
   PreviewAutomationClickInput,
   PreviewAutomationEvaluateInput,
-  PreviewAutomationOwner,
-  PreviewAutomationOwnerIdentity,
+  PreviewAutomationHost,
+  PreviewAutomationHostFocus,
   PreviewAutomationPressInput,
-  PreviewAutomationRequest,
   PreviewAutomationResponse,
   PreviewAutomationScrollInput,
   PreviewAutomationSnapshot,
   PreviewAutomationStatus,
+  PreviewAutomationStreamEvent,
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
 } from "./previewAutomation.ts";
@@ -99,13 +90,12 @@ import type {
 import { EnvironmentId } from "./baseSchemas.ts";
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
-import { EditorId } from "./editor.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
-import type { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings.ts";
+import type { ClientSettings } from "./settings.ts";
+import type { EditorId } from "./editor.ts";
 import type {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
-  SourceControlDiscoveryResult,
   SourceControlPublishRepositoryInput,
   SourceControlPublishRepositoryResult,
   SourceControlRepositoryInfo,
@@ -212,12 +202,23 @@ export interface DesktopUpdateState {
   runningUnderArm64Translation: boolean;
   availableVersion: string | null;
   downloadedVersion: string | null;
+  releaseNotes: ReadonlyArray<DesktopUpdateReleaseNote>;
   downloadPercent: number | null;
   checkedAt: string | null;
   message: string | null;
   errorContext: "check" | "download" | "install" | null;
   canRetry: boolean;
 }
+
+export interface DesktopUpdateReleaseNote {
+  version: string;
+  items: ReadonlyArray<string>;
+}
+
+export const DesktopUpdateReleaseNoteSchema = Schema.Struct({
+  version: Schema.String,
+  items: Schema.Array(Schema.String),
+});
 
 export const DesktopUpdateStateSchema = Schema.Struct({
   enabled: Schema.Boolean,
@@ -229,6 +230,7 @@ export const DesktopUpdateStateSchema = Schema.Struct({
   runningUnderArm64Translation: Schema.Boolean,
   availableVersion: Schema.NullOr(Schema.String),
   downloadedVersion: Schema.NullOr(Schema.String),
+  releaseNotes: Schema.Array(DesktopUpdateReleaseNoteSchema),
   downloadPercent: Schema.NullOr(Schema.Number),
   checkedAt: Schema.NullOr(Schema.String),
   message: Schema.NullOr(Schema.String),
@@ -258,15 +260,31 @@ export const DesktopUpdateCheckResultSchema = Schema.Struct({
   state: DesktopUpdateStateSchema,
 });
 
+// Stable id for the Windows-native primary backend. Desktop side wraps
+// this with a brand inside DesktopBackendManager; web side keeps it as
+// a plain string so the env-runtime can compare against it without
+// importing brand machinery from the desktop package.
+export const PRIMARY_LOCAL_ENVIRONMENT_ID = "primary";
+
 export interface DesktopEnvironmentBootstrap {
+  // Stable backend instance id (e.g. "primary" or "wsl:ubuntu"). The
+  // web env runtime keys local environments off this so projects
+  // routed to a specific backend reopen against the same one.
+  id: string;
   label: string;
+  // Concrete WSL distro used by the current backend run. This stays separate
+  // from id because a default-tracking instance keeps the stable
+  // "wsl:default" IPC target while each run launches a specific distro.
+  runningDistro?: string | null;
   httpBaseUrl: string | null;
   wsBaseUrl: string | null;
   bootstrapToken?: string;
 }
 
 export const DesktopEnvironmentBootstrapSchema = Schema.Struct({
+  id: Schema.String,
   label: Schema.String,
+  runningDistro: Schema.optionalKey(Schema.NullOr(Schema.String)),
   httpBaseUrl: Schema.NullOr(Schema.String),
   wsBaseUrl: Schema.NullOr(Schema.String),
   bootstrapToken: Schema.optionalKey(Schema.String),
@@ -410,10 +428,76 @@ export const DesktopServerExposureStateSchema = Schema.Struct({
 
 export interface PickFolderOptions {
   initialPath?: string | null;
+  // When set, the desktop dialog opens against the named backend's
+  // filesystem instead of the primary's. Used by callers that already
+  // know which local environment they're targeting (e.g. opening a
+  // project that lives inside WSL). Omitting it keeps the historical
+  // behavior so non-WSL users never see a different picker.
+  targetEnvironmentId?: string;
 }
 
 export const PickFolderOptionsSchema = Schema.Struct({
   initialPath: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  targetEnvironmentId: Schema.optionalKey(Schema.String),
+});
+
+/**
+ * A file returned by the desktop theme-file picker. Oversized files carry an
+ * empty text so the renderer can reject them by size without the main
+ * process ever holding their contents.
+ */
+export interface PickedThemeFile {
+  name: string;
+  size: number;
+  text: string;
+}
+
+export const PickedThemeFileSchema = Schema.Struct({
+  name: Schema.String,
+  size: Schema.Number,
+  text: Schema.String,
+});
+
+export interface DesktopWslDistro {
+  name: string;
+  isDefault: boolean;
+  version: 1 | 2;
+}
+
+export const DesktopWslDistroSchema = Schema.Struct({
+  name: Schema.String,
+  isDefault: Schema.Boolean,
+  version: Schema.Literals([1, 2]),
+});
+
+export interface DesktopWslState {
+  // True when the user has opted the WSL backend in; the actual backend
+  // process is registered with the desktop pool independently of this
+  // flag and may take a moment to come up after the user enables it.
+  enabled: boolean;
+  // null means "track the current WSL default distro".
+  distro: string | null;
+  available: boolean;
+  // When true (and `enabled` is also true) the desktop runs only the
+  // WSL backend as the primary; the Windows-side Node backend is not
+  // started. Toggling this requires an app restart because the
+  // primary backend's spec is captured once at layer init.
+  wslOnly: boolean;
+  distros: readonly DesktopWslDistro[];
+  // Reason the dual-mode WSL backend last failed preflight (no node, wrong
+  // version, missing build tools), or null. Surfaced inline in Connections
+  // settings. Always null in wsl-only mode — that path shows a dialog and
+  // falls back to Windows instead.
+  preflightError: string | null;
+}
+
+export const DesktopWslStateSchema = Schema.Struct({
+  enabled: Schema.Boolean,
+  distro: Schema.NullOr(Schema.String),
+  available: Schema.Boolean,
+  wslOnly: Schema.Boolean,
+  distros: Schema.Array(DesktopWslDistroSchema),
+  preflightError: Schema.NullOr(Schema.String),
 });
 
 /**
@@ -432,6 +516,37 @@ export type DesktopPreviewNavStatus =
       description: string;
     };
 
+/**
+ * Emulated `prefers-color-scheme` for the guest page. "system" clears the
+ * override so the page follows the OS appearance.
+ */
+export type DesktopPreviewColorScheme = "system" | "light" | "dark";
+
+export const DesktopPreviewColorSchemeSchema: Schema.Codec<DesktopPreviewColorScheme> =
+  Schema.Literals(["system", "light", "dark"]);
+
+export const FAVICON_DATA_URL_MAX_LENGTH = 8192;
+export const FAVICON_CAPTURED_AT_MAX = 8_640_000_000_000_000;
+
+export interface DesktopPreviewFavicon {
+  dataUrl: string;
+  pageUrl: string;
+  capturedAt: number;
+}
+
+export const DesktopPreviewFaviconSchema: Schema.Codec<DesktopPreviewFavicon> = Schema.Struct({
+  dataUrl: Schema.String.check(
+    Schema.isMaxLength(FAVICON_DATA_URL_MAX_LENGTH),
+    Schema.isPattern(/^data:image\/png;base64,[a-z0-9+/]+={0,2}$/i),
+  ),
+  pageUrl: Schema.String.check(Schema.isMaxLength(2_048)),
+  capturedAt: Schema.Number.check(
+    Schema.isFinite(),
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(FAVICON_CAPTURED_AT_MAX),
+  ),
+});
+
 export interface DesktopPreviewTabState {
   tabId: string;
   webContentsId: number | null;
@@ -440,7 +555,11 @@ export interface DesktopPreviewTabState {
   canGoForward: boolean;
   /** Current zoom factor (1.0 = 100%). */
   zoomFactor: number;
+  /** Whether this tab is currently mirrored into a desktop picture-in-picture window. */
+  pictureInPicture: boolean;
+  colorScheme: DesktopPreviewColorScheme;
   controller: "human" | "agent" | "none";
+  favicon?: DesktopPreviewFavicon;
   updatedAt: string;
 }
 
@@ -476,7 +595,10 @@ export const DesktopPreviewTabStateSchema: Schema.Codec<DesktopPreviewTabState> 
   canGoBack: Schema.Boolean,
   canGoForward: Schema.Boolean,
   zoomFactor: Schema.Number,
+  pictureInPicture: Schema.Boolean,
+  colorScheme: DesktopPreviewColorSchemeSchema,
   controller: Schema.Literals(["human", "agent", "none"]),
+  favicon: Schema.optionalKey(DesktopPreviewFaviconSchema),
   updatedAt: Schema.String,
 });
 
@@ -816,9 +938,41 @@ export const PreviewAnnotationPayloadSchema: Schema.Codec<PreviewAnnotationPaylo
   },
 );
 
+export type PreviewAnnotationSubmission = "attach" | "send";
+export const PreviewAnnotationSubmissionSchema: Schema.Codec<PreviewAnnotationSubmission> =
+  Schema.Literals(["attach", "send"]);
+
+export interface PreviewAnnotationSubmissionResult {
+  annotation: PreviewAnnotationPayload;
+  submission: PreviewAnnotationSubmission;
+}
+export const PreviewAnnotationSubmissionResultSchema: Schema.Codec<PreviewAnnotationSubmissionResult> =
+  Schema.Struct({
+    annotation: PreviewAnnotationPayloadSchema,
+    submission: PreviewAnnotationSubmissionSchema,
+  });
+
 export const DesktopPreviewTabInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,
 });
+
+/**
+ * Tab creation carries the client's configured browser defaults so the guest
+ * is born already zoomed and color-scheme-emulated. Applying them after
+ * creation instead would paint one frame at 100%/system first, which reads as
+ * a flash on every tab open. Both fields are optional so an older renderer
+ * still gets the historical defaults.
+ */
+export const DesktopPreviewCreateTabInputSchema = Schema.Struct({
+  tabId: DesktopPreviewTabIdSchema,
+  zoomFactor: Schema.optional(Schema.Number.check(Schema.isGreaterThan(0))),
+  colorScheme: Schema.optional(DesktopPreviewColorSchemeSchema),
+});
+
+export interface DesktopPreviewTabDefaults {
+  readonly zoomFactor?: number | undefined;
+  readonly colorScheme?: DesktopPreviewColorScheme | undefined;
+}
 
 export const DesktopPreviewRegisterWebviewInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,
@@ -832,6 +986,11 @@ export const DesktopPreviewNavigateInputSchema = Schema.Struct({
 
 export const DesktopPreviewConfigInputSchema = Schema.Struct({
   environmentId: EnvironmentId,
+});
+
+export const DesktopPreviewSetColorSchemeInputSchema = Schema.Struct({
+  tabId: DesktopPreviewTabIdSchema,
+  colorScheme: DesktopPreviewColorSchemeSchema,
 });
 
 export const DesktopPreviewAnnotationThemeInputSchema = Schema.Struct({
@@ -880,7 +1039,17 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
 
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
-  getLocalEnvironmentBootstrap: () => DesktopEnvironmentBootstrap | null;
+  /**
+   * The OS locale as a BCP-47 tag, which the renderer cannot read for itself:
+   * the packaged app ships only the `en-US` Chromium locale pak, so
+   * `navigator.language` and the default `Intl` locale are pinned to `en-US`
+   * regardless of OS settings.
+   */
+  getSystemLocale?: () => string | null;
+  // One bootstrap per pool instance currently registered with bootstrap
+  // info (omits instances whose backend hasn't produced a config yet).
+  // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.
+  getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
   getLocalEnvironmentBearerToken: () => Promise<string>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
@@ -912,15 +1081,38 @@ export interface DesktopBridge {
     readonly port?: number;
   }) => Promise<DesktopServerExposureState>;
   getAdvertisedEndpoints: () => Promise<readonly AdvertisedEndpoint[]>;
+  getWslState: () => Promise<DesktopWslState>;
+  setWslBackendEnabled: (enabled: boolean) => Promise<DesktopWslState>;
+  setWslDistro: (distro: string | null) => Promise<DesktopWslState>;
+  setWslOnly: (enabled: boolean) => Promise<DesktopWslState>;
   pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
-  confirm: (message: string) => Promise<boolean>;
+  /**
+   * Multi-select JSON file picker that opens in the VS Code extensions
+   * directory when one exists. Optional: older desktop builds lack it, and
+   * web callers fall back to a plain file input.
+   */
+  pickThemeFiles?: () => Promise<readonly PickedThemeFile[] | null>;
   setTheme: (theme: DesktopTheme) => Promise<void>;
   showContextMenu: <T extends string>(
     items: readonly ContextMenuItem<T>[],
     position?: { x: number; y: number },
   ) => Promise<T | null>;
   openExternal: (url: string) => Promise<boolean>;
+  /**
+   * Probe this desktop machine for installed remote-capable editor CLIs
+   * (used for remote open-in-editor deep links). Optional: older desktop
+   * builds lack it; callers fall back to VS Code only.
+   */
+  probeRemoteEditors?: () => Promise<readonly EditorId[]>;
   onMenuAction: (listener: (action: string) => void) => () => void;
+  /**
+   * Hold-to-quit hint pushes: "down" when the quit shortcut is first pressed,
+   * "up" when it is released before the hold completes. Optional: older
+   * desktop builds never emit it.
+   */
+  onQuitShortcut?: (listener: (state: "down" | "up") => void) => () => void;
+  getWindowFullscreenState: () => boolean;
+  onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
@@ -935,7 +1127,7 @@ export interface DesktopBridge {
 }
 
 export interface DesktopPreviewBridge {
-  createTab: (tabId: string) => Promise<void>;
+  createTab: (tabId: string, defaults?: DesktopPreviewTabDefaults) => Promise<void>;
   closeTab: (tabId: string) => Promise<void>;
   registerWebview: (tabId: string, webContentsId: number) => Promise<void>;
   navigate: (tabId: string, url: string) => Promise<void>;
@@ -947,6 +1139,11 @@ export interface DesktopPreviewBridge {
   resetZoom: (tabId: string) => Promise<void>;
   /** Reload bypassing the HTTP cache. */
   hardReload: (tabId: string) => Promise<void>;
+  /**
+   * Emulate `prefers-color-scheme` on the guest page ("system" clears the
+   * override). Persists per tab and is re-applied across webview swaps.
+   */
+  setColorScheme: (tabId: string, colorScheme: DesktopPreviewColorScheme) => Promise<void>;
   /** Open the guest webview's DevTools (detached). */
   openDevTools: (tabId: string) => Promise<void>;
   /** Drop cookies + storage data for the preview partition (all tabs). */
@@ -963,15 +1160,20 @@ export interface DesktopPreviewBridge {
   setAnnotationTheme: (theme: DesktopPreviewAnnotationTheme) => Promise<void>;
   /**
    * Activate the in-page element picker for the given tab. Resolves with
-   * the picked payload, or `null` when the user cancels (Escape / nav). The
-   * promise rejects if the picker can't be activated (no webview, etc.).
+   * the picked annotation and its attach/send intent, or `null` when the
+   * user cancels (Escape / nav). The promise rejects if the picker can't be
+   * activated (no webview, etc.).
    */
-  pickElement: (tabId: string) => Promise<PreviewAnnotationPayload | null>;
+  pickElement: (tabId: string) => Promise<PreviewAnnotationSubmissionResult | null>;
   /** Cancel an in-flight preview annotation session. */
   cancelPickElement: (tabId: string) => Promise<void>;
   captureScreenshot: (tabId: string) => Promise<DesktopPreviewScreenshotArtifact>;
   revealArtifact: (path: string) => Promise<void>;
   copyArtifactToClipboard: (path: string) => Promise<void>;
+  pictureInPicture: {
+    open: (tabId: string) => Promise<void>;
+    close: (tabId: string) => Promise<void>;
+  };
   recording: {
     startScreencast: (tabId: string) => Promise<void>;
     stopScreencast: (tabId: string) => Promise<void>;
@@ -996,11 +1198,17 @@ export interface DesktopPreviewBridge {
   onPointerEvent: (listener: (event: DesktopPreviewPointerEvent) => void) => () => void;
 }
 
+export type ConfirmDialogVariant = "default" | "destructive";
+
+export interface ConfirmDialogOptions {
+  readonly variant?: ConfirmDialogVariant;
+}
+
 /**
  * APIs bound to the local app shell, not to any particular backend environment.
  *
  * These capabilities describe the desktop/browser host that the user is
- * currently running: dialogs, editor/external-link opening, context menus, and
+ * currently running: dialogs, external-link opening, context menus, and
  * app-level settings/config access. They must not be used as a proxy for
  * "whatever environment the user is targeting", because in a multi-environment
  * world the local shell and a selected backend environment are distinct
@@ -1009,10 +1217,9 @@ export interface DesktopPreviewBridge {
 export interface LocalApi {
   dialogs: {
     pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
-    confirm: (message: string) => Promise<boolean>;
+    confirm: (message: string, options?: ConfirmDialogOptions) => Promise<boolean>;
   };
   shell: {
-    openInEditor: (cwd: string, editor: EditorId) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
   };
   contextMenu: {
@@ -1020,33 +1227,11 @@ export interface LocalApi {
       items: readonly ContextMenuItem<T>[],
       position?: { x: number; y: number },
     ) => Promise<T | null>;
+    close: () => Promise<void>;
   };
   persistence: {
     getClientSettings: () => Promise<ClientSettings | null>;
     setClientSettings: (settings: ClientSettings) => Promise<void>;
-  };
-  server: {
-    getConfig: () => Promise<ServerConfig>;
-    /**
-     * Refresh provider snapshots. When `input.instanceId` is supplied only that
-     * configured instance is probed; otherwise every configured instance is
-     * refreshed (legacy untargeted refresh).
-     */
-    refreshProviders: (input?: {
-      readonly instanceId?: ProviderInstanceId;
-    }) => Promise<ServerProviderUpdatedPayload>;
-    updateProvider: (input: ServerProviderUpdateInput) => Promise<ServerProviderUpdatedPayload>;
-    upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
-    removeKeybinding: (input: ServerRemoveKeybindingInput) => Promise<ServerRemoveKeybindingResult>;
-    getSettings: () => Promise<ServerSettings>;
-    updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
-    discoverSourceControl: () => Promise<SourceControlDiscoveryResult>;
-    getTraceDiagnostics: () => Promise<ServerTraceDiagnosticsResult>;
-    getProcessDiagnostics: () => Promise<ServerProcessDiagnosticsResult>;
-    getProcessResourceHistory: (
-      input: ServerProcessResourceHistoryInput,
-    ) => Promise<ServerProcessResourceHistoryResult>;
-    signalProcess: (input: ServerSignalProcessInput) => Promise<ServerSignalProcessResult>;
   };
 }
 
@@ -1129,6 +1314,9 @@ export interface EnvironmentApi {
   };
   review: {
     getDiffPreview: (input: ReviewDiffPreviewInput) => Promise<ReviewDiffPreviewResult>;
+    getDiffFileContents: (
+      input: ReviewDiffFileContentsInput,
+    ) => Promise<ReviewDiffFileContentsResult>;
   };
   orchestration: {
     dispatchCommand: (command: ClientOrchestrationCommand) => Promise<{ sequence: number }>;
@@ -1154,19 +1342,19 @@ export interface EnvironmentApi {
   preview: {
     open: (input: typeof PreviewOpenInput.Encoded) => Promise<PreviewSessionSnapshot>;
     navigate: (input: typeof PreviewNavigateInput.Encoded) => Promise<PreviewSessionSnapshot>;
+    resize: (input: typeof PreviewResizeInput.Encoded) => Promise<PreviewSessionSnapshot>;
     refresh: (input: typeof PreviewRefreshInput.Encoded) => Promise<void>;
     close: (input: typeof PreviewCloseInput.Encoded) => Promise<void>;
     list: (input: typeof PreviewListInput.Encoded) => Promise<PreviewListResult>;
     reportStatus: (input: typeof PreviewReportStatusInput.Encoded) => Promise<void>;
     automation: {
       connect: (
-        input: { clientId: string },
-        callback: (request: PreviewAutomationRequest) => void,
+        input: PreviewAutomationHost,
+        callback: (event: PreviewAutomationStreamEvent) => void,
         options?: { onResubscribe?: () => void },
       ) => () => void;
       respond: (response: PreviewAutomationResponse) => Promise<void>;
-      reportOwner: (owner: PreviewAutomationOwner) => Promise<void>;
-      clearOwner: (input: PreviewAutomationOwnerIdentity) => Promise<void>;
+      focusHost: (input: PreviewAutomationHostFocus) => Promise<void>;
     };
     onEvent: (
       callback: (event: PreviewEvent) => void,
