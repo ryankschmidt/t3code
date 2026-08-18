@@ -7,6 +7,7 @@ import {
   AuthReviewWriteScope,
   AuthTerminalOperateScope,
   ORCHESTRATION_WS_METHODS,
+  SYMPHONY_WS_METHODS,
   type AuthEnvironmentScope,
   WS_METHODS,
   WsRpcGroup,
@@ -22,6 +23,11 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  */
 export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
+  // TQ-039 slice 1: Symphony spawns Absurd threads in-process; keep its scopes
+  // beside dispatchCommand since it is the same operate/read split.
+  [SYMPHONY_WS_METHODS.spawnThreadRun]: AuthOrchestrationOperateScope,
+  [SYMPHONY_WS_METHODS.taskStatus]: AuthOrchestrationReadScope,
+  [SYMPHONY_WS_METHODS.runtimeReady]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getTurnDiff]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getFullThreadDiff]: AuthOrchestrationReadScope,

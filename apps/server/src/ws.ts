@@ -31,7 +31,6 @@ import {
   OrchestrationSearchThreadsError,
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
-  type ProjectId,
   type ProjectEntriesFailure,
   type ProjectFileFailure,
   type ProjectFileOperation,
@@ -65,7 +64,6 @@ import {
   RuntimeNotReady,
 } from "@t3tools/contracts";
 import { AbsurdRuntime, SYMPHONY_QUEUE, THREAD_RUN_TASK } from "@t3tools/absurd-runtime";
-import { clamp } from "effect/Number";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
@@ -315,80 +313,6 @@ export function isThreadDetailEvent(event: OrchestrationEvent): event is Extract
 }
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
-
-const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
-  [ORCHESTRATION_WS_METHODS.dispatchCommand, AuthOrchestrationOperateScope],
-  [SYMPHONY_WS_METHODS.spawnThreadRun, AuthOrchestrationOperateScope],
-  [SYMPHONY_WS_METHODS.taskStatus, AuthOrchestrationReadScope],
-  [SYMPHONY_WS_METHODS.runtimeReady, AuthOrchestrationReadScope],
-  [ORCHESTRATION_WS_METHODS.getTurnDiff, AuthOrchestrationReadScope],
-  [ORCHESTRATION_WS_METHODS.getFullThreadDiff, AuthOrchestrationReadScope],
-  [ORCHESTRATION_WS_METHODS.replayEvents, AuthOrchestrationReadScope],
-  [ORCHESTRATION_WS_METHODS.subscribeShell, AuthOrchestrationReadScope],
-  [ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot, AuthOrchestrationReadScope],
-  [ORCHESTRATION_WS_METHODS.subscribeThread, AuthOrchestrationReadScope],
-  [WS_METHODS.serverGetConfig, AuthOrchestrationReadScope],
-  [WS_METHODS.serverRefreshProviders, AuthOrchestrationOperateScope],
-  [WS_METHODS.serverUpdateProvider, AuthOrchestrationOperateScope],
-  [WS_METHODS.serverUpsertKeybinding, AuthOrchestrationOperateScope],
-  [WS_METHODS.serverRemoveKeybinding, AuthOrchestrationOperateScope],
-  [WS_METHODS.serverGetSettings, AuthOrchestrationReadScope],
-  [WS_METHODS.serverUpdateSettings, AuthOrchestrationOperateScope],
-  [WS_METHODS.serverDiscoverSourceControl, AuthOrchestrationReadScope],
-  [WS_METHODS.serverGetTraceDiagnostics, AuthOrchestrationReadScope],
-  [WS_METHODS.serverGetProcessDiagnostics, AuthOrchestrationReadScope],
-  [WS_METHODS.serverGetProcessResourceHistory, AuthOrchestrationReadScope],
-  [WS_METHODS.serverSignalProcess, AuthOrchestrationOperateScope],
-  [WS_METHODS.cloudGetRelayClientStatus, AuthRelayWriteScope],
-  [WS_METHODS.cloudInstallRelayClient, AuthRelayWriteScope],
-  [WS_METHODS.sourceControlLookupRepository, AuthOrchestrationReadScope],
-  [WS_METHODS.sourceControlCloneRepository, AuthOrchestrationOperateScope],
-  [WS_METHODS.sourceControlPublishRepository, AuthOrchestrationOperateScope],
-  [WS_METHODS.projectsListEntries, AuthOrchestrationReadScope],
-  [WS_METHODS.projectsReadFile, AuthOrchestrationReadScope],
-  [WS_METHODS.projectsSearchEntries, AuthOrchestrationReadScope],
-  [WS_METHODS.projectsWriteFile, AuthOrchestrationOperateScope],
-  [WS_METHODS.shellOpenInEditor, AuthOrchestrationOperateScope],
-  [WS_METHODS.filesystemBrowse, AuthOrchestrationReadScope],
-  [WS_METHODS.assetsCreateUrl, AuthOrchestrationReadScope],
-  [WS_METHODS.subscribeVcsStatus, AuthOrchestrationReadScope],
-  [WS_METHODS.vcsRefreshStatus, AuthOrchestrationReadScope],
-  [WS_METHODS.vcsPull, AuthOrchestrationOperateScope],
-  [WS_METHODS.gitRunStackedAction, AuthOrchestrationOperateScope],
-  [WS_METHODS.gitResolvePullRequest, AuthOrchestrationOperateScope],
-  [WS_METHODS.gitPreparePullRequestThread, AuthOrchestrationOperateScope],
-  [WS_METHODS.vcsListRefs, AuthOrchestrationReadScope],
-  [WS_METHODS.vcsCreateWorktree, AuthOrchestrationOperateScope],
-  [WS_METHODS.vcsRemoveWorktree, AuthOrchestrationOperateScope],
-  [WS_METHODS.vcsCreateRef, AuthOrchestrationOperateScope],
-  [WS_METHODS.vcsSwitchRef, AuthOrchestrationOperateScope],
-  [WS_METHODS.vcsInit, AuthOrchestrationOperateScope],
-  [WS_METHODS.reviewGetDiffPreview, AuthReviewWriteScope],
-  [WS_METHODS.terminalOpen, AuthTerminalOperateScope],
-  [WS_METHODS.terminalAttach, AuthTerminalOperateScope],
-  [WS_METHODS.terminalWrite, AuthTerminalOperateScope],
-  [WS_METHODS.terminalResize, AuthTerminalOperateScope],
-  [WS_METHODS.terminalClear, AuthTerminalOperateScope],
-  [WS_METHODS.terminalRestart, AuthTerminalOperateScope],
-  [WS_METHODS.terminalClose, AuthTerminalOperateScope],
-  [WS_METHODS.subscribeTerminalEvents, AuthTerminalOperateScope],
-  [WS_METHODS.subscribeTerminalMetadata, AuthTerminalOperateScope],
-  [WS_METHODS.previewOpen, AuthOrchestrationOperateScope],
-  [WS_METHODS.previewNavigate, AuthOrchestrationOperateScope],
-  [WS_METHODS.previewRefresh, AuthOrchestrationOperateScope],
-  [WS_METHODS.previewClose, AuthOrchestrationOperateScope],
-  [WS_METHODS.previewList, AuthOrchestrationReadScope],
-  [WS_METHODS.previewReportStatus, AuthOrchestrationOperateScope],
-  [WS_METHODS.previewAutomationConnect, AuthOrchestrationOperateScope],
-  [WS_METHODS.previewAutomationRespond, AuthOrchestrationOperateScope],
-  [WS_METHODS.previewAutomationReportOwner, AuthOrchestrationOperateScope],
-  [WS_METHODS.previewAutomationClearOwner, AuthOrchestrationOperateScope],
-  [WS_METHODS.subscribePreviewEvents, AuthOrchestrationReadScope],
-  [WS_METHODS.subscribeDiscoveredLocalServers, AuthOrchestrationReadScope],
-  [WS_METHODS.subscribeServerConfig, AuthOrchestrationReadScope],
-  [WS_METHODS.subscribeServerLifecycle, AuthOrchestrationReadScope],
-  [WS_METHODS.subscribeAuthAccess, AuthAccessReadScope],
-]);
 
 // When a resuming client's cursor is more than this many events behind the
 // current head, skip the per-event catch-up replay and send a fresh shell
@@ -1335,8 +1259,7 @@ const makeWsRpcLayer = (
               const symphonyApp = runtime.symphonyQueue?.app;
               if (symphonyApp === undefined) {
                 return yield* new SymphonyRuntimeUnavailableError({
-                  message:
-                    "Symphony queue worker is unavailable; symphony spawn failed closed.",
+                  message: "Symphony queue worker is unavailable; symphony spawn failed closed.",
                 });
               }
               const spawned = yield* Effect.tryPromise({

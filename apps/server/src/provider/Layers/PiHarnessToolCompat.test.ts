@@ -69,6 +69,8 @@ import { OrchestrationEngineLive } from "../../orchestration/Layers/Orchestratio
 import { OrchestrationProjectionPipelineLive } from "../../orchestration/Layers/ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "../../orchestration/Layers/ProjectionSnapshotQuery.ts";
 import { ProviderRuntimeIngestionLive } from "../../orchestration/Layers/ProviderRuntimeIngestion.ts";
+import { layer as ThreadBackgroundLivenessLive } from "../../orchestration/ThreadBackgroundLiveness.ts";
+import { layer as ThreadPlanProgressLive } from "../../orchestration/ThreadPlanProgress.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderRuntimeIngestionService } from "../../orchestration/Services/ProviderRuntimeIngestion.ts";
@@ -77,10 +79,7 @@ import { OrchestrationEventStoreLive } from "../../persistence/Layers/Orchestrat
 import { makeSqlitePersistenceLive } from "../../persistence/Layers/Sqlite.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { type ProviderAdapterError } from "../Errors.ts";
-import {
-  ProviderService,
-  type ProviderServiceShape,
-} from "../Services/ProviderService.ts";
+import { ProviderService, type ProviderServiceShape } from "../Services/ProviderService.ts";
 import { type ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import { makePiAdapter } from "./PiAdapter.ts";
 import { type PiMeridianRouteGuardOptions } from "./PiMeridianRoute.ts";
@@ -303,9 +302,18 @@ packLayer("Pi harness tool-compatibility pack (scenarios 1-7, hermetic)", (it) =
         Effect.forkChild,
       );
       yield* scriptTurn(runtimeOn, threadOn, asTurnId("turn-s1-on"), [
-        { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "TOOLPACK " } },
-        { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "stream parity " } },
-        { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "final text" } },
+        {
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: "TOOLPACK " },
+        },
+        {
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: "stream parity " },
+        },
+        {
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: "final text" },
+        },
         assistantEnd(finalText),
       ]);
       const eventsOn = yield* Fiber.join(collectedOn);
@@ -324,7 +332,14 @@ packLayer("Pi harness tool-compatibility pack (scenarios 1-7, hermetic)", (it) =
 
       NodeAssert.deepStrictEqual(
         eventsOn.map((event) => event.type),
-        ["turn.started", "content.delta", "content.delta", "content.delta", "item.completed", "turn.completed"],
+        [
+          "turn.started",
+          "content.delta",
+          "content.delta",
+          "content.delta",
+          "item.completed",
+          "turn.completed",
+        ],
       );
       NodeAssert.deepStrictEqual(
         eventsOff.map((event) => event.type),
@@ -332,13 +347,16 @@ packLayer("Pi harness tool-compatibility pack (scenarios 1-7, hermetic)", (it) =
       );
       const completedOn = eventsOn[4] as ProviderRuntimeEvent;
       const completedOff = eventsOff[1] as ProviderRuntimeEvent;
-      NodeAssert.ok(completedOn.type === "item.completed" && completedOff.type === "item.completed");
+      NodeAssert.ok(
+        completedOn.type === "item.completed" && completedOff.type === "item.completed",
+      );
       NodeAssert.equal(completedOn.payload.detail, finalText);
       NodeAssert.equal(completedOff.payload.detail, finalText);
       // Parity: the streamed deltas concatenate to the same final text.
       const streamedText = eventsOn
-        .filter((event): event is Extract<ProviderRuntimeEvent, { type: "content.delta" }> =>
-          event.type === "content.delta",
+        .filter(
+          (event): event is Extract<ProviderRuntimeEvent, { type: "content.delta" }> =>
+            event.type === "content.delta",
         )
         .map((event) => event.payload.delta)
         .join("");
@@ -399,9 +417,24 @@ packLayer("Pi harness tool-compatibility pack (scenarios 1-7, hermetic)", (it) =
         threadId,
         asTurnId(input.turnId),
         [
-          { type: "tool_execution_start", toolCallId: "call-echo-1", toolName: "dummy_echo", args: { text: "ping" } },
-          { type: "tool_execution_update", toolCallId: "call-echo-1", toolName: "dummy_echo", partialResult: "pi" },
-          { type: "tool_execution_end", toolCallId: "call-echo-1", toolName: "dummy_echo", result: "ping" },
+          {
+            type: "tool_execution_start",
+            toolCallId: "call-echo-1",
+            toolName: "dummy_echo",
+            args: { text: "ping" },
+          },
+          {
+            type: "tool_execution_update",
+            toolCallId: "call-echo-1",
+            toolName: "dummy_echo",
+            partialResult: "pi",
+          },
+          {
+            type: "tool_execution_end",
+            toolCallId: "call-echo-1",
+            toolName: "dummy_echo",
+            result: "ping",
+          },
           assistantEnd("the dummy_echo tool returned ping"),
         ],
         { model: input.model },
@@ -409,7 +442,14 @@ packLayer("Pi harness tool-compatibility pack (scenarios 1-7, hermetic)", (it) =
       const events = yield* Fiber.join(collected);
       NodeAssert.deepStrictEqual(
         events.map((event) => event.type),
-        ["turn.started", "item.started", "item.updated", "item.completed", "item.completed", "turn.completed"],
+        [
+          "turn.started",
+          "item.started",
+          "item.updated",
+          "item.completed",
+          "item.completed",
+          "turn.completed",
+        ],
       );
       const turnStarted = events[0] as ProviderRuntimeEvent;
       NodeAssert.ok(turnStarted.type === "turn.started");
@@ -418,8 +458,15 @@ packLayer("Pi harness tool-compatibility pack (scenarios 1-7, hermetic)", (it) =
         routeFamily: input.routeFamily,
       });
       const toolEvents = events.filter(
-        (event): event is Extract<ProviderRuntimeEvent, { type: "item.started" | "item.updated" | "item.completed" }> =>
-          (event.type === "item.started" || event.type === "item.updated" || event.type === "item.completed") &&
+        (
+          event,
+        ): event is Extract<
+          ProviderRuntimeEvent,
+          { type: "item.started" | "item.updated" | "item.completed" }
+        > =>
+          (event.type === "item.started" ||
+            event.type === "item.updated" ||
+            event.type === "item.completed") &&
           event.payload.itemType === "dynamic_tool_call",
       );
       NodeAssert.equal(toolEvents.length, 3);
@@ -475,8 +522,19 @@ packLayer("Pi harness tool-compatibility pack (scenarios 1-7, hermetic)", (it) =
         Effect.forkChild,
       );
       yield* scriptTurn(runtime, threadId, asTurnId("turn-s4"), [
-        { type: "tool_execution_start", toolCallId: "call-fail-1", toolName: "dummy_echo", args: { text: "boom" } },
-        { type: "tool_execution_end", toolCallId: "call-fail-1", toolName: "dummy_echo", result: "dummy_echo exploded", isError: true },
+        {
+          type: "tool_execution_start",
+          toolCallId: "call-fail-1",
+          toolName: "dummy_echo",
+          args: { text: "boom" },
+        },
+        {
+          type: "tool_execution_end",
+          toolCallId: "call-fail-1",
+          toolName: "dummy_echo",
+          result: "dummy_echo exploded",
+          isError: true,
+        },
         assistantEnd("the tool failed, recovering"),
       ]);
       const events = yield* Fiber.join(collected);
@@ -510,9 +568,19 @@ packLayer("Pi harness tool-compatibility pack (scenarios 1-7, hermetic)", (it) =
         Effect.forkChild,
       );
       yield* scriptTurn(runtime, threadId, asTurnId("turn-s5"), [
-        { type: "tool_execution_start", toolCallId: "call-a", toolName: "dummy_echo", args: { text: "one" } },
+        {
+          type: "tool_execution_start",
+          toolCallId: "call-a",
+          toolName: "dummy_echo",
+          args: { text: "one" },
+        },
         { type: "tool_execution_end", toolCallId: "call-a", toolName: "dummy_echo", result: "one" },
-        { type: "tool_execution_start", toolCallId: "call-b", toolName: "dummy_add", args: { a: 1, b: 2 } },
+        {
+          type: "tool_execution_start",
+          toolCallId: "call-b",
+          toolName: "dummy_add",
+          args: { a: 1, b: 2 },
+        },
         { type: "tool_execution_end", toolCallId: "call-b", toolName: "dummy_add", result: "3" },
         assistantEnd("echoed one, then added to 3"),
       ]);
@@ -569,7 +637,12 @@ packLayer("Pi harness tool-compatibility pack (scenarios 1-7, hermetic)", (it) =
           Effect.forkChild,
         );
         yield* scriptTurn(runtime, threadId, asTurnId("turn-s6"), [
-          { type: "tool_execution_start", toolCallId: "call-blocked-1", toolName: "PowerShell", args: { script: "Get-Date" } },
+          {
+            type: "tool_execution_start",
+            toolCallId: "call-blocked-1",
+            toolName: "PowerShell",
+            args: { script: "Get-Date" },
+          },
           {
             type: "tool_execution_end",
             toolCallId: "call-blocked-1",
@@ -612,10 +685,25 @@ packLayer("Pi harness tool-compatibility pack (scenarios 1-7, hermetic)", (it) =
         Effect.forkChild,
       );
       yield* scriptTurn(runtime, threadId, asTurnId("turn-s7"), [
-        { type: "tool_execution_start", toolCallId: "call-dup", toolName: "dummy_echo", args: { text: "once" } },
-        { type: "tool_execution_end", toolCallId: "call-dup", toolName: "dummy_echo", result: "once" },
+        {
+          type: "tool_execution_start",
+          toolCallId: "call-dup",
+          toolName: "dummy_echo",
+          args: { text: "once" },
+        },
+        {
+          type: "tool_execution_end",
+          toolCallId: "call-dup",
+          toolName: "dummy_echo",
+          result: "once",
+        },
         // DUPLICATE delivery of the same end frame — must emit NOTHING.
-        { type: "tool_execution_end", toolCallId: "call-dup", toolName: "dummy_echo", result: "once" },
+        {
+          type: "tool_execution_end",
+          toolCallId: "call-dup",
+          toolName: "dummy_echo",
+          result: "once",
+        },
         assistantEnd("done exactly once"),
       ]);
       const events = yield* Fiber.join(collected);
@@ -718,6 +806,8 @@ describe("Pi harness tool-compatibility pack (scenario 8, restart durability)", 
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ThreadBackgroundLivenessLive),
+      Layer.provideMerge(ThreadPlanProgressLive),
       Layer.provideMerge(NodeServices.layer),
     );
     const runtime = ManagedRuntime.make(layer);
@@ -831,8 +921,12 @@ describe("Pi harness tool-compatibility pack (scenario 8, restart durability)", 
       await waitForThread(
         readModel,
         (thread) =>
-          thread.activities.some((entry: ToolCompatActivity) => entry.id === "evt-pack-route-codex") &&
-          thread.activities.some((entry: ToolCompatActivity) => entry.id === "evt-pack-route-claude"),
+          thread.activities.some(
+            (entry: ToolCompatActivity) => entry.id === "evt-pack-route-codex",
+          ) &&
+          thread.activities.some(
+            (entry: ToolCompatActivity) => entry.id === "evt-pack-route-claude",
+          ),
       );
 
       await Effect.runPromise(Scope.close(scope, Exit.void));

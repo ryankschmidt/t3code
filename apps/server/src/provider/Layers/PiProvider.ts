@@ -1,7 +1,6 @@
 import {
   type ModelCapabilities,
   type PiSettings,
-  ProviderDriverKind,
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
@@ -40,7 +39,6 @@ const PI_PRESENTATION = {
   showInteractionModeToggle: false,
   requiresNewThreadForModelChange: false,
 } as const;
-const PROVIDER = ProviderDriverKind.make("pi");
 
 const PI_THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
   off: "Off",
@@ -81,12 +79,7 @@ const PI_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [];
 export function piModelsFromSettings(
   customModels: ReadonlyArray<string> | undefined,
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings(
-    PI_BUILT_IN_MODELS,
-    PROVIDER,
-    customModels ?? [],
-    PI_MODEL_CAPABILITIES,
-  );
+  return providerModelsFromSettings(PI_BUILT_IN_MODELS, customModels ?? [], PI_MODEL_CAPABILITIES);
 }
 
 export function buildInitialPiProviderSnapshot(
@@ -128,7 +121,10 @@ export function buildInitialPiProviderSnapshot(
   });
 }
 
-const runPiVersionCommand = (piSettings: PiSettings, environment: NodeJS.ProcessEnv = process.env) =>
+const runPiVersionCommand = (
+  piSettings: PiSettings,
+  environment: NodeJS.ProcessEnv = process.env,
+) =>
   Effect.gen(function* () {
     const command = piSettings.binaryPath || "pi";
     const spawnCommand = yield* resolveSpawnCommand(command, ["--version"], {
@@ -297,7 +293,6 @@ export const enrichPiSnapshot = Effect.fn("enrichPiSnapshot")(function* (input: 
   }));
   const models = providerModelsFromSettings(
     discoveredModels,
-    PROVIDER,
     input.piSettings.customModels ?? [],
     PI_MODEL_CAPABILITIES,
   );

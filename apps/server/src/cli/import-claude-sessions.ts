@@ -375,6 +375,7 @@ const makeConfig = Effect.fn(function* (baseDir: string, profile: "dev" | "deskt
     baseDir,
     staticDir: undefined,
     devUrl,
+    devAllowedOrigins: [],
     noBrowser: true,
     startupPresentation: "headless",
     desktopBootstrapToken: undefined,

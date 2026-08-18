@@ -68,6 +68,8 @@ function makeThread(input: {
     updatedAt: NOW,
     archivedAt: null,
     deletedAt: input.deletedAt ?? null,
+    settledOverride: null,
+    settledAt: null,
     messages: [],
     proposedPlans: [],
     activities: [],
@@ -104,6 +106,8 @@ function makeSnapshotQueryLayer(input: {
   return Layer.succeed(ProjectionSnapshotQuery, {
     getCommandReadModel: () => Effect.die("unused"),
     getSnapshot: input.getSnapshot,
+    searchThreads: () => Effect.die("unused"),
+    getThreadDetailSnapshot: () => Effect.die("unused"),
     getShellSnapshot: () => Effect.die("unused"),
     getArchivedShellSnapshot: () => Effect.die("unused"),
     getSnapshotSequence: () => Effect.die("unused"),
@@ -118,9 +122,10 @@ function makeSnapshotQueryLayer(input: {
   });
 }
 
-function makeEngine(input?: {
-  readonly failFor?: ReadonlySet<string>;
-}): { readonly engine: OrchestrationEngineShape; readonly dispatched: OrchestrationCommand[] } {
+function makeEngine(input?: { readonly failFor?: ReadonlySet<string> }): {
+  readonly engine: OrchestrationEngineShape;
+  readonly dispatched: OrchestrationCommand[];
+} {
   const dispatched: OrchestrationCommand[] = [];
   const engine: OrchestrationEngineShape = {
     readEvents: () => Stream.empty,
@@ -132,6 +137,7 @@ function makeEngine(input?: {
             return { sequence: dispatched.length };
           }),
     streamDomainEvents: Stream.empty,
+    latestSequence: Effect.succeed(0),
   };
   return { engine, dispatched };
 }
@@ -193,12 +199,12 @@ describe("sweepOrphanedSessions", () => {
   });
 
   it("leaves settled sessions, missing sessions, and deleted threads untouched", async () => {
-    const threads = (
-      ["idle", "ready", "interrupted", "stopped", "error"] as const
-    ).map((status, index) => {
-      const id = ThreadId.make(`thread-settled-${index}`);
-      return makeThread({ id, session: makeSession({ threadId: id, status }) });
-    });
+    const threads = (["idle", "ready", "interrupted", "stopped", "error"] as const).map(
+      (status, index) => {
+        const id = ThreadId.make(`thread-settled-${index}`);
+        return makeThread({ id, session: makeSession({ threadId: id, status }) });
+      },
+    );
     const noSessionThreadId = ThreadId.make("thread-no-session");
     const deletedThreadId = ThreadId.make("thread-deleted-running");
     const { result, dispatched } = await runSweep({

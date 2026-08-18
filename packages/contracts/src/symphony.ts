@@ -13,7 +13,6 @@
  * from this rail.
  */
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
 import * as SchemaIssue from "effect/SchemaIssue";
@@ -64,9 +63,7 @@ const SymphonySpawnThreadRunFields = Schema.Struct({
 });
 
 /** The only keys a symphony spawn request may carry (Slice 1S D1). */
-const SYMPHONY_SPAWN_ALLOWED_KEYS = new Set(
-  Object.keys(SymphonySpawnThreadRunFields.fields),
-);
+const SYMPHONY_SPAWN_ALLOWED_KEYS = new Set(Object.keys(SymphonySpawnThreadRunFields.fields));
 
 /**
  * Fresh-thread-only, structurally enforced (Slice 1S D1). `effect`'s
@@ -100,12 +97,10 @@ export const SymphonySpawnThreadRunInput = Schema.Unknown.pipe(
         // normal "expected an object" error; this check only polices keys.
         return Effect.succeed(input as Encoded);
       }
-      const excessKeys = Object.keys(input).filter(
-        (key) => !SYMPHONY_SPAWN_ALLOWED_KEYS.has(key),
-      );
+      const excessKeys = Object.keys(input).filter((key) => !SYMPHONY_SPAWN_ALLOWED_KEYS.has(key));
       if (excessKeys.length > 0) {
         return Effect.fail(
-          new SchemaIssue.InvalidValue(Option.some(input), {
+          new SchemaIssue.InvalidValue({
             message: `Unexpected key(s) on a symphony spawn request: ${excessKeys.join(", ")} (fresh-thread-only — a campaign spawn cannot name an existing thread)`,
           }),
         );
