@@ -21,11 +21,19 @@ export type ThreadActionMenuId =
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
+  // ThroughLine: the NATIVE agent session behind the thread, distinct from `copy-thread-id`
+  // which copies ThroughLine's own thread id. These are what a terminal needs to resume.
+  | "copy-session-uuid"
+  | "copy-transcript-path"
   | "archive"
   | "delete";
 
 export interface ThreadActionMenuState {
   readonly branch: string | null;
+  // ThroughLine: null whenever the thread has no native session recorded, which gates the
+  // two copy items the same way `branch` gates "New thread on <branch>".
+  readonly sessionUuid: string | null;
+  readonly transcriptPath: string | null;
   readonly isPinned: boolean;
   readonly isSettled: boolean;
   readonly isSnoozed: boolean;
@@ -105,6 +113,20 @@ export function buildThreadActionMenuItems(
     { id: "copy-path", label: "Copy path", icon: "copy" },
     ...(state.branch ? [{ id: "copy-branch" as const, label: "Copy branch", icon: "copy" }] : []),
     { id: "copy-thread-id", label: "Copy thread ID", icon: "copy" },
+    // ThroughLine: shown only when the thread actually carries a native session, so the menu
+    // never offers an action that would copy nothing.
+    ...(state.sessionUuid
+      ? [{ id: "copy-session-uuid" as const, label: "Copy session UUID", icon: "copy" as const }]
+      : []),
+    ...(state.transcriptPath
+      ? [
+          {
+            id: "copy-transcript-path" as const,
+            label: "Copy transcript path",
+            icon: "copy" as const,
+          },
+        ]
+      : []),
     // Archive removes the thread from the sidebar while keeping its
     // conversation under Settings > Archived threads — distinct from Settle
     // (stays visible in the Settled shelf) and Delete (clears history for

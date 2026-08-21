@@ -304,6 +304,13 @@ export const OrchestrationSession = Schema.Struct({
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   activeTurnId: Schema.NullOr(TurnId),
   lastError: Schema.NullOr(TrimmedNonEmptyString),
+  // ThroughLine: the native agent session behind this thread. A thread already knows which
+  // Claude session or Codex thread it resumes — the value lives in
+  // provider_session_runtime.resume_cursor_json — but nothing ever carried it out to the
+  // client, so the operator had to query state.sqlite by hand to resume a seat in a terminal.
+  // Optional rather than required so payloads persisted before this field decode unchanged.
+  providerSessionId: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  nativeTranscriptPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationSession = typeof OrchestrationSession.Type;

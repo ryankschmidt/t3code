@@ -26,6 +26,8 @@ import {
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
+import * as os from "node:os";
+
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -98,6 +100,18 @@ const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
   }),
 );
 const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession;
+
+// ThroughLine: provider_session_runtime is the only table that actually knows which native
+// agent session a thread holds. projection_thread_sessions.provider_session_id looks like the
+// obvious source and is a dead end — the native upsert omits the column and the session
+// importer writes null, so it is null for every row. The cursor JSON is read as raw text and
+// parsed defensively below; a malformed row must degrade to nulls rather than fail a snapshot.
+const ProviderSessionRuntimeIdentityDbRowSchema = Schema.Struct({
+  threadId: ThreadId,
+  providerName: Schema.NullOr(Schema.String),
+  resumeCursorJson: Schema.NullOr(Schema.String),
+  runtimePayloadJson: Schema.NullOr(Schema.String),
+});
 const ProjectionCheckpointDbRowSchema = ProjectionCheckpoint.mapFields(
   Struct.assign({
     files: Schema.fromJsonString(Schema.Array(OrchestrationCheckpointFile)),
@@ -295,8 +309,91 @@ function mapTitleRegeneration(row: Schema.Schema.Type<typeof ProjectionThreadDbR
     : null;
 }
 
+// ThroughLine: the native session identity a thread resumes, derived for display only.
+// Claude records its session under `resume`, Codex under `threadId`. The transcript path is
+// preferred straight from the runtime payload; for Claude we can otherwise reconstruct it,
+// because a Claude transcript lives at a path derived purely from the session's cwd and id.
+// Deliberately string-only — this runs inside a read-model query, so it must never touch the
+// filesystem to decide whether the path it reports exists.
+type NativeSessionIdentity = {
+  readonly providerSessionId: string | null;
+  readonly nativeTranscriptPath: string | null;
+};
+
+const EMPTY_NATIVE_SESSION_IDENTITY: NativeSessionIdentity = {
+  providerSessionId: null,
+  nativeTranscriptPath: null,
+};
+
+function parseJsonRecord(raw: string | null): Record<string, unknown> | null {
+  if (raw === null || raw.length === 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function readStringField(record: Record<string, unknown> | null, key: string): string | null {
+  if (record === null) return null;
+  const value = record[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function deriveNativeSessionIdentity(
+  row: Schema.Schema.Type<typeof ProviderSessionRuntimeIdentityDbRowSchema>,
+): NativeSessionIdentity {
+  const cursor = parseJsonRecord(row.resumeCursorJson);
+  const runtimePayload = parseJsonRecord(row.runtimePayloadJson);
+
+  const providerSessionId =
+    row.providerName === "claudeAgent"
+      ? readStringField(cursor, "resume")
+      : row.providerName === "codex"
+        ? readStringField(cursor, "threadId")
+        : null;
+
+  const recordedTranscriptPath = readStringField(runtimePayload, "transcriptPath");
+  if (recordedTranscriptPath !== null) {
+    return { providerSessionId, nativeTranscriptPath: recordedTranscriptPath };
+  }
+
+  const cwd = readStringField(runtimePayload, "cwd");
+  if (row.providerName === "claudeAgent" && providerSessionId !== null && cwd !== null) {
+    const projectKey = cwd.replace(/[/._]/g, "-");
+    return {
+      providerSessionId,
+      nativeTranscriptPath: `${os.homedir()}/.claude/projects/${projectKey}/${providerSessionId}.jsonl`,
+    };
+  }
+
+  return { providerSessionId, nativeTranscriptPath: null };
+}
+
+function buildNativeIdentityMap(
+  rows: ReadonlyArray<Schema.Schema.Type<typeof ProviderSessionRuntimeIdentityDbRowSchema>>,
+): Map<string, NativeSessionIdentity> {
+  const identityByThread = new Map<string, NativeSessionIdentity>();
+  for (const row of rows) {
+    identityByThread.set(row.threadId, deriveNativeSessionIdentity(row));
+  }
+  return identityByThread;
+}
+
+function nativeIdentityFromOption(
+  row: Option.Option<Schema.Schema.Type<typeof ProviderSessionRuntimeIdentityDbRowSchema>>,
+): NativeSessionIdentity {
+  return Option.isSome(row)
+    ? deriveNativeSessionIdentity(row.value)
+    : EMPTY_NATIVE_SESSION_IDENTITY;
+}
+
 function mapSessionRow(
   row: Schema.Schema.Type<typeof ProjectionThreadSessionDbRowSchema>,
+  identity: NativeSessionIdentity = EMPTY_NATIVE_SESSION_IDENTITY,
 ): OrchestrationSession {
   return {
     threadId: row.threadId,
@@ -306,6 +403,8 @@ function mapSessionRow(
     runtimeMode: row.runtimeMode,
     activeTurnId: row.activeTurnId,
     lastError: row.lastError,
+    providerSessionId: identity.providerSessionId,
+    nativeTranscriptPath: identity.nativeTranscriptPath,
     updatedAt: row.updatedAt,
   };
 }
@@ -651,6 +750,40 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE threads.deleted_at IS NULL
           AND threads.archived_at IS NOT NULL
         ORDER BY sessions.thread_id ASC
+      `,
+  });
+
+  // ThroughLine: reads the resume-bookkeeping table alongside the session rows so a snapshot
+  // can carry each thread's native session identity. Same database as every query above —
+  // migrations 004 and 005 are siblings — so this adds a read, not a connection.
+  const listProviderSessionRuntimeIdentityRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProviderSessionRuntimeIdentityDbRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          thread_id AS "threadId",
+          provider_name AS "providerName",
+          resume_cursor_json AS "resumeCursorJson",
+          runtime_payload_json AS "runtimePayloadJson"
+        FROM provider_session_runtime
+        ORDER BY thread_id ASC
+      `,
+  });
+
+  const getProviderSessionRuntimeIdentityRowByThread = SqlSchema.findOneOption({
+    Request: ThreadIdLookupInput,
+    Result: ProviderSessionRuntimeIdentityDbRowSchema,
+    execute: ({ threadId }) =>
+      sql`
+        SELECT
+          thread_id AS "threadId",
+          provider_name AS "providerName",
+          resume_cursor_json AS "resumeCursorJson",
+          runtime_payload_json AS "runtimePayloadJson"
+        FROM provider_session_runtime
+        WHERE thread_id = ${threadId}
+        LIMIT 1
       `,
   });
 
@@ -1517,6 +1650,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          // ThroughLine: native session identity for the copy-session-uuid row actions.
+          listProviderSessionRuntimeIdentityRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getSnapshot:listProviderSessionRuntimeIdentities:query",
+                "ProjectionSnapshotQuery.getSnapshot:listProviderSessionRuntimeIdentities:decodeRows",
+              ),
+            ),
+          ),
         ]),
       )
       .pipe(
@@ -1531,6 +1673,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             checkpointRows,
             latestTurnRows,
             stateRows,
+            runtimeIdentityRows,
           ]) =>
             Effect.gen(function* () {
               const messagesByThread = new Map<string, Array<OrchestrationMessage>>();
@@ -1650,8 +1793,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 });
               }
 
+              // ThroughLine: one identity per thread, keyed for the session loop below.
+              const nativeIdentityByThread = buildNativeIdentityMap(runtimeIdentityRows);
+
               for (const row of sessionRows) {
                 updatedAt = maxIso(updatedAt, row.updatedAt);
+                const nativeIdentity =
+                  nativeIdentityByThread.get(row.threadId) ?? EMPTY_NATIVE_SESSION_IDENTITY;
                 sessionsByThread.set(row.threadId, {
                   threadId: row.threadId,
                   status: row.status,
@@ -1662,6 +1810,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   runtimeMode: row.runtimeMode,
                   activeTurnId: row.activeTurnId,
                   lastError: row.lastError,
+                  providerSessionId: nativeIdentity.providerSessionId,
+                  nativeTranscriptPath: nativeIdentity.nativeTranscriptPath,
                   updatedAt: row.updatedAt,
                 });
               }
@@ -1787,11 +1937,28 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          // ThroughLine: native session identity for the copy-session-uuid row actions.
+          listProviderSessionRuntimeIdentityRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getCommandReadModel:listProviderSessionRuntimeIdentities:query",
+                "ProjectionSnapshotQuery.getCommandReadModel:listProviderSessionRuntimeIdentities:decodeRows",
+              ),
+            ),
+          ),
         ]),
       )
       .pipe(
         Effect.flatMap(
-          ([projectRows, threadRows, proposedPlanRows, sessionRows, latestTurnRows, stateRows]) =>
+          ([
+            projectRows,
+            threadRows,
+            proposedPlanRows,
+            sessionRows,
+            latestTurnRows,
+            stateRows,
+            runtimeIdentityRows,
+          ]) =>
             Effect.sync(() => {
               let updatedAt: string | null = null;
               const projects: OrchestrationProject[] = [];
@@ -1868,13 +2035,18 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               }
               const proposedPlansByThread = new Map<string, Array<OrchestrationProposedPlan>>();
               const sessionByThread = new Map<string, OrchestrationSession>();
+              // ThroughLine: native session identity, keyed by thread for the loop below.
+              const nativeIdentityByThread = buildNativeIdentityMap(runtimeIdentityRows);
 
               for (let index = 0; index < sessionRows.length; index += 1) {
                 const row = sessionRows[index];
                 if (!row) {
                   continue;
                 }
-                sessionByThread.set(row.threadId, mapSessionRow(row));
+                sessionByThread.set(
+                  row.threadId,
+                  mapSessionRow(row, nativeIdentityByThread.get(row.threadId)),
+                );
               }
 
               for (let index = 0; index < proposedPlanRows.length; index += 1) {
@@ -1981,11 +2153,24 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          // ThroughLine: native session identity for the copy-session-uuid row actions.
+          listProviderSessionRuntimeIdentityRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getShellSnapshot:listProviderSessionRuntimeIdentities:query",
+                "ProjectionSnapshotQuery.getShellSnapshot:listProviderSessionRuntimeIdentities:decodeRows",
+              ),
+            ),
+          ),
         ]),
       )
       .pipe(
-        Effect.flatMap(([projectRows, threadRows, sessionRows, latestTurnRows, stateRows]) =>
+        Effect.flatMap((rows) =>
           Effect.gen(function* () {
+            const [projectRows, threadRows, sessionRows, latestTurnRows, stateRows] = rows;
+            // ThroughLine: read off the tuple rather than widening the parameter list, which
+            // would push this whole block one indent level and reformat the file.
+            const runtimeIdentityRows = rows[5];
             let updatedAt: string | null = null;
             for (const row of projectRows) {
               updatedAt = maxIso(updatedAt, row.updatedAt);
@@ -2013,8 +2198,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             const latestTurnByThread = new Map(
               latestTurnRows.map((row) => [row.threadId, mapLatestTurn(row)] as const),
             );
+            // ThroughLine: native session identity, keyed by thread for the session map below.
+            const nativeIdentityByThread = buildNativeIdentityMap(runtimeIdentityRows);
             const sessionByThread = new Map(
-              sessionRows.map((row) => [row.threadId, mapSessionRow(row)] as const),
+              sessionRows.map(
+                (row) =>
+                  [
+                    row.threadId,
+                    mapSessionRow(row, nativeIdentityByThread.get(row.threadId)),
+                  ] as const,
+              ),
             );
 
             const snapshot = {
@@ -2124,11 +2317,24 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          // ThroughLine: native session identity for the copy-session-uuid row actions.
+          listProviderSessionRuntimeIdentityRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getArchivedShellSnapshot:listProviderSessionRuntimeIdentities:query",
+                "ProjectionSnapshotQuery.getArchivedShellSnapshot:listProviderSessionRuntimeIdentities:decodeRows",
+              ),
+            ),
+          ),
         ]),
       )
       .pipe(
-        Effect.flatMap(([projectRows, threadRows, sessionRows, latestTurnRows, stateRows]) =>
+        Effect.flatMap((rows) =>
           Effect.gen(function* () {
+            const [projectRows, threadRows, sessionRows, latestTurnRows, stateRows] = rows;
+            // ThroughLine: read off the tuple rather than widening the parameter list, which
+            // would push this whole block one indent level and reformat the file.
+            const runtimeIdentityRows = rows[5];
             let updatedAt: string | null = null;
             for (const row of projectRows) {
               updatedAt = maxIso(updatedAt, row.updatedAt);
@@ -2159,8 +2365,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             const latestTurnByThread = new Map(
               latestTurnRows.map((row) => [row.threadId, mapLatestTurn(row)] as const),
             );
+            // ThroughLine: native session identity, keyed by thread for the session map below.
+            const nativeIdentityByThread = buildNativeIdentityMap(runtimeIdentityRows);
             const sessionByThread = new Map(
-              sessionRows.map((row) => [row.threadId, mapSessionRow(row)] as const),
+              sessionRows.map(
+                (row) =>
+                  [
+                    row.threadId,
+                    mapSessionRow(row, nativeIdentityByThread.get(row.threadId)),
+                  ] as const,
+              ),
             );
 
             const snapshot = {
@@ -2421,7 +2635,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
 
   const getThreadShellById: ProjectionSnapshotQueryShape["getThreadShellById"] = (threadId) =>
     Effect.gen(function* () {
-      const [threadRow, latestTurnRow, sessionRow] = yield* Effect.all([
+      const [threadRow, latestTurnRow, sessionRow, runtimeIdentityRow] = yield* Effect.all([
         getActiveThreadRowById({ threadId }).pipe(
           Effect.mapError(
             toPersistenceSqlOrDecodeError(
@@ -2443,6 +2657,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             toPersistenceSqlOrDecodeError(
               "ProjectionSnapshotQuery.getThreadShellById:getSession:query",
               "ProjectionSnapshotQuery.getThreadShellById:getSession:decodeRow",
+            ),
+          ),
+        ),
+        // ThroughLine: native session identity for the copy-session-uuid row actions.
+        getProviderSessionRuntimeIdentityRowByThread({ threadId }).pipe(
+          Effect.mapError(
+            toPersistenceSqlOrDecodeError(
+              "ProjectionSnapshotQuery.getThreadShellById:getProviderSessionRuntimeIdentity:query",
+              "ProjectionSnapshotQuery.getThreadShellById:getProviderSessionRuntimeIdentity:decodeRow",
             ),
           ),
         ),
@@ -2472,7 +2695,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         pinnedAt: threadRow.value.pinnedAt,
         pinOrderKey: threadRow.value.pinOrderKey ?? null,
         titleRegeneration: mapTitleRegeneration(threadRow.value),
-        session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
+        session: Option.isSome(sessionRow)
+          ? mapSessionRow(sessionRow.value, nativeIdentityFromOption(runtimeIdentityRow))
+          : null,
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
         hasPendingApprovals: threadRow.value.pendingApprovalCount > 0,
         hasPendingUserInput: threadRow.value.pendingUserInputCount > 0,
@@ -2505,6 +2730,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         checkpointRows,
         latestTurnRow,
         sessionRow,
+        runtimeIdentityRow,
       ] = yield* Effect.all([
         getActiveThreadRowById({ threadId }).pipe(
           Effect.mapError(
@@ -2573,6 +2799,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             toPersistenceSqlOrDecodeError(
               "ProjectionSnapshotQuery.getThreadDetailById:getSession:query",
               "ProjectionSnapshotQuery.getThreadDetailById:getSession:decodeRow",
+            ),
+          ),
+        ),
+        // ThroughLine: native session identity for the copy-session-uuid row actions.
+        getProviderSessionRuntimeIdentityRowByThread({ threadId }).pipe(
+          Effect.mapError(
+            toPersistenceSqlOrDecodeError(
+              "ProjectionSnapshotQuery.getThreadDetailById:getProviderSessionRuntimeIdentity:query",
+              "ProjectionSnapshotQuery.getThreadDetailById:getProviderSessionRuntimeIdentity:decodeRow",
             ),
           ),
         ),
@@ -2654,7 +2889,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           assistantMessageId: row.assistantMessageId,
           completedAt: row.completedAt,
         })),
-        session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
+        session: Option.isSome(sessionRow)
+          ? mapSessionRow(sessionRow.value, nativeIdentityFromOption(runtimeIdentityRow))
+          : null,
       };
 
       return Option.some(

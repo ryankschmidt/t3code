@@ -4,6 +4,8 @@ import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./thread
 
 const baseState: ThreadActionMenuState = {
   branch: null,
+  sessionUuid: null,
+  transcriptPath: null,
   isPinned: false,
   isSettled: false,
   isSnoozed: false,
@@ -36,6 +38,32 @@ describe("buildThreadActionMenuItems", () => {
     expect(withBranch).toContain("copy-branch");
     expect(ids(baseState)).not.toContain("new-thread-on-branch");
     expect(ids(baseState)).not.toContain("copy-branch");
+  });
+
+  it("includes native session items only when the thread records that identity", () => {
+    expect(ids(baseState)).not.toContain("copy-session-uuid");
+    expect(ids(baseState)).not.toContain("copy-transcript-path");
+
+    const withSession = ids({ ...baseState, sessionUuid: "99ff54ed-45a4-4838-b203-8d974a4d1618" });
+    expect(withSession).toContain("copy-session-uuid");
+    expect(withSession).not.toContain("copy-transcript-path");
+
+    const withTranscript = ids({ ...baseState, transcriptPath: "/tmp/session.jsonl" });
+    expect(withTranscript).toContain("copy-transcript-path");
+    expect(withTranscript).not.toContain("copy-session-uuid");
+  });
+
+  it("keeps the native session items distinct from the thread-id item", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      sessionUuid: "99ff54ed-45a4-4838-b203-8d974a4d1618",
+      transcriptPath: "/tmp/session.jsonl",
+    });
+    expect(items.find((item) => item.id === "copy-thread-id")?.label).toBe("Copy thread ID");
+    expect(items.find((item) => item.id === "copy-session-uuid")?.label).toBe("Copy session UUID");
+    expect(items.find((item) => item.id === "copy-transcript-path")?.label).toBe(
+      "Copy transcript path",
+    );
   });
 
   it("flips lifecycle labels with thread state", () => {

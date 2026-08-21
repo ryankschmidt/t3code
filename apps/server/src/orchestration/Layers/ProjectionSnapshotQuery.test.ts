@@ -378,6 +378,10 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             runtimeMode: "approval-required",
             activeTurnId: asTurnId("turn-1"),
             lastError: null,
+            // ThroughLine: this fixture seeds no provider_session_runtime row, so the native
+            // session identity resolves to nulls rather than being absent.
+            providerSessionId: null,
+            nativeTranscriptPath: null,
             updatedAt: "2026-02-24T00:00:07.000Z",
           },
         },
@@ -452,6 +456,10 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             runtimeMode: "approval-required",
             activeTurnId: asTurnId("turn-1"),
             lastError: null,
+            // ThroughLine: this fixture seeds no provider_session_runtime row, so the native
+            // session identity resolves to nulls rather than being absent.
+            providerSessionId: null,
+            nativeTranscriptPath: null,
             updatedAt: "2026-02-24T00:00:07.000Z",
           },
           latestUserMessageAt: "2026-02-24T00:00:04.000Z",

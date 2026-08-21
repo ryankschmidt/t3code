@@ -1777,6 +1777,48 @@ export default function Sidebar() {
       );
     },
   });
+  // ThroughLine: the native agent session behind the thread — what a terminal needs to resume
+  // it. Separate from the thread-ID copier above, which copies ThroughLine's own id.
+  const { copyToClipboard: copySessionUuidToClipboard } = useCopyToClipboard<{
+    sessionUuid: string;
+  }>({
+    onCopy: ({ sessionUuid }) => {
+      toastManager.add({
+        type: "success",
+        title: "Session UUID copied",
+        description: sessionUuid,
+      });
+    },
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to copy session UUID",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    },
+  });
+  const { copyToClipboard: copyTranscriptPathToClipboard } = useCopyToClipboard<{
+    transcriptPath: string;
+  }>({
+    onCopy: ({ transcriptPath }) => {
+      toastManager.add({
+        type: "success",
+        title: "Transcript path copied",
+        description: transcriptPath,
+      });
+    },
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to copy transcript path",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    },
+  });
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
   const newThreadContext = useHandleNewThread();
   const openAddProjectCommandPalette = useCallback(
@@ -3054,6 +3096,9 @@ export default function Sidebar() {
           api.contextMenu.show(
             buildThreadActionMenuItems({
               branch: thread.branch ?? null,
+              // ThroughLine: native session identity, surfaced by the projection query.
+              sessionUuid: thread.session?.providerSessionId ?? null,
+              transcriptPath: thread.session?.nativeTranscriptPath ?? null,
               isPinned,
               isSettled,
               isSnoozed,
@@ -3164,6 +3209,22 @@ export default function Sidebar() {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          // ThroughLine: the menu only offers these when the value exists, but the guards
+          // keep the handler honest if that gating ever changes.
+          case "copy-session-uuid": {
+            const sessionUuid = thread.session?.providerSessionId ?? null;
+            if (sessionUuid) {
+              copySessionUuidToClipboard(sessionUuid, { sessionUuid });
+            }
+            return;
+          }
+          case "copy-transcript-path": {
+            const transcriptPath = thread.session?.nativeTranscriptPath ?? null;
+            if (transcriptPath) {
+              copyTranscriptPathToClipboard(transcriptPath, { transcriptPath });
+            }
+            return;
+          }
           case "archive": {
             if (confirmThreadArchive) {
               const confirmed = await settlePromise(() =>
@@ -3237,6 +3298,8 @@ export default function Sidebar() {
       copyBranchToClipboard,
       copyPathToClipboard,
       copyThreadIdToClipboard,
+      copySessionUuidToClipboard,
+      copyTranscriptPathToClipboard,
       deleteThread,
       handleMultiSelectContextMenu,
       markThreadUnread,

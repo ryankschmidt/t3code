@@ -104,6 +104,28 @@ export function useThreadActionMenu(input: {
     },
     onError: (error) => failureToast("Failed to copy thread ID", error),
   });
+  // ThroughLine: the shared item list renders in this menu too, so the native-session actions
+  // need handlers here or they would be dead clicks in the chat header.
+  const { copyToClipboard: copySessionUuidToClipboard } = useCopyToClipboard<{
+    sessionUuid: string;
+  }>({
+    onCopy: ({ sessionUuid }) => {
+      toastManager.add({ type: "success", title: "Session UUID copied", description: sessionUuid });
+    },
+    onError: (error) => failureToast("Failed to copy session UUID", error),
+  });
+  const { copyToClipboard: copyTranscriptPathToClipboard } = useCopyToClipboard<{
+    transcriptPath: string;
+  }>({
+    onCopy: ({ transcriptPath }) => {
+      toastManager.add({
+        type: "success",
+        title: "Transcript path copied",
+        description: transcriptPath,
+      });
+    },
+    onError: (error) => failureToast("Failed to copy transcript path", error),
+  });
 
   const openMenu = useCallback(
     (position: { x: number; y: number }) => {
@@ -126,6 +148,9 @@ export function useThreadActionMenu(input: {
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
         const items = buildThreadActionMenuItems({
           branch: thread.branch ?? null,
+          // ThroughLine: native session identity, surfaced by the projection query.
+          sessionUuid: thread.session?.providerSessionId ?? null,
+          transcriptPath: thread.session?.nativeTranscriptPath ?? null,
           isPinned: thread.pinnedAt != null,
           isSettled:
             supports.settlement &&
@@ -256,6 +281,20 @@ export function useThreadActionMenu(input: {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "copy-session-uuid": {
+            const sessionUuid = thread.session?.providerSessionId ?? null;
+            if (sessionUuid) {
+              copySessionUuidToClipboard(sessionUuid, { sessionUuid });
+            }
+            return;
+          }
+          case "copy-transcript-path": {
+            const transcriptPath = thread.session?.nativeTranscriptPath ?? null;
+            if (transcriptPath) {
+              copyTranscriptPathToClipboard(transcriptPath, { transcriptPath });
+            }
+            return;
+          }
           case "archive": {
             if (confirmThreadArchive) {
               const confirmed = await settlePromise(() =>
@@ -318,6 +357,8 @@ export function useThreadActionMenu(input: {
       copyBranchToClipboard,
       copyPathToClipboard,
       copyThreadIdToClipboard,
+      copySessionUuidToClipboard,
+      copyTranscriptPathToClipboard,
       deleteThread,
       handleNewThread,
       markThreadUnread,
