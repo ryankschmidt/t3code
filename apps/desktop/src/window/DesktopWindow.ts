@@ -2,6 +2,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -58,6 +59,9 @@ type WindowTitleBarOptions = Pick<
 
 type DesktopWindowRuntimeServices =
   | DesktopEnvironment.DesktopEnvironment
+  // ThroughLine: reads the operator stylesheet from userdata. Provided already by
+  // NodeServices.layer in main.ts, so this widens the declared set, not the runtime.
+  | FileSystem.FileSystem
   | DesktopAssets.DesktopAssets
   | DesktopAppSettings.DesktopAppSettings
   | DesktopClientSettings.DesktopClientSettings
@@ -243,6 +247,40 @@ function syncWindowAppearance(
     if (typeof titleBarOverlay === "object") {
       window.setTitleBarOverlay(titleBarOverlay);
     }
+  });
+}
+
+/**
+ * ThroughLine: operator-owned stylesheet hook.
+ *
+ * Reads `operator.css` from the app's own userdata directory — the same directory that holds
+ * `client-settings.json` — and injects it into the renderer. This is the single seam for
+ * Ryan-side visual changes (starting with the wordmark swap), so cosmetic work does not
+ * accumulate as edits scattered through upstream components.
+ *
+ * Fail-open by design: no file, unreadable file, or a destroyed window is a silent no-op, and
+ * the app renders exactly as upstream. Runs on every `did-finish-load`, so editing the file and
+ * reloading the window is enough to see a change; there is deliberately no watcher.
+ */
+export function injectOperatorStylesheet(
+  window: Electron.BrowserWindow,
+  stylesheetPath: string,
+): Effect.Effect<void, never, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    if (window.isDestroyed()) {
+      return;
+    }
+    const fileSystem = yield* FileSystem.FileSystem;
+    const css = yield* fileSystem
+      .readFileString(stylesheetPath)
+      .pipe(Effect.catchCause(() => Effect.succeed("")));
+    if (css.trim().length === 0 || window.isDestroyed()) {
+      return;
+    }
+    yield* Effect.promise(() => window.webContents.insertCSS(css)).pipe(
+      // The renderer can navigate or close between load and injection; nothing to repair.
+      Effect.catchCause(() => Effect.void),
+    );
   });
 }
 
@@ -656,6 +694,13 @@ export const make = Effect.gen(function* () {
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
       window.setTitle(environment.displayName);
+      // ThroughLine: re-apply the operator stylesheet after every renderer load.
+      runFork(
+        injectOperatorStylesheet(
+          window,
+          environment.path.join(environment.stateDir, "operator.css"),
+        ),
+      );
     });
     window.webContents.on(
       "did-fail-load",

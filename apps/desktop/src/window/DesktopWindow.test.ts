@@ -3,6 +3,9 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+// ThroughLine: temp-file fixtures for the operator-stylesheet hook's two-polarity proof.
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
@@ -260,6 +263,9 @@ function makeTestLayer(input: {
   return DesktopWindow.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        // ThroughLine: the window layer reads the operator stylesheet from userdata, so it
+        // needs FileSystem here exactly as main.ts provides it in production.
+        NodeServices.layer,
         desktopAssetsLayer,
         desktopEnvironmentLayer,
         desktopAppSettingsLayer,
@@ -365,6 +371,9 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
     const layer = DesktopWindow.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
+          // ThroughLine: the window layer reads the operator stylesheet from userdata, so it
+          // needs FileSystem here exactly as main.ts provides it in production.
+          NodeServices.layer,
           desktopAssetsLayer,
           desktopEnvironmentLayer,
           DesktopAppSettings.layerTest(),
@@ -1203,5 +1212,66 @@ describe("DesktopWindow", () => {
         assert.deepEqual(main.send.mock.calls, [[MENU_ACTION_CHANNEL, "open-settings"]]);
       }).pipe(Effect.provide(scenario.layer));
     }),
+  );
+});
+
+// ThroughLine: two-polarity proof for the operator stylesheet hook. The seam is only safe if
+// BOTH directions hold — a present file reaches the renderer, and an absent one is a silent
+// no-op rather than a crash on every window load.
+describe("injectOperatorStylesheet", () => {
+  const makeCssWindow = () => {
+    const insertCSS = vi.fn(() => Promise.resolve("key"));
+    return {
+      insertCSS,
+      window: {
+        isDestroyed: () => false,
+        webContents: { insertCSS },
+      } as unknown as Electron.BrowserWindow,
+    };
+  };
+
+  const makeStylesheet = Effect.fn(function* (contents: Option.Option<string>) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const directory = yield* fileSystem.makeTempDirectory();
+    const stylesheetPath = path.join(directory, "operator.css");
+    if (Option.isSome(contents)) {
+      yield* fileSystem.writeFileString(stylesheetPath, contents.value);
+    }
+    return stylesheetPath;
+  });
+
+  it.effect("injects the stylesheet when the operator file exists", () =>
+    Effect.gen(function* () {
+      const css = 'svg[aria-label="T3"] { width: 3rem; }';
+      const stylesheetPath = yield* makeStylesheet(Option.some(css));
+      const target = makeCssWindow();
+
+      yield* DesktopWindow.injectOperatorStylesheet(target.window, stylesheetPath);
+
+      assert.deepEqual(target.insertCSS.mock.calls, [[css]]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("is a silent no-op when the operator file is absent", () =>
+    Effect.gen(function* () {
+      const stylesheetPath = yield* makeStylesheet(Option.none());
+      const target = makeCssWindow();
+
+      yield* DesktopWindow.injectOperatorStylesheet(target.window, stylesheetPath);
+
+      assert.equal(target.insertCSS.mock.calls.length, 0);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("ignores an empty stylesheet rather than injecting nothing", () =>
+    Effect.gen(function* () {
+      const stylesheetPath = yield* makeStylesheet(Option.some("   \n\n"));
+      const target = makeCssWindow();
+
+      yield* DesktopWindow.injectOperatorStylesheet(target.window, stylesheetPath);
+
+      assert.equal(target.insertCSS.mock.calls.length, 0);
+    }).pipe(Effect.provide(NodeServices.layer)),
   );
 });
