@@ -1102,6 +1102,42 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "provider.rollback_turns": input.numTurns,
       });
       yield* routed.adapter.rollbackThread(routed.threadId, input.numTurns);
+      // ThroughLine: a rollback is only half done when the turn list shrinks — the model still
+      // remembers. The adapter has just recomputed and MARKED its resume cursor, but that cursor
+      // lives in adapter memory: `rollbackThread` returns only `{threadId, turns}`, and nothing
+      // else in the revert flow writes the provider binding (CheckpointReactor dispatches
+      // `thread.revert.complete` and stops there). So on the next message the recovery path would
+      // read the STALE row on disk and replay the entire conversation — the revert would restore
+      // the files and the turn list while the model kept everything the operator discarded.
+      //
+      // Persist the marked cursor here, and stop the session, because the truncation can only
+      // bind at the next session start and a live query process cannot forget. The stop is what
+      // forces that restart; the persisted cursor is what makes the restart truncate.
+      const rolledBackSession = yield* routed.adapter
+        .listSessions()
+        .pipe(
+          Effect.map((sessions) =>
+            sessions.find((session) => session.threadId === routed.threadId),
+          ),
+        );
+      if (routed.isActive) {
+        yield* routed.adapter.stopSession(routed.threadId);
+      }
+      yield* clearMcpSession(input.threadId);
+      yield* directory.upsert({
+        threadId: input.threadId,
+        provider: routed.adapter.provider,
+        providerInstanceId: routed.instanceId,
+        status: "stopped",
+        ...(rolledBackSession?.resumeCursor !== undefined
+          ? { resumeCursor: rolledBackSession.resumeCursor }
+          : {}),
+        runtimePayload: {
+          activeTurnId: null,
+          lastRuntimeEvent: "provider.rollbackConversation",
+          lastRuntimeEventAt: yield* nowIso,
+        },
+      });
       yield* analytics.record("provider.conversation.rolled_back", {
         provider: routed.adapter.provider,
         turns: input.numTurns,
