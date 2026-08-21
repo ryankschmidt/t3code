@@ -124,6 +124,18 @@ interface ClaudeResumeState {
   readonly threadId?: ThreadId;
   readonly resume?: string;
   readonly resumeSessionAt?: string;
+  /**
+   * ThroughLine: the rewind marker, and the ONLY thing that lets `resumeSessionAt` reach the
+   * SDK. Upstream deliberately refuses to pass `resumeSessionAt` at all — see the test named
+   * "passes Claude resume ids without pinning a stale assistant checkpoint" — because a cursor
+   * can carry a checkpoint that is stale or that never named an assistant message. That concern
+   * is real and our own importer proved it: it wrote the last message of the retained window
+   * whatever its role, so imported rows can hold a USER uuid there. So the divergence is scoped
+   * to one case instead of all of them: only a cursor written by `rollbackThread` carries this
+   * flag, and only a cursor carrying it truncates. Every legacy cursor on disk is inert by
+   * construction, which is why no backfill was needed.
+   */
+  readonly rewind?: boolean;
   readonly turnCount?: number;
 }
 
@@ -258,6 +270,14 @@ interface ClaudeSessionContext {
   readonly turns: Array<{
     id: TurnId;
     items: Array<unknown>;
+    /**
+     * ThroughLine: the last assistant message uuid this turn produced, recorded so a rollback
+     * can recompute the resume point from the SURVIVING turns. Without it `rollbackThread` has
+     * no way back from a truncated turn list to a message uuid, and the resume cursor keeps
+     * naming a message the operator just discarded. Optional because a turn can end without an
+     * assistant message (interrupt, error), and absent is the honest value there.
+     */
+    lastAssistantUuid?: string;
   }>;
   readonly inFlightTools: Map<number, ToolInFlight>;
   readonly claudeTasks: Map<string, ClaudeTaskState>;
@@ -665,6 +685,7 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
     resume?: unknown;
     sessionId?: unknown;
     resumeSessionAt?: unknown;
+    rewind?: unknown;
     turnCount?: unknown;
   };
 
@@ -682,12 +703,19 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
   const resume = resumeCandidate && isUuid(resumeCandidate) ? resumeCandidate : undefined;
   const resumeSessionAt =
     typeof cursor.resumeSessionAt === "string" ? cursor.resumeSessionAt : undefined;
+  // ThroughLine: this reader is a WHITELIST, not a pass-through — it rebuilds the cursor from
+  // named keys and silently drops everything else. So the rewind marker has to be named here or
+  // it would be thrown away on read, and the gate below would be closed forever while the whole
+  // change still typechecked clean. Strict `=== true`: a truthy string or a 1 from some future
+  // writer is not a rewind, and the one code path allowed to set this writes a real boolean.
+  const rewind = cursor.rewind === true;
   const turnCountValue = typeof cursor.turnCount === "number" ? cursor.turnCount : undefined;
 
   return {
     ...(threadId ? { threadId } : {}),
     ...(resume ? { resume } : {}),
     ...(resumeSessionAt ? { resumeSessionAt } : {}),
+    ...(rewind ? { rewind } : {}),
     ...(turnCountValue !== undefined && Number.isInteger(turnCountValue) && turnCountValue >= 0
       ? { turnCount: turnCountValue }
       : {}),
@@ -1768,14 +1796,27 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
   const updateResumeCursor = Effect.fn("updateResumeCursor")(function* (
     context: ClaudeSessionContext,
+    /**
+     * ThroughLine: `rewind` is set by `rollbackThread` and by nothing else. That single-writer
+     * rule is the whole safety argument, so it is expressed as a parameter rather than as a
+     * field some future call site could set in passing.
+     */
+    options?: { readonly rewind?: boolean },
   ) {
     const threadId = context.session.threadId;
     if (!threadId) return;
 
+    // ThroughLine: an ORDINARY cursor carries `resume` + `turnCount` and NOTHING ELSE — this is
+    // upstream's "no stale checkpoint pinning" position, honored byte-for-byte on every
+    // streaming update. `resumeSessionAt` is written on exactly one path: a rollback, which
+    // recomputes it from the SURVIVING turns and marks it. Writing it here on every assistant
+    // message is what would make it stale, which is precisely what upstream refused.
     const resumeCursor = {
       threadId,
       ...(context.resumeSessionId ? { resume: context.resumeSessionId } : {}),
-      ...(context.lastAssistantUuid ? { resumeSessionAt: context.lastAssistantUuid } : {}),
+      ...(options?.rewind && context.lastAssistantUuid
+        ? { resumeSessionAt: context.lastAssistantUuid, rewind: true }
+        : {}),
       turnCount: context.turns.length,
     };
 
@@ -2348,6 +2389,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     context.turns.push({
       id: turnState.turnId,
       items: [...turnState.items],
+      // ThroughLine: stamp the resume point this turn leaves behind, so a rollback can recover
+      // it from the surviving turns. `context.lastAssistantUuid` is maintained by both assistant
+      // handlers, so at turn end it is this turn's last assistant message — or, for a turn that
+      // produced none (interrupt, error), the previous one. Inheriting is CORRECT rather than
+      // sloppy: the recompute reads the surviving LAST turn, and for an interrupted turn the
+      // true resume point genuinely is the message before it.
+      ...(context.lastAssistantUuid ? { lastAssistantUuid: context.lastAssistantUuid } : {}),
     });
 
     yield* emitThreadTokenUsage(context, usageSnapshot, {
@@ -4170,6 +4218,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
         ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
+        // ThroughLine: THE GATE. Resume only up to the message the cursor names — but only when
+        // the cursor was written by a rollback and carries the marker. Without this spread the
+        // SDK replays the WHOLE native conversation, so a checkpoint revert restored the files
+        // and the turn list while the model still remembered everything the operator discarded.
+        // The marker is what keeps this narrow. Upstream's refusal to pass `resumeSessionAt`
+        // stays TRUE for every ordinary resume, including all 58 rows our importer wrote before
+        // it stopped writing the field — those carry no marker, so they cannot reach this line,
+        // and the unmeasured "SDK handed a user-message uuid" case stays unreachable.
+        ...(resumeState?.rewind && resumeState.resumeSessionAt
+          ? { resumeSessionAt: resumeState.resumeSessionAt }
+          : {}),
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
@@ -4244,6 +4303,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ...(threadId ? { threadId } : {}),
           ...(sessionId ? { resume: sessionId } : {}),
           ...(resumeState?.resumeSessionAt ? { resumeSessionAt: resumeState.resumeSessionAt } : {}),
+          // ThroughLine: carry the marker across session start, not just the uuid. The gate above
+          // has already consumed it for THIS query, but the cursor is what survives if the
+          // session is stopped or the app restarts before any assistant message lands — and
+          // `updateResumeCursor` only overwrites this cursor when that message arrives. Dropping
+          // the marker here would give the operator a rewind that silently un-rewinds itself on
+          // the next restart. Truncating twice to the same head is idempotent; forgetting to
+          // truncate is not. A cursor with no marker in still has none out, which is why
+          // upstream's stale-checkpoint test is unaffected.
+          ...(resumeState?.rewind ? { rewind: true } : {}),
           turnCount: resumeState?.turnCount ?? 0,
         },
         createdAt: startedAt,
@@ -4537,7 +4605,29 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const context = yield* requireSession(threadId);
       const nextLength = Math.max(0, context.turns.length - numTurns);
       context.turns.splice(nextLength);
-      yield* updateResumeCursor(context);
+      // ThroughLine: move the resume point back with the turns. `context.lastAssistantUuid`
+      // still names the NEWEST assistant message — the one this rollback just discarded — so
+      // without recomputing here the cursor would point past the end of the surviving
+      // conversation and the next resume would replay everything the operator threw away. Walk
+      // back to the last SURVIVING turn that recorded a resume point; if none survives,
+      // undefined is correct and the marked cursor carries no `resumeSessionAt`, which resumes
+      // from the start of the conversation.
+      context.lastAssistantUuid = context.turns.findLast(
+        (turn) => turn.lastAssistantUuid !== undefined,
+      )?.lastAssistantUuid;
+      // ThroughLine: the ONLY call that passes `rewind`. This is the single-writer rule the
+      // whole gate rests on — every other caller of updateResumeCursor writes an ordinary
+      // cursor that cannot truncate anything.
+      yield* updateResumeCursor(context, { rewind: true });
+      // ThroughLine: the snapshot is taken BEFORE the session is stopped, one layer up in
+      // ProviderService.rollbackConversation. Two facts drive that split, both read from the
+      // code rather than assumed: `snapshotThread` returns only `{threadId, turns}` and never
+      // the cursor, and `stopSessionInternal` ends by deleting the context from the `sessions`
+      // map — so a stop performed HERE would strand the marked cursor in memory where nothing
+      // can persist it, and the next message would recover from the stale row on disk and
+      // replay the whole conversation. Stopping is still required and still happens: the
+      // service persists this cursor and then calls `stopSession`, because a live query process
+      // cannot forget and the truncation can only bind at the next session start.
       return yield* snapshotThread(context);
     },
   );
