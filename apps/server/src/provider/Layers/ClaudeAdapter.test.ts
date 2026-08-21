@@ -3580,6 +3580,202 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  // ThroughLine: the four tests below are the fork's side of the rewind gate. The upstream test
+  // directly above them is deliberately left byte-for-byte alone — it states the invariant these
+  // depend on (an ORDINARY resume never pins a checkpoint), and it still holds because the gate
+  // opens only under a marker that one code path writes.
+
+  it.effect("ThroughLine: passes resumeSessionAt when the cursor carries the rewind marker", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: RESUME_THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        resumeCursor: {
+          threadId: "resume-thread-1",
+          resume: "550e8400-e29b-41d4-a716-446655440000",
+          resumeSessionAt: "assistant-42",
+          rewind: true,
+          turnCount: 3,
+        },
+        runtimeMode: "full-access",
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.equal(createInput?.options.resume, "550e8400-e29b-41d4-a716-446655440000");
+      assert.equal(createInput?.options.resumeSessionAt, "assistant-42");
+
+      // The marker rides forward across session start. Without this the cursor would lose its
+      // marker before the first assistant message lands, and a restart in that window would
+      // silently replay everything the operator discarded.
+      assert.deepEqual(session.resumeCursor, {
+        threadId: RESUME_THREAD_ID,
+        resume: "550e8400-e29b-41d4-a716-446655440000",
+        resumeSessionAt: "assistant-42",
+        rewind: true,
+        turnCount: 3,
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect(
+    "ThroughLine: refuses a legacy imported cursor whose resumeSessionAt names a user message",
+    () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        // This is the exact shape the importer wrote before 0.1.8: the last message of the
+        // retained window WHATEVER ITS ROLE, so a thread that ended on a user message carries a
+        // user uuid here. What the SDK does when handed one has never been measured. The marker
+        // is what makes that unmeasured case unreachable rather than merely unlikely — all 58
+        // already-imported rows are inert by construction, which is why no backfill was needed.
+        yield* adapter.startSession({
+          threadId: RESUME_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          resumeCursor: {
+            threadId: "resume-thread-1",
+            resume: "550e8400-e29b-41d4-a716-446655440000",
+            resumeSessionAt: "user-17",
+            turnCount: 2,
+          },
+          runtimeMode: "full-access",
+        });
+
+        const createInput = harness.getLastCreateQueryInput();
+        assert.equal(createInput?.options.resume, "550e8400-e29b-41d4-a716-446655440000");
+        assert.equal(createInput?.options.resumeSessionAt, undefined);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("ThroughLine: rollbackThread marks the cursor at the surviving turn's head", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const driveTurn = (input: string, assistantUuid: string, resultUuid: string) =>
+        Effect.gen(function* () {
+          yield* adapter.sendTurn({ threadId: session.threadId, input, attachments: [] });
+          const completed = yield* Stream.filter(
+            adapter.streamEvents,
+            (event) => event.type === "turn.completed",
+          ).pipe(Stream.runHead, Effect.forkChild);
+          harness.query.emit({
+            type: "assistant",
+            session_id: "sdk-session-rewind",
+            uuid: assistantUuid,
+            parent_tool_use_id: null,
+            message: { id: `message-${assistantUuid}`, content: [{ type: "text", text: "ok" }] },
+          } as unknown as SDKMessage);
+          harness.query.emit({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            errors: [],
+            session_id: "sdk-session-rewind",
+            uuid: resultUuid,
+          } as unknown as SDKMessage);
+          yield* Fiber.join(completed);
+        });
+
+      yield* driveTurn("first", "assistant-first", "result-first");
+      yield* driveTurn("second", "assistant-second", "result-second");
+
+      const readCursor = Effect.map(adapter.listSessions(), (list) => {
+        const found = list.find((entry) => entry.threadId === session.threadId);
+        return found?.resumeCursor as
+          | { resumeSessionAt?: string; rewind?: boolean; turnCount?: number }
+          | undefined;
+      });
+
+      // Before the rollback the cursor is ORDINARY: no checkpoint, no marker. This is upstream's
+      // position honored on every streaming update, and it is what makes the marked case safe.
+      const beforeRollback = yield* readCursor;
+      assert.equal(beforeRollback?.turnCount, 2);
+      assert.equal(beforeRollback?.resumeSessionAt, undefined);
+      assert.equal(beforeRollback?.rewind, undefined);
+
+      yield* adapter.rollbackThread(session.threadId, 1);
+
+      // After the rollback it names the SURVIVING head — the first turn's assistant message, not
+      // the second one the operator just discarded — and it carries the marker that lets the
+      // gate open on the next session start.
+      const afterRollback = yield* readCursor;
+      assert.equal(afterRollback?.turnCount, 1);
+      assert.equal(afterRollback?.resumeSessionAt, "assistant-first");
+      assert.equal(afterRollback?.rewind, true);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("ThroughLine: rolling back every turn clears the checkpoint and the marker", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({ threadId: session.threadId, input: "only", attachments: [] });
+      const completed = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runHead, Effect.forkChild);
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-session-rewind-zero",
+        uuid: "assistant-only",
+        parent_tool_use_id: null,
+        message: { id: "message-only", content: [{ type: "text", text: "ok" }] },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-session-rewind-zero",
+        uuid: "result-only",
+      } as unknown as SDKMessage);
+      yield* Fiber.join(completed);
+
+      yield* adapter.rollbackThread(session.threadId, 5);
+
+      // No turn survives, so there is no message to resume up to. Absent is the correct value —
+      // the resume starts from the beginning of the native conversation — and the marker must go
+      // with it, because a marker with no checkpoint would pass an undefined through the gate.
+      const list = yield* adapter.listSessions();
+      const cursor = list.find((entry) => entry.threadId === session.threadId)?.resumeCursor as
+        | { resumeSessionAt?: string; rewind?: boolean; turnCount?: number }
+        | undefined;
+      assert.equal(cursor?.turnCount, 0);
+      assert.equal(cursor?.resumeSessionAt, undefined);
+      assert.equal(cursor?.rewind, undefined);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("preserves durable resume ids across Claude resume hooks", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

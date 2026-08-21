@@ -1030,6 +1030,67 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  // ThroughLine: a rollback is only half done when the turn list shrinks — the model still
+  // remembers. This test pins the other half: the marked cursor the adapter just computed has to
+  // reach disk, and the session has to stop, or the next message recovers from the stale row and
+  // replays everything the operator discarded. It asserts the stop AND the round trip, because
+  // either one alone would pass while the feature stayed inert.
+  it.effect("ThroughLine: rollback stops the session and persists the rewound cursor", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+
+      const session = yield* provider.startSession(asThreadId("thread-1"), {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId: asThreadId("thread-1"),
+        cwd: "/tmp/project",
+        runtimeMode: "full-access",
+      });
+
+      // Stand in for what the adapter's rollbackThread does to its own cursor: recompute the
+      // resume point from the surviving turns and mark it.
+      const rewoundCursor = {
+        threadId: "native-thread-1",
+        resume: "550e8400-e29b-41d4-a716-446655440000",
+        resumeSessionAt: "assistant-surviving-head",
+        rewind: true,
+        turnCount: 1,
+      };
+      routing.codex.updateSession(session.threadId, (existing) => ({
+        ...existing,
+        resumeCursor: rewoundCursor,
+      }));
+
+      routing.codex.stopSession.mockClear();
+      routing.codex.startSession.mockClear();
+
+      yield* provider.rollbackConversation({
+        threadId: session.threadId,
+        numTurns: 1,
+      });
+
+      // The stop is what forces the restart. A live query process cannot forget, so without it
+      // the truncation would not take effect until some unrelated restart.
+      assert.equal(routing.codex.stopSession.mock.calls.length, 1);
+      assert.equal(routing.codex.stopSession.mock.calls[0]?.[0], session.threadId);
+
+      // ...and the persisted cursor is what makes that restart truncate.
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        input: "after-rollback",
+        attachments: [],
+      });
+
+      assert.equal(routing.codex.startSession.mock.calls.length, 1);
+      const resumedStartInput = routing.codex.startSession.mock.calls[0]?.[0];
+      assert.equal(typeof resumedStartInput === "object" && resumedStartInput !== null, true);
+      if (resumedStartInput && typeof resumedStartInput === "object") {
+        const startPayload = resumedStartInput as { resumeCursor?: unknown };
+        assert.deepEqual(startPayload.resumeCursor, rewoundCursor);
+      }
+    }),
+  );
+
   it.effect("preserves the persisted binding when stopping a session", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
