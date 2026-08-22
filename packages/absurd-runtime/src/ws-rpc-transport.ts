@@ -89,9 +89,11 @@ export async function makeWsRpcTransport(
   // signature (protocols) is unused here. The service contract is a plain
   // (url, protocols?) => WebSocket function.
   const webSocketConstructor = (url: string, _protocols?: string | Array<string>) =>
-    new (globalThis as unknown as {
-      WebSocket: new (u: string, o?: unknown) => globalThis.WebSocket;
-    }).WebSocket(url, {
+    new (
+      globalThis as unknown as {
+        WebSocket: new (u: string, o?: unknown) => globalThis.WebSocket;
+      }
+    ).WebSocket(url, {
       headers: { authorization: `Bearer ${opts.bearerToken}` },
     });
 
@@ -110,16 +112,28 @@ export async function makeWsRpcTransport(
   // the caller. Mint one explicit scope spanning the transport's lifetime —
   // close() ends it before disposing the runtime.
   const clientScope = await runtime.runPromise(Scope.make());
-  const client = await runtime.runPromise(
-    Scope.provide(makeWsRpcProtocolClient(), clientScope),
-  );
+  const client = await runtime.runPromise(Scope.provide(makeWsRpcProtocolClient(), clientScope));
 
   const dispatch = (command: Record<string, unknown>): Promise<unknown> =>
     runtime.runPromise(callClient(client, ORCHESTRATION_WS_METHODS.dispatchCommand, command));
 
+  // ThroughLine: `orchestration.replayEvents` is NOT a built door. It has no
+  // entry in ORCHESTRATION_WS_METHODS, no `Rpc.make` in @t3tools/contracts, and
+  // no server handler — every one of the eight real WS methods has all three.
+  // The completion-poll design above was written against a method that does not
+  // exist on either side yet.
+  //
+  // Naming it as a local literal is deliberate. Adding a key to
+  // ORCHESTRATION_WS_METHODS would silence the type error AND assert server
+  // support that is absent, turning a true signal into a green typecheck over a
+  // runtime failure. A local constant cannot be mistaken for a wired contract
+  // method, and callClient() still fails loudly ("RPC method not on client") if
+  // this path is reached before the handler lands.
+  const ORCHESTRATION_REPLAY_EVENTS_METHOD = "orchestration.replayEvents";
+
   const replayEvents = (fromSequenceExclusive: number): Promise<ReadonlyArray<ReplayEvent>> =>
     runtime.runPromise(
-      callClient(client, ORCHESTRATION_WS_METHODS.replayEvents, { fromSequenceExclusive }),
+      callClient(client, ORCHESTRATION_REPLAY_EVENTS_METHOD, { fromSequenceExclusive }),
     ) as Promise<ReadonlyArray<ReplayEvent>>;
 
   const currentSequence = async (): Promise<number> => {
@@ -185,8 +199,7 @@ export async function makeWsRpcTransport(
         for (const event of events) {
           if (event.sequence > cursor) cursor = event.sequence;
           const payload = event.payload ?? {};
-          const forThisThread =
-            event.aggregateId === threadId || payload["threadId"] === threadId;
+          const forThisThread = event.aggregateId === threadId || payload["threadId"] === threadId;
           if (!forThisThread) continue;
           if (event.type === "thread.session-set") {
             const session = payload["session"] as
@@ -316,10 +329,7 @@ function makeWsRpcProtocolClient(): Effect.Effect<
 }
 
 /** The RpcClient exposes one method per WS method name, each `(payload) => Effect`. */
-type RpcClientShape = Record<
-  string,
-  (payload: unknown) => Effect.Effect<unknown, Error, never>
->;
+type RpcClientShape = Record<string, (payload: unknown) => Effect.Effect<unknown, Error, never>>;
 
 function callClient(
   client: RpcClientShape,

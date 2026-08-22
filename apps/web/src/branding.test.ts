@@ -60,7 +60,9 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBe("latest");
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Latest");
     expect(branding.APP_STAGE_LABEL).toBe("Latest");
-    expect(branding.APP_DISPLAY_NAME).toBe("T3 Code");
+    // ThroughLine: fork brand rename, same as the nightly case above. The latest
+    // channel renders the unsuffixed product name, which the fork owns.
+    expect(branding.APP_DISPLAY_NAME).toBe("ThroughLine");
   });
 
   it("ignores unknown hosted app channels", async () => {

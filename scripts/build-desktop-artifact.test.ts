@@ -154,9 +154,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");
   });
 
+  // ThroughLine: fork product identity. Stable resolves from
+  // apps/desktop/package.json's productName ("ThroughLine"); nightly is the
+  // literal in resolveDesktopProductName, renamed to match.
   it("switches desktop packaging product names to nightly for nightly builds", () => {
-    assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (Alpha)");
-    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "T3 Code (Nightly)");
+    assert.equal(resolveDesktopProductName("0.0.17"), "ThroughLine");
+    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "ThroughLine (Nightly)");
   });
 
   it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
@@ -466,7 +469,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "**/node_modules/.bin/**",
       ]);
       assert.deepStrictEqual(mac.dmg, {
-        title: "T3 Code (Alpha) 1.2.3 Installer",
+        // ThroughLine: the DMG title interpolates resolveDesktopProductName,
+        // so it carries the fork product name for a stable 1.2.3 build.
+        title: "ThroughLine 1.2.3 Installer",
         background: "dmg/dmg-background-latest.png",
         window: { width: 540, height: 412 },
         contents: [
@@ -876,7 +881,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     });
 
     assert.deepStrictEqual(configuration, {
-      appId: "com.t3tools.t3code",
+      // ThroughLine: passkey signing derives from DESKTOP_APP_ID, which the
+      // fork owns to avoid colliding with an installed upstream T3 Code.
+      appId: "com.ryankschmidt.throughline",
       teamId: "ABC1234567",
       rpDomains: ["example.clerk.accounts.dev"],
       provisioningProfilePath: "/tmp/t3code.provisionprofile",
@@ -896,7 +903,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "clerk.example.com",
       "example.clerk.accounts.dev",
     ]);
-    assert.include(entitlements, "<string>ABC1234567.com.t3tools.t3code</string>");
+    // ThroughLine: the associated-domains entitlement embeds teamId.appId, so
+    // it carries the fork's own bundle id.
+    assert.include(entitlements, "<string>ABC1234567.com.ryankschmidt.throughline</string>");
     assert.include(entitlements, "<string>webcredentials:clerk.example.com</string>");
     assert.include(entitlements, "<string>webcredentials:example.clerk.accounts.dev</string>");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
@@ -991,7 +1000,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       });
 
       const mac = config.mac as Record<string, unknown>;
-      assert.equal(config.appId, "com.t3tools.t3code");
+      // ThroughLine: signed macOS builds carry the fork's bundle id.
+      assert.equal(config.appId, "com.ryankschmidt.throughline");
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.deepStrictEqual(mac.protocols, [

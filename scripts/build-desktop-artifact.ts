@@ -2015,9 +2015,19 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
+// ThroughLine: fork product identity on the nightly channel. The stable branch
+// was renamed indirectly, through apps/desktop/package.json's productName
+// ("ThroughLine"), so it needed no edit here — but the nightly branch is a
+// hardcoded literal and was left carrying upstream's brand, which would ship
+// "T3 Code (Nightly)" as the product name of a ThroughLine nightly artifact.
+// The fork's own convention elsewhere is explicit: apps/web branding asserts
+// "ThroughLine (Nightly)" and DesktopAppIdentity asserts "ThroughLine (Alpha)".
+// Bound: only the nightly literal changes, because that is what this function's
+// tests define. The `?? "T3 Code"` fallback below is unreachable while the
+// manifest carries a productName and is deliberately left untouched.
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
+    ? "ThroughLine (Nightly)"
     : (desktopPackageJson.productName ?? "T3 Code");
 }
 
