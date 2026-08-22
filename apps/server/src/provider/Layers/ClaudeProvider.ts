@@ -355,7 +355,7 @@ function getBuiltInClaudeModelsForVersion(
       return supportsClaudeOpus5(version);
     }
     if (model.slug === "claude-fable-5" || model.slug === "claude-sonnet-5") {
-      // Both Claude 5 family models shipped behind the same CLI floor.
+      // ThroughLine: Both Claude 5 family models shipped behind the same CLI floor.
       return supportsClaudeFable5(version);
     }
     if (model.slug === "claude-opus-4-8") {

@@ -28,7 +28,7 @@ export function getProviderModels(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderDriverKind,
 ): ReadonlyArray<ServerProviderModel> {
-  // Newest-first family sort for pi's raw discovered catalog (identity for
+  // ThroughLine: Newest-first family sort for pi's raw discovered catalog (identity for
   // curated drivers), so default-model resolution never lands on the oldest
   // entry. The per-instance floor is resolved in the app-option layer where
   // instance config is readable.

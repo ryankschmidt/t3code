@@ -121,10 +121,11 @@ function applyInstanceModelPreferences(
   },
 ): AppModelOption[] {
   const hiddenModels = new Set(preferences.hiddenModels);
-  // Instance-level floor + newest-first family sort run first; the user's
+  // ThroughLine: Instance-level floor + newest-first family sort run first; the user's
   // explicit modelOrder pins then win inside sortModelsForProviderInstance,
   // with the family order as the stable tiebreak.
-  const familyOrdered = ordering === undefined ? options : applyModelFamilyOrdering(options, ordering);
+  const familyOrdered =
+    ordering === undefined ? options : applyModelFamilyOrdering(options, ordering);
   return sortModelsForProviderInstance(
     familyOrdered.filter((option) => option.isCustom || !hiddenModels.has(option.slug)),
     { modelOrder: preferences.modelOrder },

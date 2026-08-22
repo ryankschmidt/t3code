@@ -47,6 +47,8 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBe("nightly");
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Nightly");
     expect(branding.APP_STAGE_LABEL).toBe("Nightly");
+    // ThroughLine: fork brand rename. The string here is product identity, not a seam marker —
+    // this comment is the marker, so a discipline check reading comments (not data) sees it.
     expect(branding.APP_DISPLAY_NAME).toBe("ThroughLine (Nightly)");
   });
 

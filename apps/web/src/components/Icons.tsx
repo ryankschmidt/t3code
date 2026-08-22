@@ -211,7 +211,7 @@ export const GrokIcon: Icon = ({ className, ...props }) => (
   </svg>
 );
 
-/** Official pi.dev logo (badlogic's Pi coding harness). */
+/** ThroughLine: Official pi.dev logo (badlogic's Pi coding harness). */
 export const PiIcon: Icon = (props) => (
   <svg {...props} viewBox="0 0 800 800" fill="currentColor">
     <path

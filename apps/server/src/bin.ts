@@ -18,7 +18,7 @@ import { runServerCommand, serveCommand, startCommand } from "./cli/server.ts";
 import { serviceCommand } from "./cli/service.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 
-// D-ledger: absorb post-teardown child-stdio socket errors (2026-07-05 crash class).
+// ThroughLine: D-ledger: absorb post-teardown child-stdio socket errors (2026-07-05 crash class).
 installBenignChildStdioErrorGuard();
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);

@@ -150,6 +150,9 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
+        // ThroughLine: fork brand rename reaching the desktop identity — app name, user-data
+        // directory, and the legacy-path migration off the upstream T3 Code directory. The
+        // brand strings in these assertions are data, not seam markers; this comment is the marker.
         assert.equal(userDataPath, "/Users/alice/Library/Application Support/ThroughLine (Alpha)");
       }),
       { legacyPathExists: true },

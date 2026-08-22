@@ -40,6 +40,9 @@ describe("buildThreadActionMenuItems", () => {
     expect(ids(baseState)).not.toContain("copy-branch");
   });
 
+  // ThroughLine: fork-owned behavior. A thread carries the native session UUID and transcript
+  // path so an operator can copy them straight out of the menu — the identity a resumed seat
+  // needs. Absent identity must hide the items rather than offer a copy of null.
   it("includes native session items only when the thread records that identity", () => {
     expect(ids(baseState)).not.toContain("copy-session-uuid");
     expect(ids(baseState)).not.toContain("copy-transcript-path");

@@ -1813,7 +1813,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       })),
     );
 
-  // ── Protected-workspace guard (landing slice) ─────────────────────────
+  // ── ThroughLine: Protected-workspace guard (landing slice) ─────────────────────────
   // Commit preparation runs `git reset` + `git add -A` in the project's
   // workspace. Against the operator's CANONICAL repo that is a destructive
   // sweep: it clobbers manually staged work and stages every concurrent
@@ -1842,7 +1842,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "--git-common-dir",
       ]).pipe(
         Effect.map((stdout) => stdout.trim()),
-        // Not a git workspace at all → nothing to protect here.
+        // ThroughLine: Not a git workspace at all → nothing to protect here.
         Effect.catchTags({ GitCommandError: () => Effect.succeed("") }),
       );
       if (commonDir.length === 0) return;

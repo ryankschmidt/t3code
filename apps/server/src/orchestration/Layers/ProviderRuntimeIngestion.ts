@@ -869,7 +869,7 @@ export function runtimeEventToActivities(
     }
 
     case "turn.started": {
-      // Route-family diagnostic (Meridian seam patch): providers that split
+      // ThroughLine: Route-family diagnostic (Meridian seam patch): providers that split
       // model transport across seams (Pi: openai-native-pi vs
       // anthropic-meridian-claude-code-sdk) stamp turn.started with
       // routeFamily. Persist it as a compact info activity so SUCCESSFUL

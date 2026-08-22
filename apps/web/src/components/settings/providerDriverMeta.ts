@@ -36,6 +36,8 @@ export interface ProviderClientDefinition {
 }
 
 export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
+  // ThroughLine: fork-owned provider client definition. Pi is surfaced in settings as Early
+  // Access; its icon and settings schema are fork additions, so this whole block is ours.
   {
     value: ProviderDriverKind.make("codex"),
     label: "Codex",

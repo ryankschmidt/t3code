@@ -356,7 +356,7 @@ const ThreadRealtimeClosedPayload = Schema.Struct({
 export type ThreadRealtimeClosedPayload = typeof ThreadRealtimeClosedPayload.Type;
 
 /**
- * Route family diagnostic for providers that split model transport across
+ * ThroughLine: Route family diagnostic for providers that split model transport across
  * seams (Pi: OpenAI/Codex stays on Pi native auth; Anthropic/Claude routes
  * through Meridian and the official Claude Code SDK). A literal union so a
  * misspelled family is unrepresentable.
@@ -482,7 +482,7 @@ const UserInputResolvedPayload = Schema.Struct({
 export type UserInputResolvedPayload = typeof UserInputResolvedPayload.Type;
 
 /**
- * Typed per-task usage rollup. Field names match the orchestration-v2 subagent
+ * ThroughLine: Typed per-task usage rollup. Field names match the orchestration-v2 subagent
  * usage vocabulary (#4779) so the eventual migration is a rename, not a remap.
  * Claude reports per-activation deltas; Codex reports cumulative totals — the
  * merge strategy is provider-specific and lives in client-runtime.
@@ -514,7 +514,7 @@ export const TaskRunHandles = Schema.Struct({
 export type TaskRunHandles = typeof TaskRunHandles.Type;
 
 /**
- * Watch-loop task types: Monitor-tool tasks plus background shells (a shell
+ * ThroughLine: Watch-loop task types: Monitor-tool tasks plus background shells (a shell
  * that outlives its turn is in practice a watch loop). Canonical single copy —
  * the server liveness registry, ingestion's agentKind stamp, and the client
  * fold's legacy fallback all classify with these sets.
@@ -529,7 +529,7 @@ export const MONITOR_TASK_TYPES: ReadonlySet<string> = new Set([
 export const INERT_TASK_TYPES: ReadonlySet<string> = new Set(["plan", "dream"]);
 
 /**
- * Agent-vs-background classification, stamped by ingestion as `agentKind` so
+ * ThroughLine: Agent-vs-background classification, stamped by ingestion as `agentKind` so
  * persisted rows are self-describing. A deliberate denylist: the SDK's
  * agent-flavored type names drift (subagent, local_agent, local_workflow, …)
  * and an allowlist silently dropped real subagents when "local_agent"
@@ -551,7 +551,7 @@ export function classifyTaskAgentKind(input: {
 }
 
 /**
- * Optional agent-identity linkage carried on every task lifecycle payload.
+ * ThroughLine: Optional agent-identity linkage carried on every task lifecycle payload.
  * Repeated on progress and terminal rows (not just start) so client folds can
  * reconstruct an agent even when its start row aged out of activity retention.
  * All fields optional: old emitters and old rows decode unchanged.
@@ -633,7 +633,7 @@ const TaskProgressPayload = Schema.Struct({
 export type TaskProgressPayload = typeof TaskProgressPayload.Type;
 
 /**
- * Non-terminal status patch (from the Claude SDK's task_updated, which main
+ * ThroughLine: Non-terminal status patch (from the Claude SDK's task_updated, which main
  * previously dropped). killed→cancelled and paused→idle are mapped at the
  * adapter so the wire only carries the shared vocabulary.
  */

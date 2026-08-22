@@ -52,5 +52,8 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   CursorDriver,
   GrokDriver,
   OpenCodeDriver,
+  // ThroughLine: fork-registered provider. Pi is Ryan's own harness and ships in this build's
+  // static driver set; upstream has no knowledge of it, so this entry (and its Env member above)
+  // is fork-owned and must survive any upstream refresh of BUILT_IN_DRIVERS.
   PiDriver,
 ];

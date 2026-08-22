@@ -1121,7 +1121,7 @@ describe("ProviderRuntimeIngestion", () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
-    // Codex-family pi turn: turn.started stamped openai-native-pi.
+    // ThroughLine: Codex-family pi turn: turn.started stamped openai-native-pi.
     harness.emit({
       type: "turn.started",
       eventId: asEventId("evt-route-codex-turn"),
@@ -1144,7 +1144,7 @@ describe("ProviderRuntimeIngestion", () => {
       payload: { state: "completed" },
     });
 
-    // Claude/Meridian-family pi turn: stamped anthropic-meridian-claude-code-sdk.
+    // ThroughLine: Claude/Meridian-family pi turn: stamped anthropic-meridian-claude-code-sdk.
     harness.emit({
       type: "turn.started",
       eventId: asEventId("evt-route-claude-turn"),
@@ -1167,7 +1167,7 @@ describe("ProviderRuntimeIngestion", () => {
       payload: { state: "completed" },
     });
 
-    // Route activities project from persisted thread.activity-appended
+    // ThroughLine: Route activities project from persisted thread.activity-appended
     // orchestration events (real sqlite-backed event store): presence in the
     // read model proves the routeFamily row is durable for SUCCESSFUL turns.
     const thread = await waitForThread(
@@ -1207,7 +1207,7 @@ describe("ProviderRuntimeIngestion", () => {
     expect(claudePayload?.routeFamily).toBe("anthropic-meridian-claude-code-sdk");
     expect(claudePayload?.model).toBe("anthropic/claude-haiku-4-5");
 
-    // A turn.started WITHOUT routeFamily must add no activity (zero noise
+    // ThroughLine: A turn.started WITHOUT routeFamily must add no activity (zero noise
     // for providers that do not split routes).
     harness.emit({
       type: "turn.started",

@@ -995,6 +995,11 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+// ThroughLine: fork-owned RPC surface. The Symphony methods below (spawnThreadRun, taskStatus,
+// runtimeReady) and their imported schemas are a fork addition for agent orchestration —
+// upstream's RPC group ends at the resource-telemetry subscription above. Kept adjacent to
+// upstream's definitions rather than in a separate module so the merge conflict is visible
+// rather than silent if upstream extends this list.
 export const WsSymphonySpawnThreadRunRpc = Rpc.make(SYMPHONY_WS_METHODS.spawnThreadRun, {
   payload: SymphonySpawnThreadRunInput,
   success: SymphonySpawnThreadRunOutput,

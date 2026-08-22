@@ -674,7 +674,7 @@ export const makeServerLayer = Layer.unwrap(
     );
 
     return serverApplicationLayer.pipe(
-      // TQ-039 slice 1: AbsurdRuntimeInProcessLive requires OrchestrationEngineService
+      // ThroughLine: TQ-039 slice 1: AbsurdRuntimeInProcessLive requires OrchestrationEngineService
       // (satisfied by runtimeServicesLive below) and PROVIDES the AbsurdRuntime service
       // up into serverApplicationLayer so the symphony.* WS methods can spawn in-process.
       Layer.provideMerge(AbsurdRuntimeInProcessLive),

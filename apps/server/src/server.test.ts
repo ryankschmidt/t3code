@@ -771,7 +771,7 @@ const buildAppUnderTest = (options?: {
         ),
       ),
       Layer.provide(
-        // Landing slice: the ws turn rail requires the AbsurdRuntime service
+        // ThroughLine: Landing slice: the ws turn rail requires the AbsurdRuntime service
         // (readiness guard + spawn). Tests get a transport-faithful fake whose
         // spawn decodes params.turnCommand and dispatches it into the (mock)
         // engine — the same contract AbsurdRuntimeInProcessLive wires in

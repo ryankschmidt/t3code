@@ -148,7 +148,7 @@ export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-5.6-luna";
 export const DEFAULT_TEXT_GENERATION_REASONING_EFFORT = "low";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
-  // Landing slice: new conversations default to the current flagship of each
+  // ThroughLine: Landing slice: new conversations default to the current flagship of each
   // provider — Claude Fable 5 and GPT-5.6 Sol (the operator's daily drivers).
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
   [CLAUDE_DRIVER_KIND]: "claude-fable-5",

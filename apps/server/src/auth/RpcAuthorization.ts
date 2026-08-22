@@ -23,7 +23,7 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  */
 export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
-  // TQ-039 slice 1: Symphony spawns Absurd threads in-process; keep its scopes
+  // ThroughLine: TQ-039 slice 1: Symphony spawns Absurd threads in-process; keep its scopes
   // beside dispatchCommand since it is the same operate/read split.
   [SYMPHONY_WS_METHODS.spawnThreadRun]: AuthOrchestrationOperateScope,
   [SYMPHONY_WS_METHODS.taskStatus]: AuthOrchestrationReadScope,

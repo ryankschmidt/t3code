@@ -8,6 +8,8 @@ export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>
   [ProviderDriverKind.make("opencode")]: OpenCodeIcon,
   [ProviderDriverKind.make("cursor")]: CursorIcon,
   [ProviderDriverKind.make("grok")]: GrokIcon,
+  // ThroughLine: fork-owned icon mapping for the Pi provider — paired with the PiIcon import
+  // above. Upstream's map has no 'pi' key.
   [ProviderDriverKind.make("pi")]: PiIcon,
 };
 
