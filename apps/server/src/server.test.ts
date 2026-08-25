@@ -7612,7 +7612,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   );
 
   it.effect(
-    "falls back to the local base branch when startFromOrigin is set but no origin remote exists",
+    "falls back to the local base branch and keeps the created thread when the durable turn spawn outlives its acknowledgement",
     () =>
       Effect.gen(function* () {
         const dispatchedCommands: Array<OrchestrationCommand> = [];
@@ -7661,7 +7661,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
         const createdAt = "2026-01-01T00:00:00.000Z";
         const wsUrl = yield* getWsServerUrl("/ws");
-        yield* Effect.scoped(
+        const response = yield* Effect.scoped(
           withWsRpcClient(wsUrl, (client) =>
             client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
               type: "thread.turn.start",
@@ -7699,6 +7699,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           ),
         );
 
+        assert.equal(response.sequence, 0);
+        assertTrue(dispatchedCommands.every((command) => command.type !== "thread.delete"));
         assert.deepEqual(remoteExists.mock.calls[0]?.[0], {
           cwd: "/tmp/project",
           remoteName: "origin",

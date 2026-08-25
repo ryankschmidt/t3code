@@ -1145,10 +1145,22 @@ const makeWsRpcLayer = (
             concurrency: 2,
           });
           if (acked === undefined) {
-            return yield* new OrchestrationDispatchCommandError({
-              message:
-                "Turn spawned on the absurd rail but the turn-start event was not observed in time",
-            });
+            yield* Effect.logWarning(
+              "turn spawned on the absurd rail before its turn-start acknowledgement was observed",
+              {
+                threadId: command.threadId,
+                messageId,
+              },
+            );
+            // The spawn call is the durable acceptance boundary. A delayed
+            // projection acknowledgement must not turn that accepted effect
+            // into a client failure: bootstrap would delete the created
+            // thread and the composer would restore an already-sent draft.
+            // Sequence zero is the existing no-cursor sentinel; subscriptions
+            // deliver the eventual projected turn.
+            return {
+              sequence: 0,
+            };
           }
           return { sequence: acked.sequence };
         });
