@@ -1340,18 +1340,36 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             });
             yield* Effect.forEach(
               existingTurns.filter((turn) => turn.turnId !== null && turn.state === "running"),
-              (turn) =>
-                turn.turnId === null
-                  ? Effect.void
-                  : projectionTurnRepository.upsertByTurnId({
-                      ...turn,
-                      turnId: turn.turnId,
-                      state: settledTurnState,
-                      // A running turn's completedAt can only hold a mid-turn
-                      // placeholder checkpoint timestamp — the session leaving
-                      // "running" is the authoritative turn end.
-                      completedAt: event.payload.session.updatedAt,
-                    }),
+              (turn) => {
+                if (turn.turnId === null) return Effect.void;
+                const turnId = turn.turnId;
+                return Effect.gen(function* () {
+                  yield* projectionTurnRepository.upsertByTurnId({
+                    ...turn,
+                    turnId,
+                    state: settledTurnState,
+                    // A running turn's completedAt can only hold a mid-turn
+                    // placeholder checkpoint timestamp — the session leaving
+                    // "running" is the authoritative turn end.
+                    completedAt: event.payload.session.updatedAt,
+                  });
+                  if (settledTurnState !== "completed" || turn.assistantMessageId === null) {
+                    yield* failComsNetTurn(
+                      event.payload.threadId,
+                      turnId,
+                      settledTurnState === "completed"
+                        ? `receiver turn ${turnId} settled without an assistant message`
+                        : `receiver turn ${turnId} ended with status ${event.payload.session.status}`,
+                    );
+                    return;
+                  }
+                  yield* completeComsNetTurn(
+                    event.payload.threadId,
+                    turnId,
+                    turn.assistantMessageId,
+                  );
+                });
+              },
               { concurrency: 1 },
             );
             return;

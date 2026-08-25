@@ -356,6 +356,29 @@ it.layer(ComsNetProjectionTestLayer)("ComsNet finished-turn projection", (it) =>
       const successRequestId = "11111111-1111-1111-1111-111111111111";
       const successTurnId = TurnId.make("turn-comsnet-success");
       yield* appendAndProject({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-comsnet-success-session-running"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-success-session-running"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-success-session-running"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: successTurnId,
+            lastError: null,
+            updatedAt: now,
+          },
+        },
+      });
+      yield* appendAndProject({
         type: "thread.message-sent",
         eventId: EventId.make("evt-comsnet-success-user"),
         aggregateKind: "thread",
@@ -418,6 +441,30 @@ it.layer(ComsNetProjectionTestLayer)("ComsNet finished-turn projection", (it) =>
           files: [],
           assistantMessageId: MessageId.make("message-comsnet-success-assistant"),
           completedAt: now,
+        },
+      });
+      assert.deepEqual(completedComsNetTurns, []);
+      yield* appendAndProject({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-comsnet-success-session-ready"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-success-session-ready"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-success-session-ready"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: now,
+          },
         },
       });
 
