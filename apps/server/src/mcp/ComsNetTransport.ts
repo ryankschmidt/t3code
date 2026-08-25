@@ -17,6 +17,7 @@ import * as Layer from "effect/Layer";
 import { ServerConfig } from "../config.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
+import * as McpProviderSession from "./McpProviderSession.ts";
 
 export const COMSNET_REQUEST_LEASE_MS = 120_000;
 
@@ -100,12 +101,13 @@ export const make = Effect.gen(function* () {
       const identities: Array<PeerIdentity> = [];
       for (const thread of snapshot.threads) {
         const session = thread.session;
+        const mcpSession = McpProviderSession.readMcpProviderSession(thread.id);
         if (
           session === null ||
           session.providerName === null ||
           session.providerInstanceId === undefined ||
-          typeof session.providerSessionId !== "string" ||
-          typeof session.nativeTranscriptPath !== "string" ||
+          mcpSession === undefined ||
+          mcpSession.providerInstanceId !== session.providerInstanceId ||
           session.status === "stopped"
         ) {
           continue;
@@ -114,15 +116,20 @@ export const make = Effect.gen(function* () {
         if (cwd === undefined) continue;
         const providerName = session.providerName;
         const providerInstanceId = session.providerInstanceId;
-        const providerSessionId = session.providerSessionId;
-        const transcriptPath = session.nativeTranscriptPath;
+        // The MCP credential session is minted and owned by ThroughLine before
+        // the native provider starts. It is therefore the identity that the
+        // authenticated caller presents. A provider-native resume/thread id
+        // is separate metadata and must never be compared with this value.
+        const providerSessionId = mcpSession.providerSessionId;
         identities.push({
           peerId: `${providerName}:${providerSessionId}`,
           threadId: thread.id,
           providerName,
           providerInstanceId,
           providerSessionId,
-          transcriptPath,
+          ...(typeof session.nativeTranscriptPath === "string"
+            ? { transcriptPath: session.nativeTranscriptPath }
+            : {}),
           cwd,
         });
       }

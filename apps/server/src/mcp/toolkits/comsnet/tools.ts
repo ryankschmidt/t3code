@@ -39,7 +39,7 @@ const readonlyTool = <T extends Tool.Any>(tool: T): T =>
 export const ComsNetPeersTool = readonlyTool(
   Tool.make("comsnet_peers", {
     description:
-      "List current Claude and Codex seats by stable provider session identity. ThroughLine derives this roster; callers cannot supply or override identities.",
+      "List current Claude and Codex seats by stable provider session identity. ThroughLine derives this roster, marks the authenticated caller with isSelf, and does not accept client-supplied identities.",
     parameters: Schema.Struct({}),
     success: Success,
     failure: Failure,

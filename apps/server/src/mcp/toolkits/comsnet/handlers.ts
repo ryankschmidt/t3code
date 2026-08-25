@@ -1,4 +1,5 @@
 import { CommandId, MessageId, ThreadId } from "@t3tools/contracts";
+import type { PeerIdentity } from "@ryan/coms-net";
 import { randomUUID } from "node:crypto";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -83,12 +84,26 @@ const requestText = (request: {
   ].join("\n");
 };
 
+export type ComsNetPeerView = PeerIdentity & { readonly isSelf: boolean };
+
+export const markCallerPeer = (
+  scope: McpInvocationContext.McpInvocationScope,
+  peers: ReadonlyArray<PeerIdentity>,
+): ReadonlyArray<ComsNetPeerView> =>
+  peers.map((peer) => ({
+    ...peer,
+    isSelf:
+      peer.threadId === scope.threadId &&
+      peer.providerInstanceId === scope.providerInstanceId &&
+      peer.providerSessionId === scope.providerSessionId,
+  }));
+
 const handlers = {
   comsnet_peers: () =>
     Effect.gen(function* () {
-      yield* McpInvocationContext.requireComsNetCapability();
+      const scope = yield* McpInvocationContext.requireComsNetCapability();
       const transport = yield* ComsNetTransport.ComsNetTransport;
-      return yield* transport.listPeers();
+      return markCallerPeer(scope, yield* transport.listPeers());
     }).pipe(Effect.mapError(asFailure)),
 
   comsnet_send: (input) =>

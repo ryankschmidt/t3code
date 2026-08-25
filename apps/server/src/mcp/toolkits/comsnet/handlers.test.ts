@@ -4,9 +4,45 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   COMSNET_DISPATCH_ACK_TIMEOUT_MS,
   dispatchWithLifecycleResult,
+  markCallerPeer,
   withComsNetDispatchAckTimeout,
 } from "./handlers.ts";
 import { COMSNET_REQUEST_LEASE_MS, ComsNetTransportError } from "../../ComsNetTransport.ts";
+import type { PeerIdentity } from "@ryan/coms-net";
+import type { McpInvocationScope } from "../../McpInvocationContext.ts";
+
+describe("ComsNet peer roster caller relation", () => {
+  it("marks exactly the authenticated caller so a cold seat can choose the other peer", () => {
+    const peers: ReadonlyArray<PeerIdentity> = [
+      {
+        peerId: "codex:mcp-session-a",
+        threadId: "thread-a",
+        providerName: "codex",
+        providerInstanceId: "codex-instance",
+        providerSessionId: "mcp-session-a",
+        cwd: "/workspace/a",
+      },
+      {
+        peerId: "codex:mcp-session-b",
+        threadId: "thread-b",
+        providerName: "codex",
+        providerInstanceId: "codex-instance",
+        providerSessionId: "mcp-session-b",
+        cwd: "/workspace/b",
+      },
+    ];
+    const scope = {
+      threadId: "thread-a",
+      providerInstanceId: "codex-instance",
+      providerSessionId: "mcp-session-a",
+    } as McpInvocationScope;
+
+    expect(markCallerPeer(scope, peers).map(({ peerId, isSelf }) => ({ peerId, isSelf }))).toEqual([
+      { peerId: "codex:mcp-session-a", isSelf: true },
+      { peerId: "codex:mcp-session-b", isSelf: false },
+    ]);
+  });
+});
 
 describe("ComsNet dispatch failure finalization", () => {
   it("keeps the dispatch acknowledgement timeout inside the durable request lease", () => {
