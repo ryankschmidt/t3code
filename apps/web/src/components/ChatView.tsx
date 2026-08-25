@@ -1,5 +1,6 @@
 import {
   type ApprovalRequestId,
+  CommandId,
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
@@ -315,6 +316,7 @@ import {
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
+  resolveDraftSendIdentity,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
@@ -1406,6 +1408,13 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  const interruptedDraftSendRetryRef = useRef<{
+    readonly threadKey: string;
+    readonly signature: string;
+    readonly commandId: ReturnType<typeof CommandId.make>;
+    readonly messageId: MessageId;
+    readonly createdAt: string;
+  } | null>(null);
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   useLayoutEffect(() => {
@@ -5134,8 +5143,42 @@ function ChatViewContent(props: ChatViewProps) {
     }
     beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
-    const messageIdForSend = newMessageId();
-    const messageCreatedAt = new Date().toISOString();
+    const threadKeyForSend = scopedThreadKey(scopeThreadRef(environmentId, threadIdForSend));
+    const draftSendSignature = JSON.stringify({
+      text: outgoingMessageText,
+      images: composerImagesSnapshot.map((image) => ({
+        id: image.id,
+        name: image.name,
+        mimeType: image.mimeType,
+        sizeBytes: image.sizeBytes,
+      })),
+      modelSelection: ctxSelectedModelSelection,
+      runtimeMode,
+      interactionMode,
+      projectId: activeProject.id,
+      branch: activeThreadBranch,
+      worktreePath: activeThread.worktreePath,
+      baseBranchForWorktree,
+      startFromOrigin,
+    });
+    const sendIdentity = resolveDraftSendIdentity({
+      interrupted: interruptedDraftSendRetryRef.current,
+      isLocalDraftThread,
+      threadKey: threadKeyForSend,
+      signature: draftSendSignature,
+      create: () => {
+        const messageId = newMessageId();
+        return {
+          threadKey: threadKeyForSend,
+          signature: draftSendSignature,
+          commandId: CommandId.make(`web-thread-turn-${messageId}`),
+          messageId,
+          createdAt: new Date().toISOString(),
+        };
+      },
+    });
+    const messageIdForSend = sendIdentity.messageId;
+    const messageCreatedAt = sendIdentity.createdAt;
     const turnAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({
         type: "image" as const,
@@ -5297,6 +5340,7 @@ function ChatViewContent(props: ChatViewProps) {
       const startResult = await startThreadTurn({
         environmentId,
         input: {
+          commandId: sendIdentity.commandId,
           threadId: threadIdForSend,
           message: {
             messageId: messageIdForSend,
@@ -5363,6 +5407,11 @@ function ChatViewContent(props: ChatViewProps) {
           error instanceof Error ? error.message : "Failed to send message.",
         );
       }
+    }
+    if (failure !== null && isLocalDraftThread && isAtomCommandInterrupted(failure)) {
+      interruptedDraftSendRetryRef.current = sendIdentity;
+    } else if (interruptedDraftSendRetryRef.current?.threadKey === threadKeyForSend) {
+      interruptedDraftSendRetryRef.current = null;
     }
     sendInFlightRef.current = false;
     if (!turnStartSucceeded) {

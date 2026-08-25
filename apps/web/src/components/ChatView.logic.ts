@@ -29,6 +29,37 @@ export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
 
+export interface DraftSendIdentity {
+  readonly threadKey: string;
+  readonly signature: string;
+  readonly commandId: string;
+  readonly messageId: string;
+  readonly createdAt: string;
+}
+
+/**
+ * A draft's first send may be accepted by the server while the websocket
+ * response is lost. Reusing the exact command identity lets the orchestration
+ * receipt converge that uncertain retry instead of attempting thread.create
+ * again. Any user-visible input change mints a new identity.
+ */
+export function resolveDraftSendIdentity<T extends DraftSendIdentity>(input: {
+  readonly interrupted: T | null;
+  readonly isLocalDraftThread: boolean;
+  readonly threadKey: string;
+  readonly signature: string;
+  readonly create: () => T;
+}): T {
+  if (
+    input.isLocalDraftThread &&
+    input.interrupted?.threadKey === input.threadKey &&
+    input.interrupted.signature === input.signature
+  ) {
+    return input.interrupted;
+  }
+  return input.create();
+}
+
 export function scheduleEnvironmentReconnectWarning(showWarning: () => void): () => void {
   const timeoutId = globalThis.setTimeout(showWarning, ENVIRONMENT_RECONNECT_WARNING_GRACE_MS);
   return () => globalThis.clearTimeout(timeoutId);

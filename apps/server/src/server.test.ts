@@ -7329,6 +7329,80 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("resumes a first-send bootstrap when its thread already exists", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread-bootstrap-existing");
+      const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const turnStartAck = yield* Deferred.make<OrchestrationEvent>();
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.gen(function* () {
+                dispatchedCommands.push(command);
+                const sequence = dispatchedCommands.length;
+                if (command.type === "thread.turn.start") {
+                  yield* Deferred.succeed(turnStartAck, {
+                    sequence,
+                    type: "thread.turn-start-requested",
+                    payload: { messageId: command.message.messageId },
+                  } as unknown as OrchestrationEvent);
+                }
+                return { sequence };
+              }),
+            readEvents: () => Stream.empty,
+            streamDomainEvents: Stream.fromEffect(Deferred.await(turnStartAck)),
+          },
+          projectionSnapshotQuery: {
+            getThreadShellById: () =>
+              Effect.succeed(Option.some(makeDefaultOrchestrationThreadShell({ id: threadId }))),
+          },
+        },
+      });
+
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId: CommandId.make("cmd-bootstrap-turn-start-existing"),
+            threadId,
+            message: {
+              messageId: MessageId.make("msg-bootstrap-existing"),
+              role: "user",
+              text: "retry after an uncertain first send",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            bootstrap: {
+              createThread: {
+                projectId: defaultProjectId,
+                title: "Bootstrap Thread",
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: "main",
+                worktreePath: null,
+                createdAt,
+              },
+            },
+            createdAt,
+          }),
+        ),
+      );
+
+      assert.equal(response.sequence, 1);
+      assert.deepEqual(
+        dispatchedCommands.map((command) => command.type),
+        ["thread.turn.start"],
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect(
     "bootstraps first-send worktree turns on the server before dispatching turn start",
     () =>

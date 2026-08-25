@@ -26,6 +26,7 @@ import {
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
+  resolveDraftSendIdentity,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   scheduleEnvironmentReconnectWarning,
@@ -33,6 +34,62 @@ import {
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
+
+describe("interrupted first-send identity", () => {
+  it("reuses the command and message identity for an unchanged draft retry", () => {
+    const interrupted = {
+      threadKey: "environment-local:thread-1",
+      signature: "unchanged-prompt",
+      commandId: "command-first",
+      messageId: "message-first",
+      createdAt: "2026-08-25T00:00:00.000Z",
+    };
+    const create = vi.fn(() => ({
+      ...interrupted,
+      commandId: "command-second",
+      messageId: "message-second",
+      createdAt: "2026-08-25T00:01:00.000Z",
+    }));
+
+    expect(
+      resolveDraftSendIdentity({
+        interrupted,
+        isLocalDraftThread: true,
+        threadKey: interrupted.threadKey,
+        signature: interrupted.signature,
+        create,
+      }),
+    ).toEqual(interrupted);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("mints a new identity when the restored draft changes", () => {
+    const create = vi.fn(() => ({
+      threadKey: "environment-local:thread-1",
+      signature: "edited-prompt",
+      commandId: "command-second",
+      messageId: "message-second",
+      createdAt: "2026-08-25T00:01:00.000Z",
+    }));
+
+    expect(
+      resolveDraftSendIdentity({
+        interrupted: {
+          threadKey: "environment-local:thread-1",
+          signature: "original-prompt",
+          commandId: "command-first",
+          messageId: "message-first",
+          createdAt: "2026-08-25T00:00:00.000Z",
+        },
+        isLocalDraftThread: true,
+        threadKey: "environment-local:thread-1",
+        signature: "edited-prompt",
+        create,
+      }),
+    ).toEqual(create.mock.results[0]?.value);
+    expect(create).toHaveBeenCalledOnce();
+  });
+});
 
 const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
