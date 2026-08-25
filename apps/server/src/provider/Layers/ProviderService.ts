@@ -271,7 +271,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         yield* Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId));
         return undefined;
       }
-      const credential = yield* issueMcpCredential({ threadId, providerInstanceId });
+      const credential = yield* issueMcpCredential({
+        threadId,
+        providerInstanceId,
+        // This call site is the policy boundary: the registry defaults to
+        // preview-only and cannot silently grant ComsNet. A future environment
+        // policy may omit this capability for receive-only or untrusted seats.
+        capabilities: new Set(["preview", "comsnet"]),
+      });
       if (credential) {
         yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
       }

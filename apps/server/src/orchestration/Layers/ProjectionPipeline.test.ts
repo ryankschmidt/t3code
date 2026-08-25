@@ -41,6 +41,8 @@ import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
 import { ServerConfig } from "../../config.ts";
+import type { ComsNetRequest } from "@ryan/coms-net";
+import { ComsNetTransport, type ComsNetTransportShape } from "../../mcp/ComsNetTransport.ts";
 
 const makeProjectionPipelinePrefixedTestLayer = (prefix: string) =>
   OrchestrationProjectionPipelineLive.pipe(
@@ -242,6 +244,237 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         WHERE thread_id = 'thread-1'
       `;
       assert.deepEqual(unsettledRows, [{ settledOverride: "active", settledAt: null }]);
+    }),
+  );
+});
+
+const completedComsNetTurns: Array<{ threadId: string; requestId: string }> = [];
+const failedComsNetTurns: Array<{ threadId: string; requestId: string; error: string }> = [];
+const stubComsNetRequest = (requestId: string, status: "completed" | "failed"): ComsNetRequest => ({
+  requestId,
+  senderPeerId: "claude:sender",
+  senderThreadId: "thread-sender",
+  receiverPeerId: "codex:receiver",
+  receiverThreadId: "thread-comsnet-pipeline",
+  kind: "test",
+  payload: {},
+  status,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  completedAt: "2026-01-01T00:00:01.000Z",
+  ...(status === "failed" ? { error: "failed" } : { result: { text: "done" } }),
+});
+const comsNetTransportTestService: ComsNetTransportShape = {
+  listPeers: () => Effect.succeed([]),
+  send: () => Effect.die("unused"),
+  subscribe: () => Effect.die("unused"),
+  status: () => Effect.die("unused"),
+  complete: () => Effect.die("unused"),
+  failDispatch: () => Effect.die("unused"),
+  markDispatchSucceeded: () => Effect.die("unused"),
+  waitForResult: () => Effect.die("unused"),
+  completeFinishedTurn: (threadId, requestId) =>
+    Effect.sync(() => {
+      completedComsNetTurns.push({ threadId, requestId });
+      return stubComsNetRequest(requestId, "completed");
+    }),
+  failFinishedTurn: (threadId, requestId, error) =>
+    Effect.sync(() => {
+      failedComsNetTurns.push({ threadId, requestId, error });
+      return { ...stubComsNetRequest(requestId, "failed"), error };
+    }),
+  sweepExpired: () => Effect.succeed([]),
+};
+
+const ComsNetProjectionTestLayer = OrchestrationProjectionPipelineLive.pipe(
+  Layer.provideMerge(Layer.succeed(ComsNetTransport, comsNetTransportTestService)),
+  Layer.provideMerge(OrchestrationEventStoreLive),
+  Layer.provideMerge(
+    ServerConfig.layerTest(process.cwd(), { prefix: "t3-comsnet-projection-test-" }),
+  ),
+  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+it.layer(ComsNetProjectionTestLayer)("ComsNet finished-turn projection", (it) => {
+  it.effect("terminates both successful and failed ordinary receiver turns", () =>
+    Effect.gen(function* () {
+      completedComsNetTurns.length = 0;
+      failedComsNetTurns.length = 0;
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const threadId = ThreadId.make("thread-comsnet-pipeline");
+      const projectId = ProjectId.make("project-comsnet-pipeline");
+      const now = "2026-01-01T00:00:00.000Z";
+      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore
+          .append(event)
+          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+      yield* appendAndProject({
+        type: "project.created",
+        eventId: EventId.make("evt-comsnet-project"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-project"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-project"),
+        metadata: {},
+        payload: {
+          projectId,
+          title: "ComsNet Project",
+          workspaceRoot: "/tmp/project-comsnet",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* appendAndProject({
+        type: "thread.created",
+        eventId: EventId.make("evt-comsnet-thread"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-thread"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-thread"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId,
+          title: "ComsNet Receiver",
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const successRequestId = "11111111-1111-1111-1111-111111111111";
+      const successTurnId = TurnId.make("turn-comsnet-success");
+      yield* appendAndProject({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-comsnet-success-user"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-success-user"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-success-user"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-comsnet-success-user"),
+          role: "user",
+          text: `<!-- comsnet-request:${successRequestId} -->\nDo the work.`,
+          attachments: [],
+          turnId: successTurnId,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* appendAndProject({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-comsnet-success-assistant"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-success-assistant"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-success-assistant"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-comsnet-success-assistant"),
+          role: "assistant",
+          text: "Done.",
+          attachments: [],
+          turnId: successTurnId,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* appendAndProject({
+        type: "thread.turn-diff-completed",
+        eventId: EventId.make("evt-comsnet-success-diff"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-success-diff"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-success-diff"),
+        metadata: {},
+        payload: {
+          threadId,
+          turnId: successTurnId,
+          checkpointTurnCount: 1,
+          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/comsnet/success"),
+          status: "ready",
+          files: [],
+          assistantMessageId: MessageId.make("message-comsnet-success-assistant"),
+          completedAt: now,
+        },
+      });
+
+      const failedRequestId = "22222222-2222-2222-2222-222222222222";
+      const failedTurnId = TurnId.make("turn-comsnet-failed");
+      yield* appendAndProject({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-comsnet-failed-user"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-failed-user"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-failed-user"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-comsnet-failed-user"),
+          role: "user",
+          text: `<!-- comsnet-request:${failedRequestId} -->\nFail honestly.`,
+          attachments: [],
+          turnId: failedTurnId,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* appendAndProject({
+        type: "thread.turn-diff-completed",
+        eventId: EventId.make("evt-comsnet-failed-diff"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-failed-diff"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-failed-diff"),
+        metadata: {},
+        payload: {
+          threadId,
+          turnId: failedTurnId,
+          checkpointTurnCount: 2,
+          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/comsnet/failed"),
+          status: "error",
+          files: [],
+          assistantMessageId: null,
+          completedAt: now,
+        },
+      });
+
+      assert.deepEqual(completedComsNetTurns, [{ threadId, requestId: successRequestId }]);
+      assert.deepEqual(failedComsNetTurns, [
+        {
+          threadId,
+          requestId: failedRequestId,
+          error: `receiver turn ${failedTurnId} ended with status error`,
+        },
+      ]);
     }),
   );
 });

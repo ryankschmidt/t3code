@@ -49,6 +49,8 @@ import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/Projectio
 import { ProjectionThreadRepositoryLive } from "../../persistence/Layers/ProjectionThreads.ts";
 import { ProviderSessionRuntimeRepositoryLive } from "../../persistence/Layers/ProviderSessionRuntime.ts";
 import { ServerConfig } from "../../config.ts";
+import { ComsNetTransport } from "../../mcp/ComsNetTransport.ts";
+import { requestIdForFinishedTurn, requestIdsForTurn } from "../../mcp/ComsNetCorrelation.ts";
 import {
   OrchestrationProjectionPipeline,
   type OrchestrationProjectionPipelineShape,
@@ -488,6 +490,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     // ThroughLine: needed to close the resume-bookkeeping row on terminal
     // thread.session-set — see applyThreadSessionsProjection below.
     const providerSessionRuntimeRepository = yield* ProviderSessionRuntimeRepository;
+    const comsNetTransport = yield* Effect.serviceOption(ComsNetTransport);
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -1177,6 +1180,127 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       }
     });
 
+    const completeComsNetTurn = Effect.fn("ProjectionPipeline.completeComsNetTurn")(function* (
+      threadId: ThreadId,
+      turnId: string,
+      assistantMessageId: string,
+    ) {
+      const messages = yield* projectionThreadMessageRepository.listByThreadId({ threadId });
+      const requestIds = requestIdsForTurn(messages, turnId);
+      if (requestIds.length === 0) return;
+      if (Option.isNone(comsNetTransport)) {
+        yield* Effect.logError("ComsNet-marked turn settled without the ComsNet transport layer", {
+          threadId,
+          turnId,
+          requestIds,
+        });
+        return;
+      }
+      const transport = comsNetTransport.value;
+      if (requestIds.length !== 1) {
+        yield* Effect.forEach(
+          requestIds,
+          (requestId) =>
+            transport
+              .failFinishedTurn(
+                threadId,
+                requestId,
+                `correlation ambiguous: turn ${turnId} carried ${requestIds.length} ComsNet markers`,
+              )
+              .pipe(
+                Effect.catch((cause) =>
+                  logComsNetTerminalError(threadId, turnId, requestId, cause),
+                ),
+              ),
+          { concurrency: 1 },
+        );
+        return;
+      }
+      const requestId = requestIdForFinishedTurn(messages, turnId);
+      if (requestId === undefined) return;
+      const assistantMessage = messages.find(
+        (message) => message.messageId === assistantMessageId && message.role === "assistant",
+      );
+      if (assistantMessage === undefined) {
+        yield* transport
+          .failFinishedTurn(
+            threadId,
+            requestId,
+            `assistant message ${assistantMessageId} was not projected`,
+          )
+          .pipe(
+            Effect.catch((cause) => logComsNetTerminalError(threadId, turnId, requestId, cause)),
+          );
+        return;
+      }
+      yield* transport
+        .completeFinishedTurn(threadId, requestId, {
+          text: assistantMessage.text,
+          assistantMessageId,
+          turnId,
+        })
+        .pipe(Effect.catch((cause) => logComsNetTerminalError(threadId, turnId, requestId, cause)));
+    });
+
+    const logComsNetTerminalError = (
+      threadId: ThreadId,
+      turnId: string,
+      requestId: string,
+      cause: { readonly message: string; readonly cause?: unknown },
+    ) => {
+      const code =
+        typeof cause.cause === "object" && cause.cause !== null && "code" in cause.cause
+          ? String((cause.cause as { readonly code?: unknown }).code)
+          : undefined;
+      return code === "ALREADY_TERMINAL"
+        ? Effect.logDebug("ComsNet request was already terminal", {
+            threadId,
+            turnId,
+            requestId,
+            code,
+            cause: cause.message,
+          })
+        : Effect.logError("ComsNet request could not reach a terminal state", {
+            threadId,
+            turnId,
+            requestId,
+            code,
+            cause: cause.message,
+          });
+    };
+
+    const failComsNetTurn = Effect.fn("ProjectionPipeline.failComsNetTurn")(function* (
+      threadId: ThreadId,
+      turnId: string,
+      reason: string,
+    ) {
+      const messages = yield* projectionThreadMessageRepository.listByThreadId({ threadId });
+      const requestIds = requestIdsForTurn(messages, turnId);
+      if (requestIds.length === 0) return;
+      if (Option.isNone(comsNetTransport)) {
+        yield* Effect.logError(
+          "ComsNet-marked failed turn has no transport capable of terminating it",
+          {
+            threadId,
+            turnId,
+            requestIds,
+            reason,
+          },
+        );
+        return;
+      }
+      yield* Effect.forEach(
+        requestIds,
+        (requestId) =>
+          comsNetTransport.value
+            .failFinishedTurn(threadId, requestId, reason)
+            .pipe(
+              Effect.catch((cause) => logComsNetTerminalError(threadId, turnId, requestId, cause)),
+            ),
+        { concurrency: 1 },
+      );
+    });
+
     const applyThreadTurnsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadTurnsProjection",
     )(function* (event, _attachmentSideEffects) {
@@ -1459,24 +1583,41 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               requestedAt: existingTurn.value.requestedAt ?? event.payload.completedAt,
               completedAt: event.payload.completedAt,
             });
-            return;
+          } else {
+            yield* projectionTurnRepository.upsertByTurnId({
+              turnId: event.payload.turnId,
+              threadId: event.payload.threadId,
+              pendingMessageId: null,
+              sourceProposedPlanThreadId: null,
+              sourceProposedPlanId: null,
+              assistantMessageId: event.payload.assistantMessageId,
+              state: turnStillRunning ? "running" : nextState,
+              requestedAt: event.payload.completedAt,
+              startedAt: event.payload.completedAt,
+              completedAt: event.payload.completedAt,
+              checkpointTurnCount: event.payload.checkpointTurnCount,
+              checkpointRef: event.payload.checkpointRef,
+              checkpointStatus: event.payload.status,
+              checkpointFiles: event.payload.files,
+            });
           }
-          yield* projectionTurnRepository.upsertByTurnId({
-            turnId: event.payload.turnId,
-            threadId: event.payload.threadId,
-            pendingMessageId: null,
-            sourceProposedPlanThreadId: null,
-            sourceProposedPlanId: null,
-            assistantMessageId: event.payload.assistantMessageId,
-            state: turnStillRunning ? "running" : nextState,
-            requestedAt: event.payload.completedAt,
-            startedAt: event.payload.completedAt,
-            completedAt: event.payload.completedAt,
-            checkpointTurnCount: event.payload.checkpointTurnCount,
-            checkpointRef: event.payload.checkpointRef,
-            checkpointStatus: event.payload.status,
-            checkpointFiles: event.payload.files,
-          });
+          if (!turnStillRunning) {
+            if (event.payload.status === "error" || event.payload.assistantMessageId === null) {
+              yield* failComsNetTurn(
+                event.payload.threadId,
+                event.payload.turnId,
+                event.payload.status === "error"
+                  ? `receiver turn ${event.payload.turnId} ended with status error`
+                  : `receiver turn ${event.payload.turnId} settled without an assistant message`,
+              );
+            } else {
+              yield* completeComsNetTurn(
+                event.payload.threadId,
+                event.payload.turnId,
+                event.payload.assistantMessageId,
+              );
+            }
+          }
           return;
         }
 

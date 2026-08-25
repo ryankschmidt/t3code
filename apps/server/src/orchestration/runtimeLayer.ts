@@ -7,18 +7,25 @@ import { OrchestrationProjectionPipelineLive } from "./Layers/ProjectionPipeline
 import { OrchestrationProjectionSnapshotQueryLive } from "./Layers/ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "./ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "./ThreadPlanProgress.ts";
+import * as ComsNetTransport from "../mcp/ComsNetTransport.ts";
 
 export const OrchestrationEventInfrastructureLayerLive = Layer.mergeAll(
   OrchestrationEventStoreLive,
   OrchestrationCommandReceiptRepositoryLive,
 );
 
+export const ComsNetTransportLayerLive = ComsNetTransport.layer.pipe(
+  Layer.provide(OrchestrationProjectionSnapshotQueryLive),
+);
+
 export const OrchestrationProjectionPipelineLayerLive = OrchestrationProjectionPipelineLive.pipe(
   Layer.provide(OrchestrationEventStoreLive),
+  Layer.provide(ComsNetTransportLayerLive),
 );
 
 export const OrchestrationInfrastructureLayerLive = Layer.mergeAll(
   OrchestrationProjectionSnapshotQueryLive,
+  ComsNetTransportLayerLive,
   OrchestrationEventInfrastructureLayerLive,
   OrchestrationProjectionPipelineLayerLive,
   // Shared background-liveness and plan-progress registries: written by

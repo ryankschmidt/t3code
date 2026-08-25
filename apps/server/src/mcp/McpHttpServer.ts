@@ -22,6 +22,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { ComsNetToolkitHandlersLive } from "./toolkits/comsnet/handlers.ts";
+import { ComsNetToolkit } from "./toolkits/comsnet/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -216,6 +218,10 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
+export const ComsNetToolkitRegistrationLive = McpServer.toolkit(ComsNetToolkit).pipe(
+  Layer.provide(ComsNetToolkitHandlersLive),
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -223,4 +229,7 @@ const McpTransportLive = McpServer.layerHttp({
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+export const layer = Layer.mergeAll(
+  PreviewToolkitRegistrationLive,
+  ComsNetToolkitRegistrationLive,
+).pipe(Layer.provideMerge(McpTransportLive));

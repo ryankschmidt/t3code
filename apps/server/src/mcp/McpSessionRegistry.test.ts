@@ -46,11 +46,34 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
 
     const resolved = yield* registry.resolve(token);
     expect(resolved?.threadId).toBe(threadId);
+    expect(resolved?.capabilities).toEqual(new Set(["preview"]));
+
+    const other = yield* registry.issue({
+      threadId: ThreadId.make("thread-1-other"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    });
+    const otherToken = other.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    expect(otherToken).not.toBe(token);
+    expect((yield* registry.resolve(otherToken))?.threadId).toBe("thread-1-other");
+    expect((yield* registry.resolve(token))?.threadId).toBe(threadId);
 
     yield* registry.revokeThread(threadId);
     expect(yield* registry.resolve(token)).toBeUndefined();
 
     timestamp += 2_000;
+  }),
+);
+
+it.effect("grants ComsNet only when the issuing policy names it", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-comsnet-policy"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["preview", "comsnet"]),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    expect((yield* registry.resolve(token))?.capabilities).toEqual(new Set(["preview", "comsnet"]));
   }),
 );
 
