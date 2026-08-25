@@ -609,6 +609,20 @@ const buildAppUnderTest = (options?: {
     const serviceLauncherClientLayer = ServiceLauncherClient.layer.pipe(
       Layer.provide(Layer.succeed(HostProcessEnvironment, {})),
     );
+    const materializedTestThreadIds = new Set<ThreadId>();
+    const configuredOrchestrationDispatch = options?.layers?.orchestrationEngine?.dispatch;
+    const orchestrationDispatch = (command: OrchestrationCommand) =>
+      (configuredOrchestrationDispatch?.(command) ?? Effect.succeed({ sequence: 0 })).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (command.type === "thread.create") {
+              materializedTestThreadIds.add(command.threadId);
+            } else if (command.type === "thread.delete") {
+              materializedTestThreadIds.delete(command.threadId);
+            }
+          }),
+        ),
+      );
 
     const servedRoutesLayer = HttpRouter.serve(
       makeRoutesLayer.pipe(Layer.provide(serviceLauncherClientLayer)),
@@ -803,10 +817,10 @@ const buildAppUnderTest = (options?: {
           Layer.provideMerge(
             Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
               readEvents: () => Stream.empty,
-              dispatch: () => Effect.succeed({ sequence: 0 }),
               streamDomainEvents: Stream.empty,
               latestSequence: Effect.succeed(0),
               ...options?.layers?.orchestrationEngine,
+              dispatch: orchestrationDispatch,
             }),
           ),
         ),
@@ -832,7 +846,12 @@ const buildAppUnderTest = (options?: {
           searchThreads: () => Effect.succeed({ matches: [] }),
           getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
           getProjectShellById: () => Effect.succeed(Option.none()),
-          getThreadShellById: () => Effect.succeed(Option.none()),
+          getThreadShellById: (threadId) =>
+            Effect.succeed(
+              materializedTestThreadIds.has(threadId)
+                ? Option.some(makeDefaultOrchestrationThreadShell({ id: threadId }))
+                : Option.none(),
+            ),
           getThreadDetailById: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
           getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
@@ -7399,6 +7418,99 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         ["thread.turn.start"],
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("waits for a bootstrapped thread to materialize before spawning its durable turn", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread-bootstrap-materialization-race");
+      const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const turnStartAck = yield* Deferred.make<OrchestrationEvent>();
+      let createAccepted = false;
+      let threadMaterialized = false;
+      let threadLookupCount = 0;
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.gen(function* () {
+                if (command.type === "thread.turn.start" && !threadMaterialized) {
+                  return yield* Effect.die(
+                    new Error("turn start overtook the bootstrapped thread projection"),
+                  );
+                }
+                dispatchedCommands.push(command);
+                const sequence = dispatchedCommands.length;
+                if (command.type === "thread.create") {
+                  createAccepted = true;
+                }
+                if (command.type === "thread.turn.start") {
+                  yield* Deferred.succeed(turnStartAck, {
+                    sequence,
+                    type: "thread.turn-start-requested",
+                    payload: { messageId: command.message.messageId },
+                  } as unknown as OrchestrationEvent);
+                }
+                return { sequence };
+              }),
+            readEvents: () => Stream.empty,
+            streamDomainEvents: Stream.fromEffect(Deferred.await(turnStartAck)),
+          },
+          projectionSnapshotQuery: {
+            getThreadShellById: () =>
+              Effect.sync(() => {
+                threadLookupCount += 1;
+                if (!createAccepted || threadLookupCount < 2) {
+                  return Option.none();
+                }
+                threadMaterialized = true;
+                return Option.some(makeDefaultOrchestrationThreadShell({ id: threadId }));
+              }),
+          },
+        },
+      });
+
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId: CommandId.make("cmd-bootstrap-materialization-race"),
+            threadId,
+            message: {
+              messageId: MessageId.make("msg-bootstrap-materialization-race"),
+              role: "user",
+              text: "start only after the thread exists",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            bootstrap: {
+              createThread: {
+                projectId: defaultProjectId,
+                title: "Materialization Race",
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: "main",
+                worktreePath: null,
+                createdAt,
+              },
+            },
+            createdAt,
+          }),
+        ),
+      );
+
+      assert.equal(response.sequence, 2);
+      assertTrue(threadLookupCount >= 2);
+      assert.deepEqual(
+        dispatchedCommands.map((command) => command.type),
+        ["thread.create", "thread.turn.start"],
       );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );

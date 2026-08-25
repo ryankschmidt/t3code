@@ -834,6 +834,8 @@ const makeWsRpcLayer = (
         command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
         Effect.gen(function* () {
+          const BOOTSTRAP_THREAD_MATERIALIZATION_ATTEMPTS = 200;
+          const BOOTSTRAP_THREAD_MATERIALIZATION_POLL = Duration.millis(25);
           const bootstrap = command.bootstrap;
           const { bootstrap: _bootstrap, ...finalTurnStartCommand } = command;
           let createdThread = false;
@@ -854,6 +856,19 @@ const makeWsRpcLayer = (
                   Effect.ignoreCause({ log: true }),
                 )
               : Effect.void;
+
+          const awaitBootstrappedThread = Effect.gen(function* () {
+            for (let attempt = 0; attempt < BOOTSTRAP_THREAD_MATERIALIZATION_ATTEMPTS; attempt++) {
+              const thread = yield* projectionSnapshotQuery.getThreadShellById(command.threadId);
+              if (Option.isSome(thread)) {
+                return;
+              }
+              yield* Effect.sleep(BOOTSTRAP_THREAD_MATERIALIZATION_POLL);
+            }
+            return yield* new OrchestrationDispatchCommandError({
+              message: `Bootstrapped thread '${command.threadId}' was accepted but did not materialize before its durable turn start`,
+            });
+          });
 
           const recordSetupScriptLaunchFailure = (input: {
             readonly error: ProjectSetupScriptRunner.ProjectSetupScriptRunnerError;
@@ -990,6 +1005,10 @@ const makeWsRpcLayer = (
                   createdAt: bootstrap.createThread.createdAt,
                 });
                 createdThread = true;
+                // Command acceptance and read-model materialization are distinct
+                // boundaries. The durable worker can claim immediately, so do not
+                // let its turn.start overtake the thread projection it requires.
+                yield* awaitBootstrappedThread;
               }
             }
 
