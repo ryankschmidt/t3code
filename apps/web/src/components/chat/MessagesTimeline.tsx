@@ -1111,6 +1111,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       <div className="relative min-w-0 px-1 py-0.5">
         <ChatMarkdown
           text={messageText}
+          operatorDeliveryLinks
           cwd={ctx.markdownCwd}
           threadRef={ctx.threadRef ?? undefined}
           isStreaming={Boolean(row.message.streaming)}

@@ -19,6 +19,7 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);
+    expect(decodeClientSettings({}).renderOperatorLinks).toBe(true);
   });
 
   it("ignores obsolete wrapping preferences", () => {

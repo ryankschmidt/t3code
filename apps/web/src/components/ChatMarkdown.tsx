@@ -100,6 +100,7 @@ import {
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isPreviewSupportedInRuntime } from "../previewStateStore";
+import { renderOperatorDeliveryLinks } from "../operatorDeliveryLinks";
 import {
   isBrowserPreviewFile,
   openFileInPreview,
@@ -119,6 +120,8 @@ interface ChatMarkdownProps {
   lineBreaks?: boolean;
   /** Parse sanitized raw HTML instead of displaying its source text. */
   parseRawHtml?: boolean;
+  /** Render derived path/link pairs for assistant delivery without mutating stored text. */
+  operatorDeliveryLinks?: boolean;
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
@@ -1354,7 +1357,7 @@ function areMarkdownFileLinkPropsEqual(
 }
 
 function ChatMarkdown({
-  text,
+  text: sourceText,
   cwd,
   threadRef,
   onTaskListChange,
@@ -1363,7 +1366,15 @@ function ChatMarkdown({
   className,
   lineBreaks = false,
   parseRawHtml = true,
+  operatorDeliveryLinks = false,
 }: ChatMarkdownProps) {
+  const text = useMemo(
+    () =>
+      renderOperatorDeliveryLinks(sourceText, {
+        enabled: operatorDeliveryLinks && getClientSettings().renderOperatorLinks,
+      }),
+    [operatorDeliveryLinks, sourceText],
+  );
   const { resolvedTheme } = useTheme();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
