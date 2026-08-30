@@ -2890,7 +2890,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     options.platform === "win"
       ? { ...resolvedDesktopRuntimeDependencies }
       : {
-          ...resolvedServerDependencies,
+          // The server bundle inlines every dependency except the runtime-external
+          // roots selected above. Carrying all declared dependencies leaks local
+          // file: workspace links into the detached staging directory, where they
+          // cannot resolve and are redundant with bytes already in bin.mjs.
+          ...resolvedServerRuntimeExternalDependencies,
           ...resolvedDesktopRuntimeDependencies,
           ...resolveFffNativeDependencies(
             options.platform,
