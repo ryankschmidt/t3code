@@ -148,10 +148,10 @@ export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-5.6-luna";
 export const DEFAULT_TEXT_GENERATION_REASONING_EFFORT = "low";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
-  // ThroughLine: Landing slice: new conversations default to the current flagship of each
-  // provider — Claude Fable 5 and GPT-5.6 Sol (the operator's daily drivers).
+  // ThroughLine new-thread composer: Codex is the bounded-work default and Opus is the
+  // Claude seat default. Fable is never a default; it requires an explicitly authorized launch.
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
-  [CLAUDE_DRIVER_KIND]: "claude-fable-5",
+  [CLAUDE_DRIVER_KIND]: "claude-opus-5",
   [CURSOR_DRIVER_KIND]: "auto",
   [GROK_DRIVER_KIND]: "grok-build",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",

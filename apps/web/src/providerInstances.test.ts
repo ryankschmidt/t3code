@@ -300,7 +300,7 @@ describe("getDefaultProviderInstanceModel", () => {
     ).toBe("claude-opus-4-8");
   });
 
-  it("falls back to the driver default when the instance reports no models", () => {
+  it("falls back to the Opus seat default when a Claude instance reports no models", () => {
     const providers = [
       provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent" }),
     ];
@@ -309,8 +309,7 @@ describe("getDefaultProviderInstanceModel", () => {
       providers,
       ProviderInstanceId.make("claudeAgent"),
     );
-    expect(typeof resolved).toBe("string");
-    expect(resolved?.length).toBeGreaterThan(0);
+    expect(resolved).toBe("claude-opus-5");
   });
 
   it("honors the instance's declared default before model-list order", () => {
