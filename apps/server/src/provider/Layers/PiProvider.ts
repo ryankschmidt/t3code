@@ -71,7 +71,10 @@ const PI_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   ],
 });
 
-const VERSION_PROBE_TIMEOUT_MS = 4_000;
+// Governed provider doors do policy and provenance work before they exec the
+// real CLI. Ryan's measured `ryan-pi --version` takes about four seconds, so
+// the generic four-second command budget was guaranteed to race the wrapper.
+export const PI_VERSION_PROBE_TIMEOUT_MS = 10_000;
 
 /** No built-in models by design (#402: models come from Pi, never a static list). */
 const PI_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [];
@@ -163,7 +166,7 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
   }
 
   const versionResult = yield* runPiVersionCommand(piSettings, environment).pipe(
-    Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
+    Effect.timeoutOption(PI_VERSION_PROBE_TIMEOUT_MS),
     Effect.result,
   );
 

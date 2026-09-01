@@ -3,11 +3,19 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { PiSettings } from "@t3tools/contracts";
 
-import { buildInitialPiProviderSnapshot, piModelsFromSettings } from "./PiProvider.ts";
+import {
+  PI_VERSION_PROBE_TIMEOUT_MS,
+  buildInitialPiProviderSnapshot,
+  piModelsFromSettings,
+} from "./PiProvider.ts";
 
 const decodePiSettings = Schema.decodeSync(PiSettings);
 
 describe("piModelsFromSettings", () => {
+  it("leaves headroom for the governed ryan-pi wrapper before declaring a timeout", () => {
+    expect(PI_VERSION_PROBE_TIMEOUT_MS).toBeGreaterThanOrEqual(10_000);
+  });
+
   it("attaches pi's native thinkingLevel Reasoning descriptor to every model", () => {
     const models = piModelsFromSettings(["anthropic/claude-x", "openai/gpt-x"]);
     expect(models).toHaveLength(2);
