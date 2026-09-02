@@ -5,6 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertEveryPlatformTarget } from "./platform-lockstep-contract.ts";
+import { installMacDmg } from "./desktop-platform-install.ts";
 
 type PlatformTarget = {
   id: string;
@@ -14,6 +15,8 @@ type PlatformTarget = {
   artifact: string;
   install_path?: string;
   current_link?: string;
+  backup_root?: string;
+  display?: string;
 };
 
 type PlatformContract = {
@@ -144,8 +147,25 @@ const publishLinux = [
   `cp ${shellQuote(remoteLinuxArtifact)} ${shellQuote(installPath)}`,
   `chmod 0755 ${shellQuote(installPath)}`,
   `ln -sfn ${shellQuote(installPath)} ${shellQuote(currentLink)}`,
+  `test \"$(readlink ${shellQuote(currentLink)})\" = ${shellQuote(installPath)}`,
+  `for pid in $(pgrep -f '^/srv/throughline/ThroughLine(-[^ ]+)?\\.AppImage( |$)' || true); do kill -TERM \"$pid\"; done`,
+  "sleep 2",
+  `nohup env DISPLAY=${shellQuote(linuxTarget.display ?? ":2")} ${shellQuote(currentLink)} >/srv/throughline/ThroughLine.log 2>&1 </dev/null &`,
+  "pid=$!",
+  "attempt=0",
+  'while ! kill -0 "$pid" 2>/dev/null; do attempt=$((attempt + 1)); test "$attempt" -lt 20 || { printf \'LOCKSTEP_REFUSED: linux app did not remain running\\n\' >&2; exit 13; }; sleep 1; done',
+  `actual=$(tr '\\0' '\\n' </proc/\"$pid\"/cmdline | sed -n '1p')`,
+  `test \"$actual\" = ${shellQuote(currentLink)} || { printf 'LOCKSTEP_REFUSED: linux running path expected %s got %s\\n' ${shellQuote(currentLink)} \"$actual\" >&2; exit 14; }`,
+  `printf 'LINUX_RUNNING_PATH=%s LINUX_RUNNING_VERSION=%s\\n' \"$actual\" ${shellQuote(version)}`,
 ].join(" && ");
-run("ssh", [host, "bash", "-lc", shellQuote(publishLinux)]);
+const linuxRuntimeProof = run("ssh", [host, "bash", "-lc", shellQuote(publishLinux)]);
+
+const macInstallPath = macTarget.install_path ?? refuse("mac target missing install_path");
+if (macInstallPath !== "/Applications/ThroughLine.app") {
+  refuse(`mac install path must preserve the stable identity: ${macInstallPath}`);
+}
+const macBackupRoot = macTarget.backup_root ?? refuse("mac target missing backup_root");
+const macInstall = installMacDmg({ dmgPath: macArtifact, version, backupRoot: macBackupRoot });
 
 const receiptPath = join(repoRoot, "release", `desktop-platforms-${version}.json`);
 writeFileSync(
@@ -157,12 +177,21 @@ writeFileSync(
       source_snapshot_sha256: sourceSnapshotSha,
       built_at: new Date().toISOString(),
       targets: [
-        { id: macTarget.id, artifact: macArtifact, sha256: sha256(macArtifact) },
+        {
+          id: macTarget.id,
+          artifact: macArtifact,
+          sha256: sha256(macArtifact),
+          installed_at: macInstallPath,
+          running_executable: macInstall.executable,
+          backup_bundle: macInstall.backupBundle,
+        },
         {
           id: linuxTarget.id,
           artifact: localLinuxArtifact,
           sha256: sha256(localLinuxArtifact),
           installed_at: installPath,
+          current_link: currentLink,
+          running_proof: linuxRuntimeProof,
         },
       ],
     },

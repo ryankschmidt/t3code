@@ -6,7 +6,9 @@
       "id": "mac-arm64",
       "lane": "local-darwin",
       "build_script": "dist:desktop:dmg:arm64",
-      "artifact": "release/ThroughLine-{version}-arm64.dmg"
+      "artifact": "release/ThroughLine-{version}-arm64.dmg",
+      "install_path": "/Applications/ThroughLine.app",
+      "backup_root": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/_versions/app-backups"
     },
     {
       "id": "linux-x64",
@@ -15,7 +17,8 @@
       "build_script": "dist:desktop:linux",
       "artifact": "release/ThroughLine-{version}-x86_64.AppImage",
       "install_path": "/srv/throughline/ThroughLine-{version}-x86_64.AppImage",
-      "current_link": "/srv/throughline/ThroughLine.AppImage"
+      "current_link": "/srv/throughline/ThroughLine.AppImage",
+      "display": ":2"
     }
   ]
 }
