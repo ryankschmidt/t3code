@@ -281,7 +281,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("installs optional native dependencies for the target desktop architecture", () => {
-    assert.deepStrictEqual(STAGE_INSTALL_ARGS, ["install", "--prod"]);
+    assert.deepStrictEqual(STAGE_INSTALL_ARGS, [
+      "install",
+      "--prod",
+      "--",
+      "--store-dir=.pnpm-store",
+    ]);
     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "mac", arch: "x64" }), {
       supportedArchitectures: {
         os: ["darwin"],

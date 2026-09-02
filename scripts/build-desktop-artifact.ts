@@ -785,7 +785,7 @@ interface StagePackageJson {
   };
 }
 
-export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
+export const STAGE_INSTALL_ARGS = ["install", "--prod", "--", "--store-dir=.pnpm-store"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
   // T3 Code always passes the user's installed Claude executable to the SDK,
@@ -2692,7 +2692,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       }),
   });
 
-  const appVersion = options.version ?? serverPackageJson.version;
+  const appVersion = options.version ?? desktopPackageJson.version;
   const iconAssets = resolveDesktopBuildIconAssets(appVersion);
   const commitHash = yield* resolveGitCommitHash(repoRoot);
   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
