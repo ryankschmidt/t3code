@@ -79,6 +79,18 @@ export const PI_VERSION_PROBE_TIMEOUT_MS = 10_000;
 /** No built-in models by design (#402: models come from Pi, never a static list). */
 const PI_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [];
 
+/** Only offer models Pi actually discovered; use the shared Astra display spelling. */
+export function piModelsFromCatalog(
+  catalog: ReadonlyArray<{ readonly slug: string; readonly name: string }>,
+): ReadonlyArray<ServerProviderModel> {
+  return catalog.map((model) => ({
+    slug: model.slug,
+    name: model.slug.split("/").at(-1) === "gpt-6-astra" ? "GPT-6-Astra" : model.name,
+    isCustom: false,
+    capabilities: PI_MODEL_CAPABILITIES,
+  }));
+}
+
 export function piModelsFromSettings(
   customModels: ReadonlyArray<string> | undefined,
 ): ReadonlyArray<ServerProviderModel> {
@@ -288,12 +300,7 @@ export const enrichPiSnapshot = Effect.fn("enrichPiSnapshot")(function* (input: 
     return;
   }
 
-  const discoveredModels: ReadonlyArray<ServerProviderModel> = catalog.models.map((model) => ({
-    slug: model.slug,
-    name: model.name,
-    isCustom: false,
-    capabilities: PI_MODEL_CAPABILITIES,
-  }));
+  const discoveredModels = piModelsFromCatalog(catalog.models);
   const models = providerModelsFromSettings(
     discoveredModels,
     input.piSettings.customModels ?? [],

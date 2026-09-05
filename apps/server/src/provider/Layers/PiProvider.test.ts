@@ -7,11 +7,24 @@ import {
   PI_VERSION_PROBE_TIMEOUT_MS,
   buildInitialPiProviderSnapshot,
   piModelsFromSettings,
+  piModelsFromCatalog,
 } from "./PiProvider.ts";
 
 const decodePiSettings = Schema.decodeSync(PiSettings);
 
 describe("piModelsFromSettings", () => {
+  it("offers discovered Astra with native reasoning and leaves Claude names unchanged", () => {
+    const models = piModelsFromCatalog([
+      { slug: "openai-codex/gpt-6-astra", name: "GPT-6 Astra" },
+      { slug: "anthropic/claude-opus-5", name: "Claude Opus 5" },
+    ]);
+    expect(models.map(({ slug, name }) => ({ slug, name }))).toEqual([
+      { slug: "openai-codex/gpt-6-astra", name: "GPT-6-Astra" },
+      { slug: "anthropic/claude-opus-5", name: "Claude Opus 5" },
+    ]);
+    expect(models[0]?.capabilities?.optionDescriptors?.[0]?.id).toBe("thinkingLevel");
+    expect(piModelsFromCatalog([])).toEqual([]);
+  });
   it("leaves headroom for the governed ryan-pi wrapper before declaring a timeout", () => {
     expect(PI_VERSION_PROBE_TIMEOUT_MS).toBeGreaterThanOrEqual(10_000);
   });
