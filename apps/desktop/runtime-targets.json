@@ -1,0 +1,117 @@
+{
+  "schema_version": "2",
+  "component_type": "tool",
+  "component_name": "throughline-desktop",
+  "version": "0.0.38",
+  "delivery_lane": {
+    "owner": "throughline-desktop",
+    "kind": "module-installer",
+    "mac": "mac/install-mac.sh",
+    "linux": "linux/install-linux.sh",
+    "ship_warden": false,
+    "mac_lane_correction_note": "2026-09-05, second correction. This first read ship-warden-multi-host, then hybrid-mac-warden-linux-root-installer with mac: ship-warden. The second was still wrong and this seat wrote it: Ship Warden's membership gate is COMPONENT-level, not platform-level — daemon.ts refuses on componentHome before any target is considered — so the warden refuses this package on the Mac exactly as it refuses it on Linux, and declaring mac: ship-warden repeated the same defect this contract was repaired to remove: naming a lane that cannot fire. Both platforms now name a component-owned installer, which is what SHAPE-2026-08-17 decision test 3 prescribes for a component that is not warden-shippable. module-installer is an existing controlled-vocabulary value (system-prompt-append declares it); no new value was invented.",
+    "lane_change_note": "2026-09-05: was ship-warden-multi-host. That value had exactly one declarer (this contract) and no implementation — the running warden daemon contains zero occurrences of ship-warden-multi-host, remote-root-daemon, delivery_lane, or the host twr, so the lane could never execute even with workspace membership granted. Switched to the only lane kind proven to reach the tower (throughline-provider-broker uses it). Per SHAPE-2026-08-17 decision test 3, a component that is not warden-shippable keeps its prior lane until wardenized. Decision record: /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/_meta/Decision-ThroughLine-Desktop-Delivery-Lane-2026-09-05.html",
+    "linux_privilege_note": "The kind name is the existing controlled vocabulary value and says 'root'; this component's Linux target needs none. Measured 2026-09-05 on twr: sudo requires a password, /srv/throughline is writable by twr, and the server unit is a --user service in twr's own home. The installer still carries the privilege gate below its checks for any future target that does need it."
+  },
+  "delivery_targets": {
+    "schema": "runtime-delivery-targets.v1",
+    "version_source": "package.json",
+    "completion": "all-required-targets",
+    "targets": [
+      {
+        "id": "mac-arm64",
+        "host": "mac",
+        "platform": "darwin-arm64",
+        "lane": "local-root-daemon",
+        "required": true,
+        "build_script": "dist:desktop:dmg:arm64",
+        "artifact": "apps/desktop/ThroughLine-mac-arm64.dmg",
+        "install_path": "/Applications/ThroughLine.app",
+        "backup_root": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/_versions/app-backups"
+      },
+      {
+        "id": "linux-x64",
+        "host": "twr",
+        "platform": "linux-x64",
+        "lane": "component-linux-installer",
+        "required": true,
+        "build_script": "dist:desktop:linux",
+        "artifact": "apps/desktop/ThroughLine-linux-x64.AppImage",
+        "install_path": "/srv/throughline/ThroughLine-{version}-x86_64.AppImage",
+        "install_path_note": "{version} is substituted from version_source at install time. It was hard-coded to 0.0.37 until 2026-09-05, which silently went stale on every release; the installer refuses rather than guessing if substitution yields a path that does not match the built artifact.",
+        "current_link": "/srv/throughline/ThroughLine.AppImage",
+        "desktop_entry": "/home/twr/.local/share/applications/throughline-tower.desktop",
+        "desktop_shortcut": "/home/twr/Desktop/ThroughLine.desktop",
+        "run_as": "twr",
+        "display": ":2"
+      }
+    ]
+  },
+  "required_for_graduation": ["tier2"],
+  "payload_files": [
+    {
+      "tier1_path": "ThroughLine-mac-arm64.dmg",
+      "classification": "internal",
+      "required": true,
+      "destinations": {
+        "tier2": "/Applications/ThroughLine.app",
+        "claude": null,
+        "codex": null,
+        "cowork": {
+          "include": false,
+          "path_in_zip": null
+        }
+      },
+      "destinations_by_target": {
+        "mac-arm64": "/Applications/ThroughLine.app",
+        "linux-x64": null
+      }
+    },
+    {
+      "tier1_path": "ThroughLine-linux-x64.AppImage",
+      "classification": "internal",
+      "required": true,
+      "destinations": {
+        "tier2": "/srv/throughline/ThroughLine.AppImage",
+        "claude": null,
+        "codex": null,
+        "cowork": {
+          "include": false,
+          "path_in_zip": null
+        }
+      },
+      "destinations_by_target": {
+        "mac-arm64": null,
+        "linux-x64": "/srv/throughline/ThroughLine.AppImage"
+      }
+    }
+  ],
+  "parent_modules": ["throughline"],
+  "parent_module_impact": {
+    "status": "no-parent-impact",
+    "summary": "This contract consolidates the already-proven lockstep desktop targets into the desktop component without changing application behavior.",
+    "required_updates": [],
+    "no_impact_rationale": "The target set, artifact names, install addresses, and all-required completion rule already governed the lockstep lane; this move removes the parallel contract.",
+    "version_ceremony": []
+  },
+  "source_only_excludes": ["src/**", "scripts/**", "node_modules/**", "dist-electron/**"],
+  "signing": {
+    "measured": "2026-09-12",
+    "team": "WESTCOAST CERTIFIED LLC",
+    "team_id": "UNPL8JND4D",
+    "mac_identity": "Developer ID Application: WESTCOAST CERTIFIED LLC (UNPL8JND4D)",
+    "mac_build_env": {
+      "T3CODE_DESKTOP_SIGNED": "true",
+      "T3CODE_APPLE_TEAM_ID": "UNPL8JND4D"
+    },
+    "notarization": "optional for locally built installs; xcrun notarytool with the App Store Connect API key named in /Users/Admin/.local/state/apple-signing/apple-signing.env",
+    "ios": {
+      "bundle_id": "com.ryankschmidt.throughline",
+      "app_store_connect_app_id": "6811249186",
+      "app_store_connect_name": "ThroughLine WCC",
+      "distribution": "TestFlight internal group Internal, tester r@wccert.us"
+    },
+    "home": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/src/apple-signing/README.md",
+    "note": "Before 2026-09-12 the Mac artifact was ad-hoc signed and every reinstall reset macOS permission grants. The identity above is stable; grants now survive. Secrets live outside the repo under /Users/Admin/.local/state/apple-signing/."
+  }
+}
