@@ -3,6 +3,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  type TurnStartSender,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
@@ -21,6 +22,7 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
+import { decideTurnStart } from "./turnStartDoor.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -181,9 +183,11 @@ type DecideOrchestrationCommandResult =
 const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
   commands,
   readModel,
+  turnStartBudget,
 }: {
   readonly commands: ReadonlyArray<OrchestrationCommand>;
   readonly readModel: OrchestrationReadModel;
+  readonly turnStartBudget?: number | undefined;
 }): Effect.fn.Return<
   ReadonlyArray<PlannedOrchestrationEvent>,
   OrchestrationCommandInvariantError | PlatformError.PlatformError,
@@ -197,6 +201,7 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
     const decided = yield* decideOrchestrationCommand({
       command: nextCommand,
       readModel: nextReadModel,
+      ...(turnStartBudget !== undefined ? { turnStartBudget } : {}),
     });
     const nextEvents = Array.isArray(decided) ? decided : [decided];
     for (const nextEvent of nextEvents) {
@@ -215,9 +220,17 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
 export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand")(function* ({
   command,
   readModel,
+  turnStartBudget,
 }: {
   readonly command: OrchestrationCommand;
   readonly readModel: OrchestrationReadModel;
+  /**
+   * Turns a non-human sender may start on one thread between human messages.
+   * Omitted means the door's own DEFAULT_TURN_START_BUDGET of 3. Threaded as a
+   * parameter rather than read from a service so the decider stays a pure
+   * function of (command, readModel) and every existing test keeps working.
+   */
+  readonly turnStartBudget?: number | undefined;
 }): Effect.fn.Return<
   DecideOrchestrationCommandResult,
   OrchestrationCommandInvariantError | PlatformError.PlatformError,
@@ -953,6 +966,43 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Proposed plan '${sourceProposedPlan?.planId}' belongs to thread '${sourceThread.id}' in a different project.`,
         });
       }
+      // THE TURN-START DOOR. Every turn on every thread passes through here,
+      // so this is the only place a repeat can be stopped before tokens are
+      // spent. An absent sender is `unknown`, which is budgeted — a producer
+      // that wants unbudgeted turns has to name itself `human-composer`.
+      const turnStartSender: TurnStartSender = command.sender ?? "unknown";
+      const doorDecision = decideTurnStart({
+        sender: turnStartSender,
+        text: command.message.text,
+        messages: targetThread.messages,
+        ...(turnStartBudget !== undefined ? { budget: turnStartBudget } : {}),
+      });
+      if (doorDecision.kind === "refuse") {
+        // Refusing emits exactly one event and nothing else: no message is
+        // recorded, no turn is requested, and the thread's settled/snoozed
+        // state is left alone, because a refused turn is not activity and must
+        // not wake a thread the operator parked.
+        return {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.turn-start-refused",
+          payload: {
+            threadId: command.threadId,
+            messageId: command.message.messageId,
+            sender: turnStartSender,
+            textShapeHash: doorDecision.textShapeHash,
+            deliveryCount: doorDecision.deliveryCount,
+            budget: doorDecision.budget,
+            reason: doorDecision.reason,
+            detail: doorDecision.detail,
+            createdAt: command.createdAt,
+          },
+        };
+      }
       const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -969,6 +1019,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           attachments: command.message.attachments,
           turnId: null,
           streaming: false,
+          // Persisting the sender is what lets the door stay a pure function
+          // of the thread's own history instead of a table to hydrate.
+          sender: turnStartSender,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
