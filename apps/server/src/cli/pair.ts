@@ -10,6 +10,7 @@
  * HTTPS and pairs through the tailnet URL instead.
  */
 import {
+  AuthAdministrativeScopes,
   AuthStandardClientScopes,
   ExecutionEnvironmentDescriptor,
   PortSchema,
@@ -436,11 +437,15 @@ const mintPairingLink = Effect.fn("pair.mintPairingLink")(function* (input: {
   readonly config: ServerConfig.ServerConfig["Service"];
   readonly ttl: Option.Option<Duration.Duration>;
   readonly label: Option.Option<string>;
+  readonly administrative: boolean;
 }) {
   return yield* Effect.gen(function* () {
     const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
     return yield* environmentAuth.createPairingLink({
-      scopes: AuthStandardClientScopes,
+      // ThroughLine: the mobile app requests all eight scopes (Ryan, 2026-09-08), and the
+      // server enforces the grant, so a standard-scope grant fails its exchange with
+      // scope_not_granted. --administrative mints the full set.
+      scopes: input.administrative ? AuthAdministrativeScopes : AuthStandardClientScopes,
       subject: "one-time-token",
       label: Option.getOrElse(input.label, () => "t3 pair"),
       ...(Option.isSome(input.ttl) ? { ttl: input.ttl.value } : {}),
@@ -481,12 +486,32 @@ const tailscaleServePortFlag = Flag.integer("tailscale-serve-port").pipe(
   Flag.withDefault(DEFAULT_TAILSCALE_SERVE_PORT),
 );
 
+// ThroughLine: every client Ryan pairs (phone, web, desktop-to-desktop) is his own, and the
+// mobile app requests all eight scopes, so the default grant is the full set. A five-scope
+// grant fails the phone's exchange with scope_not_granted (measured 2026-09-12). Pass
+// --standard only when a deliberately narrower client grant is wanted.
+const standardFlag = Flag.boolean("standard").pipe(
+  Flag.withDescription(
+    "Grant only the five standard client scopes instead of all eight. The ThroughLine mobile app refuses a standard grant.",
+  ),
+  Flag.withDefault(false),
+);
+
+const administrativeFlag = Flag.boolean("administrative").pipe(
+  Flag.withDescription(
+    "Grant all eight scopes (access and relay write included). This is the default; kept for explicit invocations.",
+  ),
+  Flag.withDefault(true),
+);
+
 export const pairCommand = Command.make("pair", {
   baseDir: baseDirFlag,
   ttl: ttlFlag,
   label: labelFlag,
   tailscale: tailscaleFlag,
   tailscaleServePort: tailscaleServePortFlag,
+  administrative: administrativeFlag,
+  standard: standardFlag,
 }).pipe(
   Command.withDescription(
     "Mint a pairing token for a running T3 Code server and print it as a QR code.",
@@ -524,7 +549,12 @@ export const pairCommand = Command.make("pair", {
       }
 
       const config = yield* makePairServerConfig({ target, logLevel });
-      const issued = yield* mintPairingLink({ config, ttl: flags.ttl, label: flags.label });
+      const issued = yield* mintPairingLink({
+        config,
+        ttl: flags.ttl,
+        label: flags.label,
+        administrative: flags.administrative && !flags.standard,
+      });
       const pairingUrl = buildPairingUrl(pairingBaseUrl, issued.credential);
 
       yield* Console.log(

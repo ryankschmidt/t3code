@@ -81,12 +81,30 @@ const tokenOnlyFlag = Flag.boolean("token-only").pipe(
   Flag.withDefault(false),
 );
 
+// ThroughLine: default grant is all eight scopes; the mobile app refuses a five-scope grant
+// with scope_not_granted (measured 2026-09-12). --standard opts down deliberately.
+const standardFlag = Flag.boolean("standard").pipe(
+  Flag.withDescription(
+    "Grant only the five standard client scopes instead of all eight. The ThroughLine mobile app refuses a standard grant.",
+  ),
+  Flag.withDefault(false),
+);
+
+const administrativeFlag = Flag.boolean("administrative").pipe(
+  Flag.withDescription(
+    "Grant all eight scopes (access and relay write included). This is the default; kept for explicit invocations.",
+  ),
+  Flag.withDefault(true),
+);
+
 const pairingCreateCommand = Command.make("create", {
   ...authLocationFlags,
   ttl: ttlFlag,
   label: labelFlag,
   baseUrl: baseUrlFlag,
   json: jsonFlag,
+  administrative: administrativeFlag,
+  standard: standardFlag,
 }).pipe(
   Command.withDescription("Issue a new client pairing token."),
   Command.withHandler((flags) =>
@@ -95,7 +113,11 @@ const pairingCreateCommand = Command.make("create", {
       (environmentAuth) =>
         Effect.gen(function* () {
           const issued = yield* environmentAuth.createPairingLink({
-            scopes: AuthStandardClientScopes,
+            // ThroughLine: the mobile app requests all eight scopes (Ryan, 2026-09-08).
+            scopes:
+              flags.administrative && !flags.standard
+                ? AuthAdministrativeScopes
+                : AuthStandardClientScopes,
             subject: "one-time-token",
             ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
             ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),
