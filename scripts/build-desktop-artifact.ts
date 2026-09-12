@@ -3718,8 +3718,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
+  // ThroughLine fork: passkey signing (Associated Domains entitlement + provisioning profile) is
+  // opt-in. Upstream requires T3CODE_MACOS_PROVISIONING_PROFILE for every signed Mac build; the
+  // fork's Developer ID lane signs without passkeys unless that variable is set.
   const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed
+    options.platform === "mac" &&
+    options.signed &&
+    (loadRepoEnv({ repoRoot }).T3CODE_MACOS_PROVISIONING_PROFILE?.trim() ?? "").length > 0
       ? yield* Effect.try({
           try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
