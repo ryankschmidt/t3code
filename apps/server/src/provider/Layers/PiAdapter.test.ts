@@ -84,16 +84,21 @@ class FakePiRuntime implements PiSessionRuntimeShape {
     } satisfies ProviderSession);
   });
 
+  /** Mirrors the real runtime: set by sendTurn, cleared when the turn settles. */
+  public activeTurnId: TurnId | undefined = undefined;
+
   public readonly sendTurnImpl = vi.fn(
-    (_input: PiSessionRuntimeSendTurnInput): Promise<ProviderTurnStartResult> =>
-      Promise.resolve({
+    (_input: PiSessionRuntimeSendTurnInput): Promise<ProviderTurnStartResult> => {
+      this.activeTurnId = asTurnId("turn-1");
+      return Promise.resolve({
         threadId: this.options.threadId,
         turnId: asTurnId("turn-1"),
-      }),
+      });
+    },
   );
 
-  public readonly interruptTurnImpl = vi.fn((_turnId?: TurnId): Promise<void> =>
-    Promise.resolve(undefined),
+  public readonly interruptTurnImpl = vi.fn(
+    (_turnId?: TurnId): Promise<void> => Promise.resolve(undefined),
   );
 
   public readonly closeImpl = vi.fn(() => Promise.resolve(undefined));
@@ -119,7 +124,12 @@ class FakePiRuntime implements PiSessionRuntimeShape {
     return Effect.promise(() => this.startImpl());
   }
 
-  getSession = Effect.promise(() => this.startImpl());
+  getSession = Effect.promise(() => this.startImpl()).pipe(
+    Effect.map((session) => ({
+      ...session,
+      ...(this.activeTurnId ? { activeTurnId: this.activeTurnId } : {}),
+    })),
+  );
 
   sendTurn(input: PiSessionRuntimeSendTurnInput) {
     return Effect.promise(() => this.sendTurnImpl(input));
@@ -623,7 +633,10 @@ mappingLayer("PiAdapter event mapping", (it) => {
       yield* drainStartupEvents(adapter, threadId);
       const runtime = mappingFactory.lastRuntime;
       NodeAssert.ok(runtime);
-      const turnId = asTurnId("turn-abort");
+      // A turn is in flight from the runtime's point of view, so abort is
+      // the whole interrupt and agent_end is what settles it.
+      const started = yield* adapter.sendTurn({ threadId, input: "work" });
+      const turnId = started.turnId;
 
       yield* adapter.interruptTurn(threadId);
       NodeAssert.equal(runtime.interruptTurnImpl.mock.calls.length, 1);
@@ -646,6 +659,82 @@ mappingLayer("PiAdapter event mapping", (it) => {
         state: "interrupted",
         stopReason: "abort",
       });
+    }),
+  );
+
+  it.effect("interrupting an idle runtime publishes the provider's ready state", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-abort-idle");
+      yield* drainStartupEvents(adapter, threadId);
+      const runtime = mappingFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      NodeAssert.equal(runtime.activeTurnId, undefined);
+
+      const collected = yield* Stream.take(adapter.streamEvents, 1).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      // No turn is in flight: Pi would ack `abort` without ever emitting
+      // agent_end, so the adapter must settle the orchestration itself.
+      yield* adapter.interruptTurn(threadId);
+      NodeAssert.equal(runtime.interruptTurnImpl.mock.calls.length, 1);
+
+      const events = yield* Fiber.join(collected);
+      const stateChanged = events[0];
+      NodeAssert.ok(stateChanged && stateChanged.type === "session.state.changed");
+      NodeAssert.deepStrictEqual(stateChanged.payload, {
+        state: "ready",
+        reason: "interrupt:idle",
+      });
+      NodeAssert.equal(yield* adapter.hasSession(threadId), true);
+    }),
+  );
+
+  it.effect("maps an unexpected exit to a failed turn, a runtime error, and session.exited", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-exit-crash");
+      yield* drainStartupEvents(adapter, threadId);
+      const runtime = mappingFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const started = yield* adapter.sendTurn({ threadId, input: "work" });
+
+      const collected = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* runtime.emit({
+        kind: "exit",
+        threadId,
+        turnId: started.turnId,
+        code: 143,
+        expected: false,
+      });
+
+      const events = yield* Fiber.join(collected);
+      NodeAssert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["turn.completed", "runtime.error", "session.exited"],
+      );
+      const failed = events[0];
+      NodeAssert.ok(failed && failed.type === "turn.completed");
+      NodeAssert.equal(failed.turnId, started.turnId);
+      NodeAssert.deepStrictEqual(failed.payload, {
+        state: "failed",
+        stopReason: null,
+        errorMessage: "Pi RPC process exited unexpectedly (143).",
+      });
+      const exited = events[2];
+      NodeAssert.ok(exited && exited.type === "session.exited");
+      NodeAssert.deepStrictEqual(exited.payload, {
+        reason: "Pi RPC process exited unexpectedly (143).",
+        recoverable: true,
+        exitKind: "error",
+      });
+
+      yield* settlePump;
+      NodeAssert.equal(yield* adapter.hasSession(threadId), false);
     }),
   );
 
@@ -920,50 +1009,52 @@ const missingConfigLayer = it.layer(
 );
 
 missingConfigLayer("PiAdapter Meridian guard — route not configured", (it) => {
-  it.effect("fails an Anthropic session start closed: seam-naming error, no runtime, no set_model", () =>
-    Effect.gen(function* () {
-      const adapter = yield* PiAdapter;
-      const threadId = asThreadId("pi-meridian-missing-start");
-      const factoryCallsBefore = missingConfigFactory.factory.mock.calls.length;
+  it.effect(
+    "fails an Anthropic session start closed: seam-naming error, no runtime, no set_model",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* PiAdapter;
+        const threadId = asThreadId("pi-meridian-missing-start");
+        const factoryCallsBefore = missingConfigFactory.factory.mock.calls.length;
 
-      const collected = yield* Stream.take(adapter.streamEvents, 1).pipe(
-        Stream.runCollect,
-        Effect.forkChild,
-      );
-      const result = yield* adapter
-        .startSession({
-          provider: ProviderDriverKind.make("pi"),
-          threadId,
-          modelSelection: createModelSelection(
-            ProviderInstanceId.make("pi"),
-            "anthropic/claude-opus-4-8",
-            [],
-          ),
-          runtimeMode: "full-access",
-        })
-        .pipe(Effect.result);
+        const collected = yield* Stream.take(adapter.streamEvents, 1).pipe(
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        const result = yield* adapter
+          .startSession({
+            provider: ProviderDriverKind.make("pi"),
+            threadId,
+            modelSelection: createModelSelection(
+              ProviderInstanceId.make("pi"),
+              "anthropic/claude-opus-4-8",
+              [],
+            ),
+            runtimeMode: "full-access",
+          })
+          .pipe(Effect.result);
 
-      NodeAssert.equal(result._tag, "Failure");
-      NodeAssert.equal(result.failure._tag, "ProviderAdapterRequestError");
-      NodeAssert.ok(result.failure.detail.includes("Meridian Claude Code SDK seam"));
-      NodeAssert.ok(result.failure.detail.includes("not configured"));
-      NodeAssert.ok(result.failure.detail.includes("Pi native Anthropic OAuth is disabled"));
+        NodeAssert.equal(result._tag, "Failure");
+        NodeAssert.equal(result.failure._tag, "ProviderAdapterRequestError");
+        NodeAssert.ok(result.failure.detail.includes("Meridian Claude Code SDK seam"));
+        NodeAssert.ok(result.failure.detail.includes("not configured"));
+        NodeAssert.ok(result.failure.detail.includes("Pi native Anthropic OAuth is disabled"));
 
-      // Fail-closed means fail BEFORE the runtime exists: no runtime was
-      // constructed, so no set_model (and no prompt) could ever be sent.
-      NodeAssert.equal(missingConfigFactory.factory.mock.calls.length, factoryCallsBefore);
-      NodeAssert.equal(yield* adapter.hasSession(threadId), false);
+        // Fail-closed means fail BEFORE the runtime exists: no runtime was
+        // constructed, so no set_model (and no prompt) could ever be sent.
+        NodeAssert.equal(missingConfigFactory.factory.mock.calls.length, factoryCallsBefore);
+        NodeAssert.equal(yield* adapter.hasSession(threadId), false);
 
-      // The seam failure is a VISIBLE runtime.error activity, not silence.
-      const events = yield* Fiber.join(collected);
-      const seamError = events[0];
-      NodeAssert.ok(seamError && seamError.type === "runtime.error");
-      NodeAssert.equal(seamError.payload.class, "provider_error");
-      NodeAssert.ok(seamError.payload.message.includes("Meridian Claude Code SDK seam"));
+        // The seam failure is a VISIBLE runtime.error activity, not silence.
+        const events = yield* Fiber.join(collected);
+        const seamError = events[0];
+        NodeAssert.ok(seamError && seamError.type === "runtime.error");
+        NodeAssert.equal(seamError.payload.class, "provider_error");
+        NodeAssert.ok(seamError.payload.message.includes("Meridian Claude Code SDK seam"));
 
-      // Config was missing — the guard never even probed reachability.
-      NodeAssert.equal(missingConfigProbe.mock.calls.length, 0);
-    }),
+        // Config was missing — the guard never even probed reachability.
+        NodeAssert.equal(missingConfigProbe.mock.calls.length, 0);
+      }),
   );
 
   it.effect("fails an Anthropic turn on a live session closed: no prompt reaches Pi", () =>
@@ -997,45 +1088,47 @@ missingConfigLayer("PiAdapter Meridian guard — route not configured", (it) => 
     }),
   );
 
-  it.effect("openai-codex turns are completely unaffected by a red Meridian route (regression)", () =>
-    Effect.gen(function* () {
-      const adapter = yield* PiAdapter;
-      const threadId = asThreadId("pi-meridian-codex-unaffected");
-      const probeCallsBefore = missingConfigProbe.mock.calls.length;
+  it.effect(
+    "openai-codex turns are completely unaffected by a red Meridian route (regression)",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* PiAdapter;
+        const threadId = asThreadId("pi-meridian-codex-unaffected");
+        const probeCallsBefore = missingConfigProbe.mock.calls.length;
 
-      yield* adapter.startSession({
-        provider: ProviderDriverKind.make("pi"),
-        threadId,
-        modelSelection: createModelSelection(
-          ProviderInstanceId.make("pi"),
-          "openai-codex/gpt-5.2-codex",
-          [],
-        ),
-        runtimeMode: "full-access",
-      });
-      const runtime = missingConfigFactory.lastRuntime;
-      NodeAssert.ok(runtime);
-      NodeAssert.equal(runtime.options.model, "openai-codex/gpt-5.2-codex");
+        yield* adapter.startSession({
+          provider: ProviderDriverKind.make("pi"),
+          threadId,
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("pi"),
+            "openai-codex/gpt-5.2-codex",
+            [],
+          ),
+          runtimeMode: "full-access",
+        });
+        const runtime = missingConfigFactory.lastRuntime;
+        NodeAssert.ok(runtime);
+        NodeAssert.equal(runtime.options.model, "openai-codex/gpt-5.2-codex");
 
-      // Plain follow-up on the codex session AND an explicit codex selection
-      // both dispatch normally with the Anthropic route dead.
-      const first = yield* adapter.sendTurn({ threadId, input: "codex turn" });
-      NodeAssert.equal(first.threadId, threadId);
-      yield* adapter.sendTurn({
-        threadId,
-        input: "codex turn 2",
-        modelSelection: createModelSelection(
-          ProviderInstanceId.make("pi"),
-          "openai-codex/gpt-5.2-codex",
-          [],
-        ),
-      });
-      NodeAssert.equal(runtime.sendTurnImpl.mock.calls.length, 2);
+        // Plain follow-up on the codex session AND an explicit codex selection
+        // both dispatch normally with the Anthropic route dead.
+        const first = yield* adapter.sendTurn({ threadId, input: "codex turn" });
+        NodeAssert.equal(first.threadId, threadId);
+        yield* adapter.sendTurn({
+          threadId,
+          input: "codex turn 2",
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("pi"),
+            "openai-codex/gpt-5.2-codex",
+            [],
+          ),
+        });
+        NodeAssert.equal(runtime.sendTurnImpl.mock.calls.length, 2);
 
-      // The codex path triggered ZERO Meridian activity: no reachability
-      // probe ran for the start or either turn.
-      NodeAssert.equal(missingConfigProbe.mock.calls.length, probeCallsBefore);
-    }),
+        // The codex path triggered ZERO Meridian activity: no reachability
+        // probe ran for the start or either turn.
+        NodeAssert.equal(missingConfigProbe.mock.calls.length, probeCallsBefore);
+      }),
   );
 });
 
@@ -1346,7 +1439,9 @@ interface MockMeridianReply {
 
 interface MockMeridianCapture {
   readonly headers: Record<string, string | string[] | undefined>;
-  readonly body: PiRequestFixture["body"] & { readonly tools?: ReadonlyArray<Record<string, unknown>> };
+  readonly body: PiRequestFixture["body"] & {
+    readonly tools?: ReadonlyArray<Record<string, unknown>>;
+  };
 }
 
 /**
@@ -1497,9 +1592,7 @@ function sseToolUse(
   return {
     name: String(block.name),
     input:
-      typeof partialJson === "string"
-        ? (JSON.parse(partialJson) as Record<string, unknown>)
-        : {},
+      typeof partialJson === "string" ? (JSON.parse(partialJson) as Record<string, unknown>) : {},
   };
 }
 
@@ -1728,64 +1821,66 @@ streamParityLayer("PiAdapter Meridian stream parity (pi-shaped contract)", (it) 
     }),
   );
 
-  it.effect("case c: a simple Bash-shaped tool-call round maps correctly and final text lands", () =>
-    Effect.gen(function* () {
-      const adapter = yield* PiAdapter;
-      const threadId = asThreadId("pi-parity-tool-call");
-      yield* drainStartupEvents(adapter, threadId);
+  it.effect(
+    "case c: a simple Bash-shaped tool-call round maps correctly and final text lands",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* PiAdapter;
+        const threadId = asThreadId("pi-parity-tool-call");
+        yield* drainStartupEvents(adapter, threadId);
 
-      const mock = yield* Effect.promise(() =>
-        startMockMeridian({
-          textChunks: ["Ran ls: ", "3 files."],
-          toolCall: { name: "Bash", input: { command: "ls" } },
-        }),
-      );
-      const frames = yield* Effect.promise(() =>
-        postPiRequestAndReadSse(mock.baseUrl, piRequestFixture.body),
-      );
-      yield* Effect.promise(() => mock.close());
+        const mock = yield* Effect.promise(() =>
+          startMockMeridian({
+            textChunks: ["Ran ls: ", "3 files."],
+            toolCall: { name: "Bash", input: { command: "ls" } },
+          }),
+        );
+        const frames = yield* Effect.promise(() =>
+          postPiRequestAndReadSse(mock.baseUrl, piRequestFixture.body),
+        );
+        yield* Effect.promise(() => mock.close());
 
-      const capture = mock.captures[0];
-      NodeAssert.ok(capture);
-      assertPiRequestShape(capture, { tools: true });
-      const toolUse = sseToolUse(frames);
-      NodeAssert.deepStrictEqual(toolUse, { name: "Bash", input: { command: "ls" } });
-      const sseText = sseTextDeltas(frames).join("");
+        const capture = mock.captures[0];
+        NodeAssert.ok(capture);
+        assertPiRequestShape(capture, { tools: true });
+        const toolUse = sseToolUse(frames);
+        NodeAssert.deepStrictEqual(toolUse, { name: "Bash", input: { command: "ls" } });
+        const sseText = sseTextDeltas(frames).join("");
 
-      const streamed = yield* runAdapterTurn({
-        threadId,
-        turnId: asTurnId("turn-parity-c-streamed"),
-        deltas: sseTextDeltas(frames),
-        finalText: sseText,
-        tool: toolUse,
-      });
+        const streamed = yield* runAdapterTurn({
+          threadId,
+          turnId: asTurnId("turn-parity-c-streamed"),
+          deltas: sseTextDeltas(frames),
+          finalText: sseText,
+          tool: toolUse,
+        });
 
-      // The Bash-shaped tool round maps into the tool item lifecycle.
-      const toolStarted = streamed.events.find((event) => event.type === "item.started");
-      NodeAssert.ok(toolStarted && toolStarted.type === "item.started");
-      NodeAssert.equal(toolStarted.payload.itemType, "dynamic_tool_call");
-      NodeAssert.equal(toolStarted.payload.title, "Bash");
-      NodeAssert.equal(toolStarted.itemId, "pi-tool:toolu_mock_1");
-      const toolCompleted = streamed.events.find(
-        (event) =>
-          event.type === "item.completed" && event.payload.itemType === "dynamic_tool_call",
-      );
-      NodeAssert.ok(toolCompleted && toolCompleted.type === "item.completed");
-      NodeAssert.equal(toolCompleted.payload.status, "completed");
+        // The Bash-shaped tool round maps into the tool item lifecycle.
+        const toolStarted = streamed.events.find((event) => event.type === "item.started");
+        NodeAssert.ok(toolStarted && toolStarted.type === "item.started");
+        NodeAssert.equal(toolStarted.payload.itemType, "dynamic_tool_call");
+        NodeAssert.equal(toolStarted.payload.title, "Bash");
+        NodeAssert.equal(toolStarted.itemId, "pi-tool:toolu_mock_1");
+        const toolCompleted = streamed.events.find(
+          (event) =>
+            event.type === "item.completed" && event.payload.itemType === "dynamic_tool_call",
+        );
+        NodeAssert.ok(toolCompleted && toolCompleted.type === "item.completed");
+        NodeAssert.equal(toolCompleted.payload.status, "completed");
 
-      // ...and the final text still lands with stream parity.
-      NodeAssert.equal(streamed.streamedText, sseText);
-      NodeAssert.equal(streamed.finalText, sseText);
+        // ...and the final text still lands with stream parity.
+        NodeAssert.equal(streamed.streamedText, sseText);
+        NodeAssert.equal(streamed.finalText, sseText);
 
-      const buffered = yield* runAdapterTurn({
-        threadId,
-        turnId: asTurnId("turn-parity-c-buffered"),
-        deltas: [],
-        finalText: sseText,
-        tool: toolUse,
-      });
-      NodeAssert.equal(buffered.finalText, streamed.finalText);
-    }),
+        const buffered = yield* runAdapterTurn({
+          threadId,
+          turnId: asTurnId("turn-parity-c-buffered"),
+          deltas: [],
+          finalText: sseText,
+          tool: toolUse,
+        });
+        NodeAssert.equal(buffered.finalText, streamed.finalText);
+      }),
   );
 });
 

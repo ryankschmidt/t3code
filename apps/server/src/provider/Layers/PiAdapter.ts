@@ -446,13 +446,45 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
               } satisfies ProviderRuntimeEvent,
             ];
           }
+          // An unexpected exit must SETTLE the thread, not just annotate it.
+          // A lone runtime.error leaves the orchestration session `running`
+          // with a stale activeTurnId; every later session.started then
+          // re-derives `running` from that id, the Stop button aborts an idle
+          // process that never emits agent_end, and the thread wedges until
+          // someone hand-dispatches thread.session.stop (measured 2026-09-01,
+          // threads c0ec321e / 94dfcee1). Claude and Codex settle the same
+          // way: fail the in-flight turn, then exit the session.
+          const message = `Pi RPC process exited unexpectedly (${event.code ?? "unknown"}).`;
+          const exitedBase = yield* makeEventBase({ threadId: event.threadId });
           return [
+            ...(event.turnId !== undefined
+              ? [
+                  {
+                    ...base,
+                    type: "turn.completed",
+                    payload: {
+                      state: "failed",
+                      stopReason: null,
+                      errorMessage: message,
+                    },
+                  } satisfies ProviderRuntimeEvent,
+                ]
+              : []),
             {
               ...base,
               type: "runtime.error",
               payload: {
-                message: `Pi RPC process exited unexpectedly (${event.code ?? "unknown"}).`,
+                message,
                 class: "transport_error",
+              },
+            } satisfies ProviderRuntimeEvent,
+            {
+              ...exitedBase,
+              type: "session.exited",
+              payload: {
+                reason: message,
+                recoverable: true,
+                exitKind: "error",
               },
             } satisfies ProviderRuntimeEvent,
           ];
@@ -1167,6 +1199,28 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
     requireSession(threadId).pipe(
       Effect.flatMap((session) =>
         Effect.gen(function* () {
+          // Idle Pi: nothing is streaming, so `abort` acks without ever
+          // emitting agent_end and no turn.completed can follow. The
+          // orchestration still believes a turn is running (that is why the
+          // Stop button was pressed), so publish the provider's idle truth as
+          // an authoritative state change — the same "turn over" signal the
+          // Claude adapter forwards from its CLI — which clears the stale
+          // activeTurnId and settles the turn. Abort is still sent, best
+          // effort, so a turn the runtime lost track of is stopped too.
+          const runtimeSession = yield* session.runtime.getSession;
+          if (runtimeSession.activeTurnId === undefined) {
+            const base = yield* makeEventBase({ threadId });
+            yield* Queue.offer(runtimeEventQueue, {
+              ...base,
+              type: "session.state.changed",
+              payload: {
+                state: "ready",
+                reason: "interrupt:idle",
+              },
+            } satisfies ProviderRuntimeEvent);
+            yield* session.runtime.interruptTurn(turnId).pipe(Effect.ignore);
+            return;
+          }
           abortingTurnIds.set(threadId, turnId ?? "*");
           yield* session.runtime.interruptTurn(turnId).pipe(
             Effect.tapError(() =>
@@ -1194,9 +1248,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       })),
     );
 
-  const rollbackThread: ProviderAdapterShape<ProviderAdapterError>["rollbackThread"] = (
-    threadId,
-  ) =>
+  const rollbackThread: ProviderAdapterShape<ProviderAdapterError>["rollbackThread"] = (threadId) =>
     Effect.fail(
       new ProviderAdapterValidationError({
         provider: PROVIDER,

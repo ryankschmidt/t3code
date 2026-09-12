@@ -4,15 +4,21 @@ import {
   applyPreferredCodexDefaultModel,
   isLegacyCodexModel,
   mapCodexModelCapabilities,
+  parseCodexModelListResponse,
 } from "./CodexProvider.ts";
 
-it("keeps Astra and the GPT-5.6 Codex family out of legacy models", () => {
+it("keeps Spark, Astra and the GPT-5.6 Codex family out of legacy models", () => {
   assert.deepStrictEqual(
-    ["gpt-6-astra", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.4"].map((model) => [
-      model,
-      isLegacyCodexModel(model),
-    ]),
     [
+      "gpt-5.3-codex-spark",
+      "gpt-6-astra",
+      "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.6-sol",
+      "gpt-5.4",
+    ].map((model) => [model, isLegacyCodexModel(model)]),
+    [
+      ["gpt-5.3-codex-spark", false],
       ["gpt-6-astra", false],
       ["gpt-5.6-luna", false],
       ["gpt-5.6-terra", false],
@@ -20,6 +26,32 @@ it("keeps Astra and the GPT-5.6 Codex family out of legacy models", () => {
       ["gpt-5.4", true],
     ],
   );
+});
+
+it("keeps discovered Spark capabilities while removing retired catalog entries", () => {
+  const models = parseCodexModelListResponse({
+    nextCursor: null,
+    data: ["gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.5", "gpt-5.6-sol", "gpt-6-astra"].map(
+      (model) => ({
+        id: model,
+        model,
+        displayName: model,
+        description: model,
+        hidden: false,
+        isDefault: model === "gpt-6-astra",
+        additionalSpeedTiers: [],
+        defaultReasoningEffort: "high",
+        supportedReasoningEfforts: [{ reasoningEffort: "high", description: "High" }],
+      }),
+    ),
+  });
+  assert.deepStrictEqual(
+    models.map((model) => model.slug),
+    ["gpt-5.3-codex-spark", "gpt-5.6-sol", "gpt-6-astra"],
+  );
+  assert.strictEqual(models[0]?.isLegacy, undefined);
+  assert.strictEqual(models[0]?.name, "GPT-5.3-Codex-Spark");
+  assert.strictEqual(models[0]?.capabilities?.optionDescriptors?.[0]?.currentValue, "high");
 });
 
 it("maps current Codex model capability fields", () => {

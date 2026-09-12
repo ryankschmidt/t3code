@@ -9,7 +9,7 @@ import { installMacDmg } from "./desktop-platform-install.ts";
 
 type PlatformTarget = {
   id: string;
-  lane: "local-darwin" | "tower-login-shell";
+  lane: "local-root-daemon" | "remote-root-daemon";
   host?: string;
   build_script: string;
   artifact: string;
@@ -20,18 +20,23 @@ type PlatformTarget = {
 };
 
 type PlatformContract = {
-  schema: "throughline-desktop-platform-targets.v1";
-  version_source: string;
-  targets: PlatformTarget[];
+  schema_version: "2";
+  delivery_targets: {
+    schema: "runtime-delivery-targets.v1";
+    version_source: string;
+    completion: "all-required-targets";
+    targets: PlatformTarget[];
+  };
 };
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const contractPath = join(repoRoot, "apps/desktop/platform-targets.json");
+const contractPath = join(repoRoot, "apps/desktop/runtime-targets.json");
 const contract = JSON.parse(readFileSync(contractPath, "utf8")) as PlatformContract;
 const desktopPackage = JSON.parse(
-  readFileSync(join(repoRoot, contract.version_source), "utf8"),
+  readFileSync(join(repoRoot, "apps/desktop", contract.delivery_targets.version_source), "utf8"),
 ) as { version?: string };
 const version = desktopPackage.version;
+const targets = contract.delivery_targets.targets;
 
 function refuse(message: string): never {
   throw new Error(`LOCKSTEP_REFUSED: ${message}`);
@@ -60,9 +65,11 @@ function sha256(filePath: string): string {
 if (process.platform !== "darwin")
   refuse(`orchestrator must start on darwin, got ${process.platform}`);
 if (!version || !/^\d+\.\d+\.\d+$/.test(version))
-  refuse(`invalid desktop version from ${contract.version_source}`);
-if (contract.targets.length < 2) refuse("contract must declare every platform target");
-if (new Set(contract.targets.map((target) => target.id)).size !== contract.targets.length)
+  refuse(`invalid desktop version from ${contract.delivery_targets.version_source}`);
+if (contract.delivery_targets.completion !== "all-required-targets")
+  refuse("contract completion must be all-required-targets");
+if (targets.length < 2) refuse("contract must declare every platform target");
+if (new Set(targets.map((target) => target.id)).size !== targets.length)
   refuse("duplicate target id");
 
 const buildStateDir = join(repoRoot, ".platform-build", version);
@@ -93,11 +100,9 @@ mkdirSync(localBuildRoot, { recursive: true });
 run("tar", ["-C", localBuildRoot, "-xf", sourceArchive]);
 
 const macTarget =
-  contract.targets.find((target) => target.lane === "local-darwin") ??
-  refuse("missing local-darwin target");
+  targets.find((target) => target.id === "mac-arm64") ?? refuse("missing mac-arm64 target");
 const linuxTarget =
-  contract.targets.find((target) => target.lane === "tower-login-shell") ??
-  refuse("missing tower-login-shell target");
+  targets.find((target) => target.id === "linux-x64") ?? refuse("missing linux-x64 target");
 const host = linuxTarget.host ?? refuse("linux target missing host");
 const remoteArchive = `/srv/core-root/vault/01_Projects/workbench/infra/t3code/t3code-platform-${version}-${sourceId}.tar`;
 const remoteBuildRoot = `/srv/core-root/vault/01_Projects/workbench/infra/t3code/t3-build-${version}-${sourceId}`;
@@ -129,7 +134,7 @@ run("scp", [
   join(buildStateDir, `ThroughLine-${version}-x86_64.AppImage`),
 ]);
 const stagedLinuxArtifact = join(buildStateDir, `ThroughLine-${version}-x86_64.AppImage`);
-assertEveryPlatformTarget(contract.targets, (target) => {
+assertEveryPlatformTarget(targets, (target) => {
   if (target.id === macTarget.id) return existsSync(stagedMacArtifact);
   if (target.id === linuxTarget.id) return existsSync(stagedLinuxArtifact);
   return false;
@@ -200,5 +205,5 @@ writeFileSync(
   )}\n`,
 );
 console.log(
-  `LOCKSTEP_SHIPPED version=${version} targets=${contract.targets.map((target) => target.id).join(",")} receipt=${receiptPath}`,
+  `LOCKSTEP_SHIPPED version=${version} targets=${targets.map((target) => target.id).join(",")} receipt=${receiptPath}`,
 );

@@ -10,7 +10,48 @@ import {
 } from "./modelOptions";
 
 describe("mobile model options", () => {
-  it("groups models by provider and flags legacy entries", () => {
+  it("rejects removed saved OpenAI selections without reintroducing them as fallbacks", () => {
+    const config = {
+      providers: [
+        {
+          instanceId: "codex",
+          driver: "codex",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          models: [],
+        },
+      ],
+    } as unknown as ServerConfig;
+    const stored = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
+    expect(resolveSelectableModelSelection(config, stored)).toBeNull();
+    expect(resolveDefaultableModelSelection(config, stored)).toBeNull();
+    expect(buildModelOptions(config, stored)).toEqual([]);
+    expect(buildModelOptions(null, stored)).toEqual([]);
+  });
+
+  it("offers Spark from an older remote catalog while removing its retired models", () => {
+    const config = {
+      providers: [
+        {
+          instanceId: "codex",
+          driver: "codex",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          models: [
+            { slug: "gpt-5.3-codex-spark", name: "Spark", isLegacy: true, capabilities: null },
+            { slug: "gpt-5.4", name: "Retired", capabilities: null },
+          ],
+        },
+      ],
+    } as unknown as ServerConfig;
+    const spark = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.3-codex-spark" };
+    expect(resolveDefaultableModelSelection(config, spark)).toBe(spark);
+    expect(buildModelOptions(config, null)).toMatchObject([{ selection: spark, isLegacy: false }]);
+  });
+
+  it("groups models by provider and excludes retired OpenAI entries", () => {
     const config = {
       providers: [
         {
@@ -43,10 +84,7 @@ describe("mobile model options", () => {
       {
         providerKey: "codex",
         providerLabel: "Codex",
-        models: [
-          { key: "codex:gpt-5.6-sol", label: "GPT-5.6 Sol", isLegacy: false },
-          { key: "codex:gpt-5.4", label: "GPT-5.4", isLegacy: true },
-        ],
+        models: [{ key: "codex:gpt-5.6-sol", label: "GPT-5.6 Sol", isLegacy: false }],
       },
     ]);
   });
@@ -63,7 +101,7 @@ describe("mobile model options", () => {
           auth: { status: "authenticated" },
           models: [
             {
-              slug: "gpt-test",
+              slug: "gpt-5.6-sol",
               name: "GPT Test",
               isCustom: false,
               capabilities: {
@@ -88,7 +126,7 @@ describe("mobile model options", () => {
 
     const [option] = buildModelOptions(config, {
       instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-test",
+      model: "gpt-5.6-sol",
       options: [{ id: "fastMode", value: true }],
     });
 
@@ -168,7 +206,6 @@ describe("mobile model options", () => {
     expect(resolveDefaultableModelSelection(config, current)).toBe(current);
     // A legacy last-used selection falls through to the provider default.
     expect(resolveDefaultableModelSelection(config, legacy)).toBeNull();
-    // Offline: nothing to validate against, selection passes through.
-    expect(resolveDefaultableModelSelection(null, legacy)).toBe(legacy);
+    expect(resolveDefaultableModelSelection(null, legacy)).toBeNull();
   });
 });

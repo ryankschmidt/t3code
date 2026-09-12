@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { Image } from "expo-image";
 import type {
   NativeStackHeaderItem,
   NativeStackNavigationOptions,
@@ -6,7 +7,6 @@ import type {
 import { Platform, View } from "react-native";
 
 import { AppText as Text } from "./AppText";
-import { T3Wordmark } from "./T3Wordmark";
 import { IPAD_HOME_TITLE_OFFSET } from "../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../lib/mobileBranding";
 import { useThemeColor } from "../lib/useThemeColor";
@@ -36,7 +36,6 @@ export function CompactBrandTitle(
     readonly nativeLeadingItem?: boolean;
   } = {},
 ) {
-  const iconColor = useThemeColor("--color-icon");
   const mutedColor = useThemeColor("--color-foreground-muted");
   const subtleColor = useThemeColor("--color-subtle");
   const stageLabel = resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant);
@@ -45,7 +44,7 @@ export function CompactBrandTitle(
   return (
     <View
       aria-level={1}
-      accessibilityLabel="T3 Code, Threads"
+      accessibilityLabel="ThroughLine, Threads"
       accessible
       role="heading"
       style={{
@@ -55,16 +54,20 @@ export function CompactBrandTitle(
         marginLeft: titleOffset,
       }}
     >
-      <T3Wordmark color={iconColor} height={15} />
+      {/* ThroughLine: use the same product mark as the installed phone icon. */}
+      <Image
+        source={require("../../assets/throughline-icon.png")}
+        style={{ width: 26, height: 26 }}
+      />
       <Text
         style={{
           color: mutedColor,
           fontFamily: "DMSans-Medium",
-          fontSize: 21,
+          fontSize: 18,
           letterSpacing: -0.5,
         }}
       >
-        Code
+        ThroughLine
       </Text>
       <View
         style={{

@@ -298,6 +298,16 @@ interface ClaudeSessionContext {
   lastKnownTotalProcessedTokens: number | undefined;
   lastAssistantUuid: string | undefined;
   lastThreadStartedId: string | undefined;
+  /**
+   * ThroughLine: when this context REPLACED a live session, the session it replaced — still
+   * running, still un-retired — plus the provider session uuid the replacement must come up on.
+   * Retirement is deferred to this context's own handshake (see `ensureThreadId`) rather than
+   * awaited inside `startSession`, because a provider process spawns LAZILY on its first prompt:
+   * blocking the start on a handshake that cannot arrive until a turn is pushed turns every
+   * legitimate replacement into a timeout. Measured in the operator's environment 2026-08-31.
+   */
+  replacedContext: ClaudeSessionContext | undefined;
+  replacedExpectedSessionId: string | undefined;
   stopped: boolean;
 }
 
@@ -1717,6 +1727,48 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       }) as ClaudeQueryRuntime);
 
   const sessions = new Map<ThreadId, ClaudeSessionContext>();
+
+  /**
+   * ThroughLine (TQ-389): A REPLACEMENT THAT DIED BEFORE PROVING ITSELF HANDS THE THREAD BACK,
+   * AND SAYS SO BY NAME.
+   *
+   * A replacement context carries `replacedContext` from `startSession` until `ensureThreadId`
+   * verifies its handshake and retires the predecessor. If the replacement dies inside that
+   * window, the predecessor was deliberately left running for exactly this case: restore it as
+   * the thread's registered session instead of letting the thread fall to no session at all.
+   *
+   * WHY THIS IS A SHARED HELPER RATHER THAN INLINE. Live firing on 2026-08-31 (three runs against
+   * the compiled server) proved the hand-back that lived only in `stopSessionInternal` never
+   * fired when the replacement PROCESS was killed: the stream failure surfaces as a result with
+   * no active turn, and that path returns without ever reaching session teardown. The runtime
+   * already DETECTED the death within 0.5s — it reported it generically as
+   * `claude.turn.result-without-active-turn` with `status: failed`. What was missing was the
+   * specific name at the point where the generic failure is already observed. Both sites now call
+   * this; `replacedContext` is cleared on entry so whichever runs first wins and the other is a
+   * no-op.
+   *
+   * Returns true when it handed the thread back, so a caller can skip its own teardown.
+   */
+  const handBackAbandonedReplacement = Effect.fn("handBackAbandonedReplacement")(function* (
+    context: ClaudeSessionContext,
+    trigger: string,
+  ) {
+    const abandoned = context.replacedContext;
+    context.replacedContext = undefined;
+    if (abandoned === undefined || abandoned.stopped) {
+      return false;
+    }
+    yield* Effect.logWarning("claude.session.replace.refused", {
+      threadId: context.session.threadId,
+      reason: "replacement-died-before-handshake",
+      trigger,
+      expectedResumeSessionId: context.replacedExpectedSessionId ?? "",
+      observedResumeSessionId: context.lastThreadStartedId ?? "",
+      previousSessionStatus: abandoned.session.status,
+    });
+    sessions.set(context.session.threadId, abandoned);
+    return true;
+  });
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -2019,6 +2071,70 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const nextThreadId = message.session_id;
     context.resumeSessionId = message.session_id;
     yield* updateResumeCursor(context);
+
+    // ThroughLine: THE REPLACEMENT HAS NOW PROVEN ITSELF — retire the session it replaced.
+    // This is the deferred half of `startSession`'s replacement path. Reaching here means the
+    // SDK reported a durable session id for THIS context, which is the only evidence that the
+    // replacement provider actually came up. Until this point the replaced session stayed live.
+    const replaced = context.replacedContext;
+    if (replaced !== undefined) {
+      context.replacedContext = undefined;
+      const expected = context.replacedExpectedSessionId;
+      if (expected !== undefined && nextThreadId !== expected) {
+        // REFUSAL. The replacement came up on a DIFFERENT provider session, so it is not this
+        // seat. Tear the replacement down and put the previous session back in the registry —
+        // it was never stopped, so the thread keeps the provider it already had.
+        yield* Effect.logWarning("claude.session.replace.refused", {
+          threadId: context.session.threadId,
+          reason: "replacement-session-identity-mismatch",
+          expectedResumeSessionId: expected,
+          observedResumeSessionId: nextThreadId,
+          previousSessionStatus: replaced.session.status,
+        });
+        if (!replaced.stopped) {
+          sessions.set(context.session.threadId, replaced);
+        }
+        // CLOSE THE QUERY, do not call stopSessionInternal here. This code runs INSIDE this
+        // context's own stream fiber, and stopSessionInternal interrupts that fiber — so tearing
+        // the context down from here self-interrupts before the runtime is ever closed, and the
+        // rejected replacement keeps running. Closing the query ends the iteration instead; the
+        // stream then exits normally and `handleStreamExit` performs the teardown on the exit
+        // path. The delete-if-current guard is what keeps that teardown from evicting the
+        // previous session restored just above.
+        yield* Effect.try({
+          try: () => context.query.close(),
+          catch: (cause) =>
+            new ProviderAdapterProcessError({
+              provider: PROVIDER,
+              threadId: context.session.threadId,
+              detail: "Failed to close the refused Claude replacement runtime.",
+              cause,
+            }),
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("claude.session.replace.rollback-stop-failed", {
+              threadId: context.session.threadId,
+              detail: error.detail,
+            }),
+          ),
+        );
+        return;
+      }
+      yield* Effect.logInfo("claude.session.replace.verified", {
+        threadId: context.session.threadId,
+        resumeSessionId: nextThreadId,
+      });
+      yield* stopSessionInternal(replaced, { emitExitEvent: false }).pipe(
+        // Retiring the OLD session is best-effort once the new one is proven: never fail a
+        // verified replacement on teardown of the session it already replaced.
+        Effect.catchCause((cause) =>
+          Effect.logWarning("claude.session.replace.stop-failed", {
+            threadId: context.session.threadId,
+            cause,
+          }),
+        ),
+      );
+    }
 
     if (context.lastThreadStartedId !== nextThreadId) {
       context.lastThreadStartedId = nextThreadId;
@@ -2341,6 +2457,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         hasUsage: result?.usage !== undefined,
         ...(errorMessage ? { errorMessage } : {}),
       });
+
+      // ThroughLine (TQ-389): this branch is where a killed replacement's stream failure
+      // actually lands — proven by live firing, not by reading. A FAILED result here on a
+      // context still carrying an un-retired predecessor means the replacement died inside
+      // its handshake window, so hand the thread back and name the refusal. A COMPLETED
+      // result is the ordinary resume handshake and must not trigger a hand-back; the
+      // status guard is what keeps the successful-replacement polarity intact.
+      if (status === "failed") {
+        yield* handBackAbandonedReplacement(context, "result-without-active-turn");
+      }
       return;
     }
 
@@ -3768,7 +3894,28 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       });
     }
 
-    sessions.delete(context.session.threadId);
+    // ThroughLine: A REPLACEMENT THAT DIED BEFORE PROVING ITSELF HANDS THE THREAD BACK.
+    // If this context was a replacement still carrying an un-retired predecessor, then it is
+    // dying without ever having handshaked — the stream failed, the provider never came up, the
+    // session was stopped. The predecessor was deliberately left running for exactly this case,
+    // so restore it as the thread's session rather than letting the thread fall to no session at
+    // all. Without this the old PROCESS survives (safe) but nothing routes to it, which is a
+    // quieter version of the failure this whole path exists to prevent.
+    // Shared with the result-without-active-turn tripwire (see handBackAbandonedReplacement).
+    // Whichever path observes the death first performs the hand-back; the other is a no-op
+    // because the helper clears replacedContext on entry.
+    if (yield* handBackAbandonedReplacement(context, "stop-session")) {
+      return;
+    }
+
+    // Evict ONLY if this context is still the registered one. `sessions` is keyed by threadId,
+    // and a replacement registers its new context while the old one is still alive (see
+    // startSession's replacement path). An unconditional delete here would let the OLD session's
+    // teardown evict the NEW session that just took its place, leaving the thread with a live
+    // provider process and no adapter session pointing at it.
+    if (sessions.get(context.session.threadId) === context) {
+      sessions.delete(context.session.threadId);
+    }
   });
 
   const requireSession = (
@@ -3804,31 +3951,30 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
       }
 
-      const existingContext = sessions.get(input.threadId);
-      if (existingContext) {
+      // ThroughLine: RESUME BEFORE RETIRE. This path used to stop the existing session HERE,
+      // before the replacement existed. That ordering is unrecoverable: if the new query never
+      // reaches its handshake, the thread is left with no session at all and the operator's seat
+      // is gone. The old session now stays live until the replacement has proven itself (see the
+      // verify-then-retire block at the end of this function), and a replacement that cannot
+      // prove itself is refused with the previous session still registered and still running.
+      const previousContext = sessions.get(input.threadId);
+      if (previousContext) {
         yield* Effect.logWarning("claude.session.replacing", {
           threadId: input.threadId,
-          existingSessionStatus: existingContext.session.status,
+          existingSessionStatus: previousContext.session.status,
+          existingResumeSessionId: previousContext.resumeSessionId ?? "",
           reason: "startSession called with existing active session",
         });
-        yield* stopSessionInternal(existingContext, {
-          emitExitEvent: false,
-        }).pipe(
-          // Replacement cleanup is best-effort: never block the new session on
-          // either typed failures or unexpected defects from tearing down the old one.
-          Effect.catchCause((cause) =>
-            Effect.logWarning("claude.session.replace.stop-failed", {
-              threadId: input.threadId,
-              cause,
-            }),
-          ),
-        );
       }
 
       const startedAt = yield* nowIso;
       const resumeState = readClaudeResumeState(input.resumeCursor);
       const threadId = input.threadId;
-      const existingResumeSessionId = resumeState?.resume;
+      // ThroughLine: a REPLACEMENT inherits the live session's provider identity even when the
+      // caller's cursor does not carry one. Without this fallback a replacement whose input
+      // cursor was empty would mint a brand-new provider session uuid, silently orphaning the
+      // conversation the operator can still see in the thread.
+      const existingResumeSessionId = resumeState?.resume ?? previousContext?.resumeSessionId;
       const newSessionId = existingResumeSessionId === undefined ? yield* randomUUIDv4 : undefined;
       const sessionId = existingResumeSessionId ?? newSessionId;
 
@@ -4343,6 +4489,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         lastAssistantUuid: resumeState?.resumeSessionAt,
         lastThreadStartedId: undefined,
         stopped: false,
+        // ThroughLine: set below when this start REPLACED a live session. Retirement of that
+        // session is deferred to this one's handshake, never awaited here.
+        replacedContext: previousContext,
+        replacedExpectedSessionId: previousContext ? existingResumeSessionId : undefined,
       };
       yield* Ref.set(contextRef, context);
       sessions.set(threadId, context);
@@ -4414,6 +4564,29 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           context.streamFiber = undefined;
         }
       });
+
+      // ThroughLine: VERIFY THEN RETIRE — and the verification is DEFERRED, not awaited here.
+      //
+      // MEASURED IN THE OPERATOR'S ENVIRONMENT, 2026-08-31: a provider process spawns LAZILY on
+      // its first prompt, not when the query is constructed. An earlier version of this block
+      // BLOCKED here polling for the replacement's handshake, and the handshake cannot arrive
+      // until a turn is pushed into the new session — so every legitimate replacement stalled for
+      // the full bound and was then refused. The live log read
+      // `claude.session.replace.refused reason=replacement-handshake-timeout` with the previous
+      // session still `ready`. Safe, and completely unable to replace anything.
+      //
+      // So the retirement is handed to `ensureThreadId`, which runs when the SDK reports a durable
+      // session id — the replacement's own handshake, whenever it arrives. Until then the previous
+      // session stays LIVE and un-retired. `startSession` returns immediately, the triggering turn
+      // flows into the new session's prompt queue, that spawns the process, the handshake lands,
+      // and only then is the old session retired.
+      if (previousContext !== undefined) {
+        yield* Effect.logInfo("claude.session.replace.pending-handshake", {
+          threadId,
+          expectedResumeSessionId: existingResumeSessionId ?? "",
+          previousSessionStatus: previousContext.session.status,
+        });
+      }
 
       return {
         ...session,

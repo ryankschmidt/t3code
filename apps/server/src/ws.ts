@@ -1151,6 +1151,7 @@ const makeWsRpcLayer = (
                   threadId: command.threadId,
                   turnCommand: encoded as Record<string, unknown>,
                   holdMs: TURN_RUN_HOLD_MS,
+                  completionMode: "dispatch-only",
                 },
                 { queue: runtime.queueName },
               ),

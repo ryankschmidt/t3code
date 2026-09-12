@@ -119,6 +119,9 @@ function compareVersionTuples(a: ReadonlyArray<number>, b: ReadonlyArray<number>
 }
 
 function meetsFloor(model: FamilyOrderableModel, floor: ModelFloorConfig): boolean {
+  if (modelIdPart(model.slug) === "gpt-5.3-codex-spark") {
+    return true;
+  }
   const minimum = floor[modelFamilyKey(model)];
   if (minimum === undefined) {
     return true;

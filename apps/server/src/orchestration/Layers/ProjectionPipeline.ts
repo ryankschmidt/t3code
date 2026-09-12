@@ -1186,7 +1186,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       assistantMessageId: string,
     ) {
       const messages = yield* projectionThreadMessageRepository.listByThreadId({ threadId });
-      const requestIds = requestIdsForTurn(messages, turnId);
+      const markerRequestIds = requestIdsForTurn(messages, turnId);
+      const boundRequests = Option.isSome(comsNetTransport)
+        ? yield* comsNetTransport.value.listFinishedTurnRequests(threadId, turnId).pipe(
+            Effect.catch((cause) =>
+              Effect.logError("Failed to read ComsNet receiver-turn bindings", {
+                threadId,
+                turnId,
+                cause,
+              }).pipe(Effect.as([] as const)),
+            ),
+          )
+        : [];
+      const requestIds = [
+        ...new Set([...markerRequestIds, ...boundRequests.map((request) => request.requestId)]),
+      ];
       if (requestIds.length === 0) return;
       if (Option.isNone(comsNetTransport)) {
         yield* Effect.logError("ComsNet-marked turn settled without the ComsNet transport layer", {
@@ -1216,7 +1230,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         );
         return;
       }
-      const requestId = requestIdForFinishedTurn(messages, turnId);
+      const requestId = requestIdForFinishedTurn(messages, turnId) ?? requestIds[0];
       if (requestId === undefined) return;
       const assistantMessage = messages.find(
         (message) => message.messageId === assistantMessageId && message.role === "assistant",
@@ -1404,6 +1418,17 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const pendingTurnStart = yield* projectionTurnRepository.getPendingTurnStartByThreadId({
             threadId: event.payload.threadId,
           });
+          if (Option.isSome(pendingTurnStart)) {
+            const pendingMessage = yield* projectionThreadMessageRepository.getByMessageId({
+              messageId: pendingTurnStart.value.messageId,
+            });
+            if (Option.isSome(pendingMessage) && pendingMessage.value.turnId === null) {
+              yield* projectionThreadMessageRepository.upsert({
+                ...pendingMessage.value,
+                turnId,
+              });
+            }
+          }
           if (Option.isSome(existingTurn)) {
             const nextState =
               existingTurn.value.state === "completed" || existingTurn.value.state === "error"

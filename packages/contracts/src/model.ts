@@ -135,6 +135,20 @@ const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 
 export const DEFAULT_MODEL = "gpt-6-astra";
 
+export function isCurrentCodexModel(model: string): boolean {
+  return model === "gpt-5.3-codex-spark" || /^gpt-(?:5\.6|6)(?:$|[.-])/.test(model);
+}
+
+export function isAllowedProviderModel(model: string, driver: string): boolean {
+  const parts = model.split("/");
+  const modelId = parts.at(-1) ?? model;
+  const isOpenAi =
+    driver === "codex" ||
+    parts.some((part) => part === "openai" || part === "openai-codex") ||
+    /^(?:gpt-|codex-|o\d(?:-|$))/.test(modelId);
+  return !isOpenAi || isCurrentCodexModel(modelId);
+}
+
 /**
  * Codex default-model preference, most preferred first. The provider snapshot
  * marks the first of these present in the live `model/list` response as

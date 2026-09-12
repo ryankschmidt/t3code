@@ -54,6 +54,10 @@ export interface ComsNetTransportShape {
     requestId: string,
     options?: WaitForResultOptions,
   ) => Effect.Effect<ComsNetRequest, ComsNetTransportError>;
+  readonly listFinishedTurnRequests: (
+    receiverThreadId: string,
+    receiverTurnId: string,
+  ) => Effect.Effect<ReadonlyArray<ComsNetRequest>, ComsNetTransportError>;
   readonly completeFinishedTurn: (
     receiverThreadId: string,
     requestId: string,
@@ -193,6 +197,8 @@ export const make = Effect.gen(function* () {
       Effect.flatMap(principalFor(scope), (principal) =>
         fromPromise(() => network.waitForResult(principal, requestId, options)),
       ),
+    listFinishedTurnRequests: (receiverThreadId, receiverTurnId) =>
+      fromPromise(() => network.listTrustedReceiverTurn(receiverThreadId, receiverTurnId)),
     completeFinishedTurn: (receiverThreadId, requestId, result) =>
       fromPromise(() => network.completeTrustedReceiverThread(receiverThreadId, requestId, result)),
     failFinishedTurn: (receiverThreadId, requestId, error) =>

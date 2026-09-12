@@ -15,7 +15,7 @@ function provider(input: {
 }): ServerProvider {
   const driver =
     input.provider ??
-    (input.instanceId.startsWith("claude_")
+    (input.instanceId === "claudeAgent" || input.instanceId.startsWith("claude_")
       ? ProviderDriverKind.make("claudeAgent")
       : ProviderDriverKind.make("codex"));
   return {
@@ -48,13 +48,60 @@ function settingsWithProviderInstances(): UnifiedSettings {
       },
       [ProviderInstanceId.make("claude_openrouter")]: {
         driver: ProviderDriverKind.make("claudeAgent"),
-        config: { customModels: ["openai/gpt-5.5"] },
+        config: { customModels: ["openai/gpt-5.6-sol"] },
       },
     },
   };
 }
 
 describe("instance-scoped model selection", () => {
+  it("does not fall back to retired-only remote catalogs", () => {
+    const providers = [provider({ instanceId: "codex", models: ["gpt-5.4", "gpt-5.5"] })];
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("codex"),
+        DEFAULT_UNIFIED_SETTINGS,
+        providers,
+        "gpt-5.4",
+      ),
+    ).toBeNull();
+    expect(resolveAppModelSelectionState(DEFAULT_UNIFIED_SETTINGS, providers).model).toBe("");
+  });
+
+  it("keeps Spark selectable when an older remote marks it legacy", () => {
+    const remote = provider({ instanceId: "codex", models: ["gpt-5.3-codex-spark"] });
+    const entry = deriveProviderInstanceEntries([
+      { ...remote, models: remote.models.map((model) => ({ ...model, isLegacy: true })) },
+    ])[0]!;
+    expect(
+      getAppModelOptionsForInstance(DEFAULT_UNIFIED_SETTINGS, entry)[0]?.isLegacy,
+    ).toBeUndefined();
+  });
+
+  it("offers Spark and current Codex models while excluding retired custom entries", () => {
+    const entry = deriveProviderInstanceEntries([
+      provider({
+        instanceId: "codex",
+        models: ["gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.5", "gpt-5.6-sol", "gpt-6-astra"],
+      }),
+    ])[0]!;
+    const settings: UnifiedSettings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      providerInstances: {
+        [ProviderInstanceId.make("codex")]: {
+          driver: ProviderDriverKind.make("codex"),
+          config: { customModels: ["gpt-5.4", "gpt-5.6-luna"] },
+        },
+      },
+    };
+    expect(getAppModelOptionsForInstance(settings, entry).map((model) => model.slug)).toEqual([
+      "gpt-5.3-codex-spark",
+      "gpt-5.6-sol",
+      "gpt-6-astra",
+      "gpt-5.6-luna",
+    ]);
+  });
+
   it("preserves server-provided legacy model metadata", () => {
     const baseProvider = provider({
       instanceId: "claudeAgent",
@@ -92,12 +139,12 @@ describe("instance-scoped model selection", () => {
       getAppModelOptionsForInstance(settingsWithProviderInstances(), stock).map(
         (option) => option.slug,
       ),
-    ).not.toContain("openai/gpt-5.5");
+    ).not.toContain("openai/gpt-5.6-sol");
     expect(
       getAppModelOptionsForInstance(settingsWithProviderInstances(), openrouter).map(
         (option) => option.slug,
       ),
-    ).toContain("openai/gpt-5.5");
+    ).toContain("openai/gpt-5.6-sol");
   });
 
   it("resolves a custom slug against the selected custom instance", () => {
@@ -114,9 +161,9 @@ describe("instance-scoped model selection", () => {
         ProviderInstanceId.make("claude_openrouter"),
         settingsWithProviderInstances(),
         providers,
-        "openai/gpt-5.5",
+        "openai/gpt-5.6-sol",
       ),
-    ).toBe("openai/gpt-5.5");
+    ).toBe("openai/gpt-5.6-sol");
   });
 
   it("preserves a custom slug that collides with a provider alias", () => {
@@ -192,7 +239,7 @@ describe("instance-scoped model selection", () => {
       getAppModelOptionsForInstance(settingsWithProviderInstances(), stock).map(
         (option) => option.slug,
       ),
-    ).not.toContain("openai/gpt-5.5");
+    ).not.toContain("openai/gpt-5.6-sol");
   });
 
   it("hides server models from the instance option list", () => {
@@ -291,7 +338,7 @@ describe("instance-scoped model selection", () => {
         ProviderInstanceId.make("claudeAgent"),
         settingsWithProviderInstances(),
         providers,
-        "openai/gpt-5.5",
+        "openai/gpt-5.6-sol",
       ),
     ).toBe("claude-sonnet-4-6");
   });
@@ -311,13 +358,13 @@ describe("instance-scoped model selection", () => {
       ...settingsWithProviderInstances(),
       textGenerationModelSelection: {
         instanceId: ProviderInstanceId.make("claude_openrouter"),
-        model: "openai/gpt-5.5",
+        model: "openai/gpt-5.6-sol",
       },
     };
 
     expect(resolveAppModelSelectionState(settings, providers)).toEqual({
       instanceId: ProviderInstanceId.make("claude_openrouter"),
-      model: "openai/gpt-5.5",
+      model: "openai/gpt-5.6-sol",
     });
   });
 });

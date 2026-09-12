@@ -27,6 +27,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
+import * as References from "effect/References";
 import * as Random from "effect/Random";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -1948,76 +1950,99 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("closes the previous session before replacing an existing thread session", () => {
-    const queries: FakeClaudeQuery[] = [];
-    const layer = Layer.effect(
-      ClaudeAdapter,
-      Effect.gen(function* () {
-        const claudeConfig = decodeClaudeSettings({});
-        return yield* makeClaudeAdapter(claudeConfig, {
-          createQuery: () => {
-            const query = new FakeClaudeQuery();
-            queries.push(query);
-            return query;
-          },
+  // ThroughLine: this test previously asserted that the previous session is closed BEFORE the
+  // replacement exists. That ordering is now inverted on purpose — the replacement must prove its
+  // own handshake first (see "ClaudeAdapterLive session replacement"). Every assertion below is
+  // upstream's and still holds at the END of a verified replacement; what changed is that the
+  // second start is now in flight until the replacement handshakes, so it is forked and answered.
+  // it.live because the replacement gate observes that handshake in real time.
+  it.live(
+    "closes the previous session after the replacement proves an existing thread session",
+    () => {
+      const queries: FakeClaudeQuery[] = [];
+      const layer = Layer.effect(
+        ClaudeAdapter,
+        Effect.gen(function* () {
+          const claudeConfig = decodeClaudeSettings({});
+          return yield* makeClaudeAdapter(claudeConfig, {
+            createQuery: () => {
+              const query = new FakeClaudeQuery();
+              queries.push(query);
+              return query;
+            },
+          });
+        }),
+      ).pipe(
+        Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
+        Layer.provideMerge(ServerSettingsService.layerTest()),
+        Layer.provideMerge(NodeServices.layer),
+      );
+
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 6).pipe(
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+
+        const firstSession = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
         });
-      }),
-    ).pipe(
-      Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
-      Layer.provideMerge(NodeServices.layer),
-    );
 
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
+        const secondSession = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+          resumeCursor: firstSession.resumeCursor,
+        });
 
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 6).pipe(
-        Stream.runCollect,
-        Effect.forkChild,
+        // Let the replacement prove itself on the SAME provider session the first start minted.
+        // Until this handshake lands the previous session is still live — that is the whole point.
+        assert.equal(queries[0]?.closeCalls, 0);
+        queries[1]?.emit({
+          type: "system",
+          subtype: "init",
+          uuid: "replacement-init",
+          session_id: (firstSession.resumeCursor as { readonly resume?: string } | undefined)
+            ?.resume,
+        } as unknown as SDKMessage);
+        for (let attempt = 0; attempt < 400 && queries[0]?.closeCalls === 0; attempt += 1) {
+          yield* Effect.sleep("10 millis");
+        }
+
+        const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+        const activeSessions = yield* adapter.listSessions();
+
+        assert.equal(queries.length, 2);
+        assert.equal(queries[0]?.closeCalls, 1);
+        assert.equal(queries[1]?.closeCalls, 0);
+        assert.equal(yield* adapter.hasSession(THREAD_ID), true);
+        assert.equal(activeSessions.length, 1);
+        assert.deepEqual(activeSessions[0]?.resumeCursor, secondSession.resumeCursor);
+        assert.deepEqual(
+          runtimeEvents.map((event) => event.type),
+          [
+            "session.started",
+            "session.configured",
+            "session.state.changed",
+            "session.started",
+            "session.configured",
+            "session.state.changed",
+          ],
+        );
+        assert.equal(
+          runtimeEvents.some((event) => event.type === "session.exited"),
+          false,
+        );
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(layer),
       );
-
-      const firstSession = yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-      });
-
-      const secondSession = yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-        resumeCursor: firstSession.resumeCursor,
-      });
-
-      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
-      const activeSessions = yield* adapter.listSessions();
-
-      assert.equal(queries.length, 2);
-      assert.equal(queries[0]?.closeCalls, 1);
-      assert.equal(queries[1]?.closeCalls, 0);
-      assert.equal(yield* adapter.hasSession(THREAD_ID), true);
-      assert.equal(activeSessions.length, 1);
-      assert.deepEqual(activeSessions[0]?.resumeCursor, secondSession.resumeCursor);
-      assert.deepEqual(
-        runtimeEvents.map((event) => event.type),
-        [
-          "session.started",
-          "session.configured",
-          "session.state.changed",
-          "session.started",
-          "session.configured",
-          "session.state.changed",
-        ],
-      );
-      assert.equal(
-        runtimeEvents.some((event) => event.type === "session.exited"),
-        false,
-      );
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(layer),
-    );
-  });
+    },
+  );
 
   it.effect("stopSession does not throw into the SDK prompt consumer", () => {
     // The SDK consumes user messages via `for await (... of prompt)`.
@@ -4806,4 +4831,431 @@ describe("ClaudeAdapterLive", () => {
       Effect.provide(harness.layer),
     );
   });
+});
+
+// ThroughLine: the replacement lane. `startSession` on a thread that already has a live session
+// must bring the replacement up, prove it from the replacement's OWN handshake, and only then
+// retire the previous session — and must refuse rather than retire when that proof never lands.
+describe("ClaudeAdapterLive session replacement", () => {
+  const REPLACE_THREAD_ID = ThreadId.make("thread-claude-replace");
+  const PROVIDER_SESSION_UUID = "11111111-2222-4333-8444-555555555555";
+
+  function makeMultiQueryHarness() {
+    const queries: Array<FakeClaudeQuery> = [];
+    const adapterOptions: ClaudeAdapterLiveOptions = {
+      createQuery: () => {
+        const query = new FakeClaudeQuery();
+        queries.push(query);
+        return query;
+      },
+    };
+
+    return {
+      queries,
+      layer: Layer.effect(
+        ClaudeAdapter,
+        Effect.gen(function* () {
+          const claudeConfig = decodeClaudeSettings({});
+          return yield* makeClaudeAdapter(claudeConfig, adapterOptions);
+        }),
+      ).pipe(
+        Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
+        Layer.provideMerge(ServerSettingsService.layerTest()),
+        Layer.provideMerge(NodeServices.layer),
+      ),
+    };
+  }
+
+  // effect v4 carries Effect.log*(message, fields) as a TWO-ELEMENT ARRAY in `message`, not as a
+  // string plus separate annotations. A matcher written against the string shape never matches,
+  // which makes a "this event must NOT appear" assertion pass for the wrong reason. Both matchers
+  // below are shared so neither polarity can drift onto the wrong shape.
+  const loggedFields = (
+    entry: { readonly message: unknown } | undefined,
+  ): Record<string, unknown> =>
+    Array.isArray(entry?.message) &&
+    typeof entry.message[1] === "object" &&
+    entry.message[1] !== null
+      ? (entry.message[1] as Record<string, unknown>)
+      : {};
+
+  const isLoggedEvent = (
+    entry: { readonly message: unknown },
+    name: string,
+    reason?: string,
+  ): boolean =>
+    Array.isArray(entry.message) &&
+    entry.message[0] === name &&
+    (reason === undefined || loggedFields(entry).reason === reason);
+
+  const waitUntil = (predicate: () => boolean) =>
+    Effect.gen(function* () {
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        if (predicate()) {
+          return true;
+        }
+        yield* Effect.sleep("10 millis");
+      }
+      return false;
+    });
+
+  const systemInit = (sessionId: string, uuid: string): SDKMessage =>
+    ({
+      type: "system",
+      subtype: "init",
+      uuid,
+      session_id: sessionId,
+    }) as unknown as SDKMessage;
+
+  // it.live: the replacement gate observes the new session's handshake by polling real time, so
+  // under it.effect's TestClock neither the adapter's wait nor this test's wait would ever advance.
+  it.live("keeps the previous session alive until the replacement proves its own handshake", () => {
+    const harness = makeMultiQueryHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      yield* adapter.startSession({
+        threadId: REPLACE_THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      assert.equal(harness.queries.length, 1);
+
+      // The first session earns its durable provider identity from its own handshake. Settle
+      // before replacing: the identity the replacement inherits is written by the stream fiber
+      // processing this message, not by the emit call returning.
+      harness.queries[0]?.emit(systemInit(PROVIDER_SESSION_UUID, "init-1"));
+      yield* Effect.sleep("300 millis");
+
+      // Replace it. The call returns immediately — retirement is deferred to the replacement's
+      // own handshake, because a provider process spawns lazily on its first prompt and blocking
+      // here on a handshake that cannot arrive is what made every real replacement time out.
+      const replaced = yield* adapter.startSession({
+        threadId: REPLACE_THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      assert.equal(harness.queries.length, 2);
+
+      // THE ORDERING CLAIM, asserted at the only moment it can be falsified: the replacement
+      // exists, has NOT yet handshaked, and the previous session has not been closed.
+      assert.equal(harness.queries[0]?.closeCalls, 0);
+
+      // Now let the replacement prove itself, on the SAME provider session uuid.
+      harness.queries[1]?.emit(systemInit(PROVIDER_SESSION_UUID, "init-2"));
+
+      // Identity preserved across the replacement: same thread, same provider session.
+      assert.equal(String(replaced.threadId), String(REPLACE_THREAD_ID));
+      assert.equal(
+        (replaced.resumeCursor as { readonly resume?: string } | undefined)?.resume,
+        PROVIDER_SESSION_UUID,
+      );
+      // Old retired only after the proof.
+      assert.equal(yield* waitUntil(() => harness.queries[0]?.closeCalls === 1), true);
+      assert.equal(harness.queries[1]?.closeCalls, 0);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  // it.live: same reason as the test above — the refusal is observed in real time.
+  it.live(
+    "refuses the replacement and restores the previous session when the handshake reports a different provider session",
+    () => {
+      const harness = makeMultiQueryHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        const original = yield* adapter.startSession({
+          threadId: REPLACE_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        harness.queries[0]?.emit(systemInit(PROVIDER_SESSION_UUID, "init-1"));
+        yield* Effect.sleep("300 millis");
+
+        yield* adapter.startSession({
+          threadId: REPLACE_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        assert.equal(harness.queries.length, 2);
+        assert.equal(harness.queries[0]?.closeCalls, 0);
+
+        // The replacement comes up as a DIFFERENT provider session. It is not this seat.
+        harness.queries[1]?.emit(systemInit("99999999-8888-4777-8666-555555555555", "init-2"));
+
+        // THE REFUSAL CLAIM: the replacement is torn down. Asserted as "closed at least once"
+        // rather than exactly once — the refusal closes the query, and the stream then exits and
+        // runs its own teardown, which closes it again. Both are correct; the count is not the claim.
+        assert.equal(yield* waitUntil(() => (harness.queries[1]?.closeCalls ?? 0) >= 1), true);
+        // ...the previous provider runtime was never closed...
+        assert.equal(harness.queries[0]?.closeCalls, 0);
+        // ...and it is restored as the thread's registered, usable session — a turn still reaches it.
+        yield* adapter.sendTurn({
+          threadId: original.threadId,
+          input: "still alive",
+          attachments: [],
+        });
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  // The lazy-spawn case, which is the one that matters in production and the one the previous
+  // blocking design got wrong: a replacement that has not handshaked yet must NOT retire the
+  // session it replaced, and must not fail the start either.
+  it.live(
+    "leaves the previous session running indefinitely while the replacement has not handshaked",
+    () => {
+      const harness = makeMultiQueryHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        yield* adapter.startSession({
+          threadId: REPLACE_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        harness.queries[0]?.emit(systemInit(PROVIDER_SESSION_UUID, "init-1"));
+
+        // Returns rather than blocking on a handshake that a lazily-spawned provider cannot send.
+        yield* adapter.startSession({
+          threadId: REPLACE_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        assert.equal(harness.queries.length, 2);
+
+        yield* Effect.sleep("300 millis");
+        assert.equal(harness.queries[0]?.closeCalls, 0);
+        assert.equal(harness.queries[1]?.closeCalls, 0);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  // The failure polarity that matters in production: the replacement's runtime dies before it
+  // ever handshakes. The predecessor was deliberately left running for exactly this case, so it
+  // must be handed the thread back rather than the thread falling to no session at all.
+  it.live(
+    "hands the thread back to the previous session when the replacement dies before handshaking",
+    () => {
+      const harness = makeMultiQueryHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        const original = yield* adapter.startSession({
+          threadId: REPLACE_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        harness.queries[0]?.emit(systemInit(PROVIDER_SESSION_UUID, "init-1"));
+        yield* Effect.sleep("300 millis");
+
+        yield* adapter.startSession({
+          threadId: REPLACE_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        assert.equal(harness.queries.length, 2);
+
+        // The replacement runtime dies without ever reporting a durable session id.
+        harness.queries[1]?.fail(new Error("replacement runtime died before handshake"));
+
+        // THE CLAIM: the previous provider runtime was never closed, and it is once again the
+        // thread's registered, usable session — a turn still reaches it.
+        yield* Effect.sleep("500 millis");
+        assert.equal(harness.queries[0]?.closeCalls, 0);
+        yield* adapter.sendTurn({
+          threadId: original.threadId,
+          input: "still alive",
+          attachments: [],
+        });
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  // TQ-389, THE PATH LIVE FIRING PROVED IS THE ONE THAT ACTUALLY RUNS.
+  //
+  // The sibling test above kills the replacement with query.fail(), which routes through session
+  // teardown. Three live firings against the compiled server on 2026-08-31 showed that killing the
+  // replacement PROCESS does not go that way: the stream failure surfaces as a result message with
+  // no active turn, that branch returns early, and teardown is never reached. The runtime detected
+  // the death within 0.5s and reported it generically as claude.turn.result-without-active-turn
+  // with status failed; nothing named it. Two independent post-restart capture windows of 16.99s
+  // and 15.71s contained zero occurrences of the named refusal.
+  //
+  // POSITIVE CONTROL: this test FAILS against the unmodified source, because unmodified source
+  // emits only the generic tripwire and returns.
+  it.live(
+    "names the refusal and hands the thread back when the replacement reports a failed result with no active turn",
+    () => {
+      const harness = makeMultiQueryHarness();
+      const logs: Array<{
+        readonly message: unknown;
+        readonly annotations: Record<string, unknown>;
+      }> = [];
+      const logger = Logger.make(({ fiber, message }) => {
+        logs.push({
+          message,
+          annotations: fiber.getRef(References.CurrentLogAnnotations) as Record<string, unknown>,
+        });
+      });
+
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        const original = yield* adapter.startSession({
+          threadId: REPLACE_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        harness.queries[0]?.emit(systemInit(PROVIDER_SESSION_UUID, "init-1"));
+        yield* Effect.sleep("300 millis");
+
+        yield* adapter.startSession({
+          threadId: REPLACE_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        assert.equal(harness.queries.length, 2);
+
+        // The replacement's runtime dies: a failed result arrives with no turn in flight. This is
+        // the shape a killed provider process produces, and it is NOT query.fail().
+        harness.queries[1]?.emit({
+          type: "result",
+          subtype: "error_during_execution",
+          is_error: true,
+          errors: ["Claude runtime stream failed."],
+          num_turns: 0,
+          uuid: "result-replacement-died",
+        } as unknown as SDKMessage);
+
+        const named = yield* waitUntil(() =>
+          logs.some((entry) =>
+            isLoggedEvent(
+              entry,
+              "claude.session.replace.refused",
+              "replacement-died-before-handshake",
+            ),
+          ),
+        );
+
+        // CLAIM 1 — the failure is VISIBLE under its own name, not only as a generic tripwire.
+        assert.isTrue(
+          named,
+          "expected a named claude.session.replace.refused for the dead replacement",
+        );
+        const refusal = logs.find((entry) =>
+          isLoggedEvent(
+            entry,
+            "claude.session.replace.refused",
+            "replacement-died-before-handshake",
+          ),
+        );
+        assert.equal(loggedFields(refusal).trigger, "result-without-active-turn");
+
+        // CLAIM 2 — the previous runtime was never closed and is once again the thread's usable
+        // session: a turn still reaches it.
+        assert.equal(harness.queries[0]?.closeCalls, 0);
+        yield* adapter.sendTurn({
+          threadId: original.threadId,
+          input: "still alive",
+          attachments: [],
+        });
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        // One provide, not two chained: chaining Effect.provide calls can break service lifecycle
+        // boundaries, and tsgo warns on it (TS377033). Merge the capture logger into the harness
+        // layer instead.
+        Effect.provide(
+          Layer.merge(harness.layer, Logger.layer([logger], { mergeWithExisting: false })),
+        ),
+      );
+    },
+  );
+
+  // THE OTHER POLARITY, and the reason the fix is guarded on status rather than firing on every
+  // no-active-turn result: the resume handshake itself (system/init + a SUCCESSFUL result with
+  // num_turns 0) lands in exactly the same branch. If the hand-back fired there, every ordinary
+  // replacement would be undone the moment it succeeded.
+  it.live(
+    "does not hand back when the replacement's no-active-turn result is a successful handshake",
+    () => {
+      const harness = makeMultiQueryHarness();
+      const logs: Array<{
+        readonly message: unknown;
+        readonly annotations: Record<string, unknown>;
+      }> = [];
+      const logger = Logger.make(({ fiber, message }) => {
+        logs.push({
+          message,
+          annotations: fiber.getRef(References.CurrentLogAnnotations) as Record<string, unknown>,
+        });
+      });
+
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        yield* adapter.startSession({
+          threadId: REPLACE_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        harness.queries[0]?.emit(systemInit(PROVIDER_SESSION_UUID, "init-1"));
+        yield* Effect.sleep("300 millis");
+
+        yield* adapter.startSession({
+          threadId: REPLACE_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        assert.equal(harness.queries.length, 2);
+
+        harness.queries[1]?.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          errors: [],
+          num_turns: 0,
+          usage: { input_tokens: 0, output_tokens: 0 },
+          session_id: "sdk-session-replacement",
+          uuid: "result-replacement-handshake",
+        } as unknown as SDKMessage);
+
+        yield* Effect.sleep("500 millis");
+
+        // THE CLAIM: a successful no-active-turn result is the handshake, not a death. Nothing is
+        // handed back and no refusal is named.
+        assert.isFalse(
+          logs.some((entry) =>
+            isLoggedEvent(
+              entry,
+              "claude.session.replace.refused",
+              "replacement-died-before-handshake",
+            ),
+          ),
+          "a successful handshake result must not be read as a dead replacement",
+        );
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        // One provide, not two chained: chaining Effect.provide calls can break service lifecycle
+        // boundaries, and tsgo warns on it (TS377033). Merge the capture logger into the harness
+        // layer instead.
+        Effect.provide(
+          Layer.merge(harness.layer, Logger.layer([logger], { mergeWithExisting: false })),
+        ),
+      );
+    },
+  );
 });

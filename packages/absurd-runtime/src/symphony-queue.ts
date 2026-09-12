@@ -3,7 +3,7 @@
  * symphony-typescript-port).
  *
  * Dedicated queue for symphony campaign `t3.thread-run` spawns, isolated from
- * the interactive turn rail (`t3-absurd-runtime`, concurrency 8). The
+ * the interactive turn rail (`t3-interactive-turns`, concurrency 16). The
  * module's secret is the same one agent-queue.ts owns: QUEUE TOPOLOGY is what
  * makes a campaign fan-out structurally incapable of starving Ryan's live
  * interactive turns, instead of merely being policed by a runtime readiness
@@ -15,7 +15,7 @@
  * header). `t3.thread-run` is a leaf task (no awaits), so `t3-symphony` is
  * safe. If the campaign later adds parent orchestrator tasks that await
  * children, parents must NOT share `t3-symphony` with the children they
- * await — put parents on `t3-absurd-runtime` or a third queue.
+ * await — put parents on `t3-interactive-turns` or a third queue.
  *
  * Must NOT own: provider dispatch, UI rendering, checkpoint storage (the
  * checkpoint-bridge owns that), or readiness computation (runtimeReadiness.ts

@@ -2,6 +2,7 @@ import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
+  isAllowedProviderModel,
   ProviderDriverKind,
   type ModelCapabilities,
   type ProviderInstanceId,
@@ -32,9 +33,14 @@ export function getProviderModels(
   // curated drivers), so default-model resolution never lands on the oldest
   // entry. The per-instance floor is resolved in the app-option layer where
   // instance config is readable.
-  return applyModelFamilyOrdering(getProviderSnapshot(providers, provider)?.models ?? [], {
-    driverKind: provider,
-  });
+  return applyModelFamilyOrdering(
+    (getProviderSnapshot(providers, provider)?.models ?? []).filter((model) =>
+      isAllowedProviderModel(model.slug, provider),
+    ),
+    {
+      driverKind: provider,
+    },
+  );
 }
 
 export function getProviderSnapshot(
@@ -98,6 +104,7 @@ export function getDefaultServerModel(
   provider: ProviderDriverKind,
 ): string {
   const models = getProviderModels(providers, provider);
+  if (models.length === 0 && getProviderSnapshot(providers, provider)) return "";
   return (
     models.find((model) => model.isDefault && !model.isCustom)?.slug ??
     models.find((model) => !model.isCustom)?.slug ??

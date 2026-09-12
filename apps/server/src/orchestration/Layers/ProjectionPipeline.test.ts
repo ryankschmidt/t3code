@@ -250,6 +250,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
 
 const completedComsNetTurns: Array<{ threadId: string; requestId: string }> = [];
 const failedComsNetTurns: Array<{ threadId: string; requestId: string; error: string }> = [];
+const boundComsNetTurns: Array<{ threadId: string; turnId: string; requestId: string }> = [];
 const stubComsNetRequest = (requestId: string, status: "completed" | "failed"): ComsNetRequest => ({
   requestId,
   senderPeerId: "claude:sender",
@@ -272,6 +273,16 @@ const comsNetTransportTestService: ComsNetTransportShape = {
   failDispatch: () => Effect.die("unused"),
   markDispatchSucceeded: () => Effect.die("unused"),
   waitForResult: () => Effect.die("unused"),
+  listFinishedTurnRequests: (threadId, turnId) =>
+    Effect.succeed(
+      boundComsNetTurns
+        .filter((entry) => entry.threadId === threadId && entry.turnId === turnId)
+        .map((entry) => ({
+          ...stubComsNetRequest(entry.requestId, "completed"),
+          status: "delivered" as const,
+          receiverTurnId: turnId,
+        })),
+    ),
   completeFinishedTurn: (threadId, requestId) =>
     Effect.sync(() => {
       completedComsNetTurns.push({ threadId, requestId });
@@ -300,6 +311,7 @@ it.layer(ComsNetProjectionTestLayer)("ComsNet finished-turn projection", (it) =>
     Effect.gen(function* () {
       completedComsNetTurns.length = 0;
       failedComsNetTurns.length = 0;
+      boundComsNetTurns.length = 0;
       const projectionPipeline = yield* OrchestrationProjectionPipeline;
       const eventStore = yield* OrchestrationEventStore;
       const threadId = ThreadId.make("thread-comsnet-pipeline");
@@ -355,6 +367,50 @@ it.layer(ComsNetProjectionTestLayer)("ComsNet finished-turn projection", (it) =>
 
       const successRequestId = "11111111-1111-1111-1111-111111111111";
       const successTurnId = TurnId.make("turn-comsnet-success");
+      boundComsNetTurns.push({
+        threadId,
+        turnId: successTurnId,
+        requestId: successRequestId,
+      });
+      yield* appendAndProject({
+        type: "thread.turn-start-requested",
+        eventId: EventId.make("evt-comsnet-success-turn-requested"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-success-turn-requested"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-success-turn-requested"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-comsnet-success-user"),
+          runtimeMode: "full-access",
+          createdAt: now,
+        },
+      });
+      yield* appendAndProject({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-comsnet-success-user"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-comsnet-success-user"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-comsnet-success-user"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-comsnet-success-user"),
+          role: "user",
+          text: "Wait once for the subscribed ComsNet request.",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
       yield* appendAndProject({
         type: "thread.session-set",
         eventId: EventId.make("evt-comsnet-success-session-running"),
@@ -376,28 +432,6 @@ it.layer(ComsNetProjectionTestLayer)("ComsNet finished-turn projection", (it) =>
             lastError: null,
             updatedAt: now,
           },
-        },
-      });
-      yield* appendAndProject({
-        type: "thread.message-sent",
-        eventId: EventId.make("evt-comsnet-success-user"),
-        aggregateKind: "thread",
-        aggregateId: threadId,
-        occurredAt: now,
-        commandId: CommandId.make("cmd-comsnet-success-user"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-comsnet-success-user"),
-        metadata: {},
-        payload: {
-          threadId,
-          messageId: MessageId.make("message-comsnet-success-user"),
-          role: "user",
-          text: `<!-- comsnet-request:${successRequestId} -->\nDo the work.`,
-          attachments: [],
-          turnId: successTurnId,
-          streaming: false,
-          createdAt: now,
-          updatedAt: now,
         },
       });
       yield* appendAndProject({

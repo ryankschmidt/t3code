@@ -127,8 +127,6 @@ describe("applyModelFamilyOrdering", () => {
     expect(ordered.map((model) => model.slug)).toEqual([
       "anthropic/claude-sonnet-4-9",
       "anthropic/claude-opus-4-8",
-      "openai/gpt-5.5",
-      "openai/gpt-5.4",
       "kimi/k2",
       "openrouter/meta-llama-3",
     ]);
@@ -223,14 +221,33 @@ describe("getAppModelOptionsForInstance (pi end-to-end)", () => {
   it("honors a per-instance floor override from config.modelFloor", () => {
     const slugs = piOptions({ modelFloor: { openai: "gpt-5.5" } });
     expect(slugs).not.toContain("openai/gpt-5.4");
-    expect(slugs).toContain("openai/gpt-5.5");
+    expect(slugs).not.toContain("openai/gpt-5.5");
     // An explicit record replaces the default entirely: anthropic unfloored.
     expect(slugs).toContain("anthropic/claude-opus-4-7");
   });
 
-  it("shows the full sorted catalog when the floor is explicitly disabled", () => {
+  it("keeps retired OpenAI models excluded when the floor is disabled", () => {
     const slugs = piOptions({ modelFloor: {} });
-    expect(slugs).toHaveLength(PI_CATALOG.length);
+    expect(slugs).toHaveLength(PI_CATALOG.filter((model) => !model.startsWith("openai/")).length);
     expect(slugs.at(-1)).not.toBe("openai/gpt-5.5");
+  });
+
+  it("keeps discovered Spark above the version floor and hides retired OpenAI models", () => {
+    const models = [
+      "openai-codex/gpt-5.3-codex-spark",
+      "openai/gpt-5.3-codex-spark",
+      "openai/gpt-5.6-sol",
+      "openai/gpt-5.4",
+      "anthropic/claude-opus-5",
+    ];
+    const entry = deriveProviderInstanceEntries([piProvider(models)])[0]!;
+    const choices = getAppModelOptionsForInstance(settingsWithPiConfig(), entry).map(
+      (model) => model.slug,
+    );
+    expect(choices).toContain("openai-codex/gpt-5.3-codex-spark");
+    expect(choices).toContain("openai/gpt-5.3-codex-spark");
+    expect(choices).toContain("openai/gpt-5.6-sol");
+    expect(choices).toContain("anthropic/claude-opus-5");
+    expect(choices).not.toContain("openai/gpt-5.4");
   });
 });

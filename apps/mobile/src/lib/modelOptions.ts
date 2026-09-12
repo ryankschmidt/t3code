@@ -3,6 +3,7 @@ import type {
   ModelSelection,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
+import { isAllowedProviderModel, isCurrentCodexModel } from "@t3tools/contracts";
 import {
   buildProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
@@ -70,12 +71,16 @@ export function resolveSelectableModelSelection(
   config: T3ServerConfig | null | undefined,
   selection: ModelSelection | null,
 ): ModelSelection | null {
-  if (!selection || !config) {
+  if (!selection) {
     return selection;
   }
-  const provider = config.providers.find(
+  const provider = config?.providers.find(
     (candidate) => candidate.instanceId === selection.instanceId,
   );
+  if (!isAllowedProviderModel(selection.model, provider?.driver ?? selection.instanceId)) {
+    return null;
+  }
+  if (!config) return selection;
   return provider &&
     provider.enabled &&
     provider.installed &&
@@ -101,7 +106,10 @@ export function resolveDefaultableModelSelection(
   }
   const provider = config.providers.find((candidate) => candidate.instanceId === usable.instanceId);
   const model = provider?.models.find((candidate) => candidate.slug === usable.model);
-  return model?.isLegacy === true ? null : usable;
+  return model?.isLegacy === true &&
+    !isCurrentCodexModel(usable.model.split("/").at(-1) ?? usable.model)
+    ? null
+    : usable;
 }
 
 export function buildModelOptions(
@@ -117,6 +125,7 @@ export function buildModelOptions(
 
     const providerLabel = providerDisplayLabel(provider);
     for (const model of provider.models) {
+      if (!isAllowedProviderModel(model.slug, provider.driver)) continue;
       const key = `${provider.instanceId}:${model.slug}`;
       options.set(key, {
         key,
@@ -126,7 +135,9 @@ export function buildModelOptions(
         providerLabel,
         providerDriver: provider.driver,
         isDefault: model.isDefault === true,
-        isLegacy: model.isLegacy === true,
+        isLegacy:
+          model.isLegacy === true &&
+          !isCurrentCodexModel(model.slug.split("/").at(-1) ?? model.slug),
         capabilities: model.capabilities,
         selection: normalizeSelectionOptions(
           {
@@ -139,7 +150,15 @@ export function buildModelOptions(
     }
   }
 
-  if (fallbackModelSelection) {
+  if (
+    fallbackModelSelection &&
+    isAllowedProviderModel(
+      fallbackModelSelection.model,
+      config?.providers.find(
+        (provider) => provider.instanceId === fallbackModelSelection.instanceId,
+      )?.driver ?? fallbackModelSelection.instanceId,
+    )
+  ) {
     const key = `${fallbackModelSelection.instanceId}:${fallbackModelSelection.model}`;
     const existing = options.get(key);
     if (existing) {

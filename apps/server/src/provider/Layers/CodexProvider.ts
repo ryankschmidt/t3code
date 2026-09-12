@@ -22,7 +22,11 @@ import type {
   ServerProviderModel,
   ServerProviderSkill,
 } from "@t3tools/contracts";
-import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@t3tools/contracts";
+import {
+  isCurrentCodexModel,
+  PREFERRED_DEFAULT_CODEX_MODELS,
+  ServerSettingsError,
+} from "@t3tools/contracts";
 
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
@@ -62,15 +66,8 @@ const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
 };
 
 const DEFAULT_SERVICE_TIER_ID = "default";
-const CURRENT_CODEX_MODELS = new Set([
-  "gpt-6-astra",
-  "gpt-5.6-luna",
-  "gpt-5.6-terra",
-  "gpt-5.6-sol",
-]);
-
 export function isLegacyCodexModel(model: string): boolean {
-  return !CURRENT_CODEX_MODELS.has(model);
+  return !isCurrentCodexModel(model);
 }
 
 function reasoningEffortLabel(reasoningEffort: string): string {
@@ -192,17 +189,19 @@ const toDisplayName = (model: CodexSchema.V2ModelListResponse__Model): string =>
     .replace(/-([a-z])/g, (_, c) => "-" + c.toUpperCase());
 };
 
-function parseCodexModelListResponse(
+export function parseCodexModelListResponse(
   response: CodexSchema.V2ModelListResponse,
 ): ReadonlyArray<ServerProviderModel> {
-  return response.data.map((model) => ({
-    slug: model.model,
-    name: toDisplayName(model),
-    isCustom: false,
-    ...(model.isDefault ? { isDefault: true } : {}),
-    ...(isLegacyCodexModel(model.model) ? { isLegacy: true } : {}),
-    capabilities: mapCodexModelCapabilities(model),
-  }));
+  return response.data
+    .filter((model) => isCurrentCodexModel(model.model))
+    .map((model) => ({
+      slug: model.model,
+      name: toDisplayName(model),
+      isCustom: false,
+      ...(model.isDefault ? { isDefault: true } : {}),
+      ...(isLegacyCodexModel(model.model) ? { isLegacy: true } : {}),
+      capabilities: mapCodexModelCapabilities(model),
+    }));
 }
 
 /**
@@ -243,7 +242,7 @@ function appendCustomCodexModels(
   const customEntries: ServerProviderModel[] = [];
   for (const rawModel of customModels) {
     const slug = rawModel.trim();
-    if (!slug || seen.has(slug)) {
+    if (!isCurrentCodexModel(slug) || seen.has(slug)) {
       continue;
     }
     seen.add(slug);
@@ -424,7 +423,7 @@ const emptyCodexModelsFromSettings = (codexSettings: CodexSettings): ServerProvi
   const models = new Set<string>();
   for (const model of codexSettings.customModels) {
     const trimmed = model.trim();
-    if (trimmed.length > 0) {
+    if (isCurrentCodexModel(trimmed)) {
       models.add(trimmed);
     }
   }

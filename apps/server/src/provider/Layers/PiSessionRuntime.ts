@@ -44,7 +44,14 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const PROVIDER = ProviderDriverKind.make("pi");
-const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
+// 300s, not 10s: a cold resume of a large Pi session file must finish loading before
+// the first RPC (set_model / set_thinking_level / prompt) can be answered. Measured
+// 2026-09-01 on a 28.9MB session: 2m23s from prompt to reply; 10s timed out turn-start
+// while the runtime was still loading, wedging the thread (thread 94dfcee1, TL repair).
+const DEFAULT_COMMAND_TIMEOUT_MS = 300_000;
+// Abort is acknowledged immediately by an alive Pi; a Stop press must never wait
+// the full command budget on a wedged process before the failure is reported.
+const ABORT_TIMEOUT_MS = 15_000;
 const DISCOVERY_TIMEOUT_MS = 15_000;
 
 /** Pi's own thinking levels (provider-native — never invented server-side). */
@@ -82,6 +89,7 @@ type PiRpcCommand =
       readonly type: "prompt";
       readonly message: string;
       readonly images?: ReadonlyArray<PiPromptImage>;
+      readonly streamingBehavior?: "steer" | "followUp";
     }
   | { readonly type: "abort" }
   | { readonly type: "switch_session"; readonly sessionPath: string }
@@ -569,7 +577,9 @@ export const makePiSessionRuntime = (
           const expected = state.stopping;
           yield* Ref.update(stateRef, (current) => ({
             ...current,
-            status: (code === 0 || current.stopping ? "closed" : "error") as ProviderSession["status"],
+            status: (code === 0 || current.stopping
+              ? "closed"
+              : "error") as ProviderSession["status"],
             exited: true,
             updatedAt: now,
           }));
@@ -745,6 +755,11 @@ export const makePiSessionRuntime = (
           yield* sendCommand({
             type: "prompt",
             message: input.input ?? "",
+            // Always steer: Pi consults streamingBehavior only while the agent is
+            // streaming (idle prompts start normally), and a mid-turn message then
+            // queues to the turn boundary instead of the RPC refusing with "Agent is
+            // already processing" — an operator message must never fail to land.
+            streamingBehavior: "steer",
             ...(input.images && input.images.length > 0 ? { images: input.images } : {}),
           });
           const state = yield* getState;
@@ -792,7 +807,7 @@ export const makePiSessionRuntime = (
           abortRequested: true,
           updatedAt: now,
         }));
-        yield* sendCommand({ type: "abort" });
+        yield* sendCommand({ type: "abort" }, ABORT_TIMEOUT_MS);
       });
 
     const readThread: PiSessionRuntimeShape["readThread"] = Ref.get(turnsRef).pipe(
@@ -875,9 +890,9 @@ export const discoverPiModels = (input: {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         runtimeMode: "full-access",
       });
-      const catalog = yield* runtime.listAvailableModels().pipe(
-        Effect.timeoutOption(DISCOVERY_TIMEOUT_MS),
-      );
+      const catalog = yield* runtime
+        .listAvailableModels()
+        .pipe(Effect.timeoutOption(DISCOVERY_TIMEOUT_MS));
       yield* runtime.close;
       if (Option.isNone(catalog)) {
         return yield* new PiSessionRuntimeError({

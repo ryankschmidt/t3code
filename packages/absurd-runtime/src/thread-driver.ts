@@ -66,14 +66,28 @@ export type ThreadRunParams = {
    * preserved. LocalEcho and WS transports ignore it.
    */
   turnCommand?: Record<string, unknown>;
+  /**
+   * Interactive client turns are already observed through the server's provider
+   * subscriptions. Holding a durable worker slot until that provider finishes
+   * can exhaust the bounded worker pool and serialize otherwise independent
+   * conversations. Durable campaign callers keep the default `wait` mode.
+   */
+  completionMode?: "wait" | "dispatch-only";
 };
 
-export type ThreadRunResult = {
-  threadId: string;
-  turnId: string;
-  state: "completed";
-  summary: string;
-};
+export type ThreadRunResult =
+  | {
+      threadId: string;
+      turnId: string;
+      state: "dispatched";
+      summary: string;
+    }
+  | {
+      threadId: string;
+      turnId: string;
+      state: "completed";
+      summary: string;
+    };
 
 export interface ThreadTransport {
   resolveThread(
@@ -130,7 +144,9 @@ export function registerThreadRunTask(app: Absurd, transport: ThreadTransport): 
       });
 
       const turn = await ctx.step("dispatch-turn", async () => {
-        console.log(`[thread-run ${ctx.taskID}] EXECUTING dispatch-turn (thread ${thread.threadId})`);
+        console.log(
+          `[thread-run ${ctx.taskID}] EXECUTING dispatch-turn (thread ${thread.threadId})`,
+        );
         return transport.dispatchTurn(thread.threadId, params.prompt, params.turnCommand);
       });
 
@@ -145,6 +161,15 @@ export function registerThreadRunTask(app: Absurd, transport: ThreadTransport): 
             scopePaths: cp.scopePaths,
           });
         });
+      }
+
+      if (params.completionMode === "dispatch-only") {
+        return {
+          threadId: thread.threadId,
+          turnId: turn.turnId,
+          state: "dispatched",
+          summary: "turn dispatched; completion is delivered by the provider subscription",
+        } satisfies ThreadRunResult;
       }
 
       const done = await ctx.step("await-turn-complete", async () => {

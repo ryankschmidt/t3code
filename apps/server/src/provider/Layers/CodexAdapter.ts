@@ -24,6 +24,7 @@ import {
   type RuntimeTaskUsage,
   ProviderApprovalDecision,
   ThreadId,
+  TurnId,
   ProviderSendTurnInput,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -1044,6 +1045,7 @@ function mapToRuntimeEvents(
     return [
       {
         ...runtimeEventBase(event, canonicalThreadId),
+        turnId: TurnId.make(payload.turn.id),
         type: "turn.completed",
         payload: {
           state: toTurnStatus(payload.turn.status),

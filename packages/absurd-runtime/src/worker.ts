@@ -60,6 +60,21 @@ export type AbsurdRuntimeHandle = {
   symphonyQueue?: SymphonyQueueWorkerHandle;
 };
 
+type QueuePreparer = {
+  createQueue(queueName: string): Promise<unknown>;
+};
+
+/** Ensure a durable queue exists before its worker begins polling it. */
+export async function prepareAbsurdQueue(app: QueuePreparer, queueName: string): Promise<void> {
+  try {
+    await app.createQueue(queueName);
+  } catch (error: unknown) {
+    const message = String(error instanceof Error ? error.message : error);
+    if (/already exists|duplicate/i.test(message)) return;
+    throw error;
+  }
+}
+
 /**
  * Construct an Absurd app, register the durable task, and start the worker.
  *
@@ -92,6 +107,7 @@ export function startAbsurdRuntime(options: StartAbsurdRuntimeOptions): AbsurdRu
       // deadlock-free).
       registerAgentFanoutTask(app);
     },
+    prepareQueue: (app) => prepareAbsurdQueue(app, queueName),
     concurrency,
   });
 

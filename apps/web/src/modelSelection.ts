@@ -2,6 +2,8 @@ import {
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
+  isAllowedProviderModel,
+  isCurrentCodexModel,
   type ModelSelection,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -93,7 +95,8 @@ function toAppModelOption(model: ServerProvider["models"][number]): AppModelOpti
   if (model.shortName) option.shortName = model.shortName;
   if (model.subProvider) option.subProvider = model.subProvider;
   if (model.isDefault) option.isDefault = true;
-  if (model.isLegacy) option.isLegacy = true;
+  if (model.isLegacy && !isCurrentCodexModel(model.slug.split("/").at(-1) ?? model.slug))
+    option.isLegacy = true;
   return option;
 }
 
@@ -127,7 +130,11 @@ function applyInstanceModelPreferences(
   const familyOrdered =
     ordering === undefined ? options : applyModelFamilyOrdering(options, ordering);
   return sortModelsForProviderInstance(
-    familyOrdered.filter((option) => option.isCustom || !hiddenModels.has(option.slug)),
+    familyOrdered.filter(
+      (option) =>
+        isAllowedProviderModel(option.slug, ordering?.driverKind ?? "") &&
+        (option.isCustom || !hiddenModels.has(option.slug)),
+    ),
     { modelOrder: preferences.modelOrder },
   );
 }
@@ -281,8 +288,6 @@ export function resolveAppModelSelectionForInstance(
     resolveSelectableModel(entry.driverKind, selectedModel, options) ??
     options.find((option) => option.isDefault)?.slug ??
     options[0]?.slug ??
-    entry.models.find((model) => model.isDefault)?.slug ??
-    entry.models[0]?.slug ??
     null
   );
 }
@@ -323,10 +328,12 @@ export function resolveAppModelSelectionState(
     // When the instance changed due to fallback (e.g. selected instance was disabled),
     // don't carry over the old instance's model — use the fallback instance's default.
     const selectedModel = selectedEntry ? selection.model : null;
-    const model =
-      resolveAppModelSelectionForInstance(entry.instanceId, settings, providers, selectedModel) ??
-      entry.models[0]?.slug ??
-      DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[entry.driverKind];
+    const model = resolveAppModelSelectionForInstance(
+      entry.instanceId,
+      settings,
+      providers,
+      selectedModel,
+    );
     if (!model) {
       return createModelSelection(entry.instanceId, "", []);
     }

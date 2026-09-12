@@ -33,7 +33,11 @@ import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 
-const QUEUE_NAME = "t3-absurd-runtime";
+// Interactive client turns have their own durable queue. The former shared
+// `t3-absurd-runtime` queue contains pre-repair tasks that can hold worker
+// leases for six hours; reusing it would make the dispatch-only fix unable to
+// take effect until that stale generation drained.
+const QUEUE_NAME = "t3-interactive-turns";
 
 export const AbsurdRuntimeInProcessLive = Layer.effect(
   AbsurdRuntime,
@@ -48,7 +52,9 @@ export const AbsurdRuntimeInProcessLive = Layer.effect(
     const decodeCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 
     const dispatchCommand = (command: Record<string, unknown>): Promise<unknown> =>
-      runPromise(decodeCommand(command).pipe(Effect.flatMap((decoded) => engine.dispatch(decoded))));
+      runPromise(
+        decodeCommand(command).pipe(Effect.flatMap((decoded) => engine.dispatch(decoded))),
+      );
 
     const replayEvents = (fromSequenceExclusive: number): Promise<ReadonlyArray<ReplayEvent>> =>
       runPromise(
@@ -74,12 +80,13 @@ export const AbsurdRuntimeInProcessLive = Layer.effect(
     });
 
     return yield* Effect.acquireRelease(
-      // Concurrency 8: client turns run on this rail (landing slice) — the
+      // Concurrency 16: client turns run on this rail (landing slice) — the
       // proof-era default of 1 would serialize interactive turns across
       // threads. Long turns hold worker slots for their full duration
-      // (heartbeat keeps the lease), so the bound must cover concurrent
-      // conversations, not just queued proofs.
-      Effect.sync(() => startAbsurdRuntime({ queueName: QUEUE_NAME, transport, concurrency: 8 })),
+      // (heartbeat keeps the lease). The dispatch-only client path now releases
+      // new slots immediately, while the doubled bound gives one deployment
+      // generation enough headroom to drain pre-repair six-hour waits.
+      Effect.sync(() => startAbsurdRuntime({ queueName: QUEUE_NAME, transport, concurrency: 16 })),
       (handle) => Effect.promise(() => handle.close()),
     );
   }),

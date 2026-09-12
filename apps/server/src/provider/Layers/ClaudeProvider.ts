@@ -56,7 +56,12 @@ const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
 const MINIMUM_CLAUDE_OPUS_4_8_VERSION = "2.1.154";
 const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
 
-const CURRENT_CLAUDE_MODELS = new Set(["claude-fable-5", "claude-opus-5", "claude-sonnet-5"]);
+const CURRENT_CLAUDE_MODELS = new Set([
+  "claude-fable-5",
+  "claude-fable-5-1",
+  "claude-opus-5",
+  "claude-sonnet-5",
+]);
 
 export function isLegacyClaudeModel(model: string): boolean {
   return !CURRENT_CLAUDE_MODELS.has(model);
@@ -66,6 +71,41 @@ const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-fable-5",
     name: "Claude Fable 5",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "xhigh", label: "Extra High" },
+            { value: "max", label: "Max" },
+            {
+              value: "ultracode",
+              label: "Ultracode",
+              description: "xhigh effort plus multi-agent workflow orchestration",
+            },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
+          promptInjectedValues: ["ultrathink"],
+        }),
+        buildSelectOptionDescriptor({
+          id: "contextWindow",
+          label: "Context Window",
+          options: [
+            { value: "200k", label: "200k" },
+            { value: "1m", label: "1M", isDefault: true },
+          ],
+        }),
+      ],
+    }),
+  },
+  {
+    slug: "claude-fable-5-1",
+    name: "Claude Fable 5.1",
     isCustom: false,
     capabilities: createModelCapabilities({
       optionDescriptors: [
@@ -354,7 +394,11 @@ function getBuiltInClaudeModelsForVersion(
     if (model.slug === "claude-opus-5") {
       return supportsClaudeOpus5(version);
     }
-    if (model.slug === "claude-fable-5" || model.slug === "claude-sonnet-5") {
+    if (
+      model.slug === "claude-fable-5" ||
+      model.slug === "claude-fable-5-1" ||
+      model.slug === "claude-sonnet-5"
+    ) {
       // ThroughLine: Both Claude 5 family models shipped behind the same CLI floor.
       return supportsClaudeFable5(version);
     }
