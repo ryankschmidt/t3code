@@ -40,7 +40,10 @@ export const ComsNetPeersTool = readonlyTool(
   Tool.make("comsnet_peers", {
     description:
       "List current Claude and Codex seats by stable provider session identity. ThroughLine derives this roster, marks the authenticated caller with isSelf, and does not accept client-supplied identities.",
-    parameters: Schema.Struct({}),
+    // An explicit optional property keeps the emitted JSON schema a real `type: "object"`.
+    // `Schema.Struct({})` emitted a bare schema that OpenAI rejects for every hosted Codex
+    // thread (`invalid_function_parameters … comsnet_peers`, measured 2026-09-10).
+    parameters: Schema.Struct({ includeSelf: Schema.optional(Schema.Boolean) }),
     success: Success,
     failure: Failure,
     dependencies,
