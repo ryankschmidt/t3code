@@ -132,7 +132,13 @@ export function buildThreadActionMenuItems(
           ? [{ id: "copy-session-uuid" as const, label: "Session UUID", icon: "copy" as const }]
           : []),
         ...(state.transcriptPath
-          ? [{ id: "copy-transcript-path" as const, label: "Transcript path", icon: "copy" as const }]
+          ? [
+              {
+                id: "copy-transcript-path" as const,
+                label: "Transcript path",
+                icon: "copy" as const,
+              },
+            ]
           : []),
       ],
     },

@@ -962,52 +962,52 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mergeAll(
-        // ThroughLine: Landing slice: the ws turn rail requires the AbsurdRuntime service
-        // (readiness guard + spawn). Tests get a transport-faithful fake whose
-        // spawn decodes params.turnCommand and dispatches it into the (mock)
-        // engine — the same contract AbsurdRuntimeInProcessLive wires in
-        // production. Rail tests must also emit thread.turn-start-requested on
-        // their engine's streamDomainEvents so the rail's ack resolves. The
-        // engine mock rides the same pipe argument via provideMerge (pipe's
-        // typed overloads cap at 20 arguments).
-        Layer.effect(
-          AbsurdRuntime,
-          Effect.gen(function* () {
-            const engine = yield* OrchestrationEngine.OrchestrationEngineService;
-            const decodeCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
-            return {
-              app: {
-                spawn: (_task: string, params: { turnCommand: Record<string, unknown> }) =>
-                  Effect.runPromise(
-                    decodeCommand(params.turnCommand).pipe(
-                      Effect.flatMap((command) => engine.dispatch(command)),
-                      Effect.map((result) => ({ taskID: `test-rail-task-${result.sequence}` })),
+          // ThroughLine: Landing slice: the ws turn rail requires the AbsurdRuntime service
+          // (readiness guard + spawn). Tests get a transport-faithful fake whose
+          // spawn decodes params.turnCommand and dispatches it into the (mock)
+          // engine — the same contract AbsurdRuntimeInProcessLive wires in
+          // production. Rail tests must also emit thread.turn-start-requested on
+          // their engine's streamDomainEvents so the rail's ack resolves. The
+          // engine mock rides the same pipe argument via provideMerge (pipe's
+          // typed overloads cap at 20 arguments).
+          Layer.effect(
+            AbsurdRuntime,
+            Effect.gen(function* () {
+              const engine = yield* OrchestrationEngine.OrchestrationEngineService;
+              const decodeCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
+              return {
+                app: {
+                  spawn: (_task: string, params: { turnCommand: Record<string, unknown> }) =>
+                    Effect.runPromise(
+                      decodeCommand(params.turnCommand).pipe(
+                        Effect.flatMap((command) => engine.dispatch(command)),
+                        Effect.map((result) => ({ taskID: `test-rail-task-${result.sequence}` })),
+                      ),
                     ),
-                  ),
-                listQueues: () => Promise.resolve([]),
-              },
-              queueName: "t3-absurd-runtime",
-              close: () => Promise.resolve(),
-            } as unknown as AbsurdRuntimeHandle;
-          }),
-        ).pipe(
-          Layer.provideMerge(
-            Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
-              readEvents: () => Stream.empty,
-              readThreadEvents: () => Stream.empty,
-              getThreadReplayStats: () =>
-                Effect.succeed({
-                  eventCount: 0,
-                  payloadBytes: 0,
-                  hasCreateEvent: false,
-                }),
-              streamDomainEvents: Stream.empty,
-              latestSequence: Effect.succeed(0),
-              ...options?.layers?.orchestrationEngine,
-              dispatch: orchestrationDispatch,
+                  listQueues: () => Promise.resolve([]),
+                },
+                queueName: "t3-absurd-runtime",
+                close: () => Promise.resolve(),
+              } as unknown as AbsurdRuntimeHandle;
             }),
+          ).pipe(
+            Layer.provideMerge(
+              Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
+                readEvents: () => Stream.empty,
+                readThreadEvents: () => Stream.empty,
+                getThreadReplayStats: () =>
+                  Effect.succeed({
+                    eventCount: 0,
+                    payloadBytes: 0,
+                    hasCreateEvent: false,
+                  }),
+                streamDomainEvents: Stream.empty,
+                latestSequence: Effect.succeed(0),
+                ...options?.layers?.orchestrationEngine,
+                dispatch: orchestrationDispatch,
+              }),
+            ),
           ),
-        ),
           Layer.mock(ThreadDeletionReactor)({
             start: () => Effect.void,
             drainThrough: () => Effect.void,

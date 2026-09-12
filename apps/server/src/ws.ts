@@ -1212,25 +1212,25 @@ const makeWsRpcLayer = (
                 command.threadId,
               );
               if (Option.isNone(existingThread)) {
-              const created = yield* dispatchFromClient({
-                type: "thread.create",
-                commandId: yield* serverCommandId("bootstrap-thread-create"),
-                threadId: command.threadId,
-                projectId: bootstrap.createThread.projectId,
-                title: bootstrap.createThread.title,
-                modelSelection: bootstrap.createThread.modelSelection,
-                runtimeMode: bootstrap.createThread.runtimeMode,
-                interactionMode: bootstrap.createThread.interactionMode,
-                branch: bootstrap.createThread.branch,
-                worktreePath: bootstrap.createThread.worktreePath,
-                createdAt: bootstrap.createThread.createdAt,
-              });
-              // The successful create is a fence in the engine command queue:
-              // every delete for the prior incarnation committed before it.
-              // Drain through that event before setup or turn start can own
-              // terminals and provider sessions under the reused thread id.
-              yield* threadDeletionReactor.drainThrough(created.sequence);
-              createdThread = true;
+                const created = yield* dispatchFromClient({
+                  type: "thread.create",
+                  commandId: yield* serverCommandId("bootstrap-thread-create"),
+                  threadId: command.threadId,
+                  projectId: bootstrap.createThread.projectId,
+                  title: bootstrap.createThread.title,
+                  modelSelection: bootstrap.createThread.modelSelection,
+                  runtimeMode: bootstrap.createThread.runtimeMode,
+                  interactionMode: bootstrap.createThread.interactionMode,
+                  branch: bootstrap.createThread.branch,
+                  worktreePath: bootstrap.createThread.worktreePath,
+                  createdAt: bootstrap.createThread.createdAt,
+                });
+                // The successful create is a fence in the engine command queue:
+                // every delete for the prior incarnation committed before it.
+                // Drain through that event before setup or turn start can own
+                // terminals and provider sessions under the reused thread id.
+                yield* threadDeletionReactor.drainThrough(created.sequence);
+                createdThread = true;
                 // Command acceptance and read-model materialization are distinct
                 // boundaries. The durable worker can claim immediately, so do not
                 // let its turn.start overtake the thread projection it requires.

@@ -2744,113 +2744,120 @@ pending_approval_requests AS (
         ]),
       )
       .pipe(
-        Effect.flatMap(
-          (rows) =>
-            Effect.gen(function* () {
-              const [projectRows, threadRows, sessionRows, pullRequestRows, latestTurnRows, stateRows] =
-                rows;
-              // ThroughLine: native session identity rows ride the same query tuple.
-              const runtimeIdentityRows = rows[6];
-              let updatedAt: string | null = null;
-              for (const row of projectRows) {
-                updatedAt = maxIso(updatedAt, row.updatedAt);
+        Effect.flatMap((rows) =>
+          Effect.gen(function* () {
+            const [
+              projectRows,
+              threadRows,
+              sessionRows,
+              pullRequestRows,
+              latestTurnRows,
+              stateRows,
+            ] = rows;
+            // ThroughLine: native session identity rows ride the same query tuple.
+            const runtimeIdentityRows = rows[6];
+            let updatedAt: string | null = null;
+            for (const row of projectRows) {
+              updatedAt = maxIso(updatedAt, row.updatedAt);
+            }
+            for (const row of threadRows) {
+              updatedAt = maxIso(updatedAt, row.updatedAt);
+            }
+            for (const row of sessionRows) {
+              updatedAt = maxIso(updatedAt, row.updatedAt);
+            }
+            for (const row of latestTurnRows) {
+              updatedAt = maxIso(updatedAt, row.requestedAt);
+              if (row.startedAt !== null) {
+                updatedAt = maxIso(updatedAt, row.startedAt);
               }
-              for (const row of threadRows) {
-                updatedAt = maxIso(updatedAt, row.updatedAt);
+              if (row.completedAt !== null) {
+                updatedAt = maxIso(updatedAt, row.completedAt);
               }
-              for (const row of sessionRows) {
-                updatedAt = maxIso(updatedAt, row.updatedAt);
-              }
-              for (const row of latestTurnRows) {
-                updatedAt = maxIso(updatedAt, row.requestedAt);
-                if (row.startedAt !== null) {
-                  updatedAt = maxIso(updatedAt, row.startedAt);
-                }
-                if (row.completedAt !== null) {
-                  updatedAt = maxIso(updatedAt, row.completedAt);
-                }
-              }
-              for (const row of stateRows) {
-                updatedAt = maxIso(updatedAt, row.updatedAt);
-              }
+            }
+            for (const row of stateRows) {
+              updatedAt = maxIso(updatedAt, row.updatedAt);
+            }
 
-              const repositoryIdentities =
-                yield* resolveRepositoryIdentitiesForProjects(projectRows);
-              const latestTurnByThread = new Map(
-                latestTurnRows.map((row) => [row.threadId, mapLatestTurn(row)] as const),
-              );
-              // ThroughLine: native session identity, keyed by thread for the session map below.
-              const nativeIdentityByThread = buildNativeIdentityMap(runtimeIdentityRows);
-              const sessionByThread = new Map(
-                sessionRows.map(
-                  (row) =>
-                    [row.threadId, mapSessionRow(row, nativeIdentityByThread.get(row.threadId))] as const,
-                ),
-              );
-              const pullRequestsByThread = groupPullRequestRowsByThread(pullRequestRows);
+            const repositoryIdentities = yield* resolveRepositoryIdentitiesForProjects(projectRows);
+            const latestTurnByThread = new Map(
+              latestTurnRows.map((row) => [row.threadId, mapLatestTurn(row)] as const),
+            );
+            // ThroughLine: native session identity, keyed by thread for the session map below.
+            const nativeIdentityByThread = buildNativeIdentityMap(runtimeIdentityRows);
+            const sessionByThread = new Map(
+              sessionRows.map(
+                (row) =>
+                  [
+                    row.threadId,
+                    mapSessionRow(row, nativeIdentityByThread.get(row.threadId)),
+                  ] as const,
+              ),
+            );
+            const pullRequestsByThread = groupPullRequestRowsByThread(pullRequestRows);
 
-              const snapshot = {
-                snapshotSequence: computeSnapshotSequence(stateRows),
-                projects: Arr.filterMap(projectRows, (row) =>
-                  row.deletedAt === null
-                    ? Result.succeed(
-                        mapProjectShellRow(row, repositoryIdentities.get(row.projectId) ?? null),
-                      )
-                    : Result.failVoid,
-                ),
-                threads: Arr.filterMap(threadRows, (row) =>
-                  row.deletedAt === null
-                    ? Result.succeed({
-                        id: row.threadId,
-                        projectId: row.projectId,
-                        title: row.title,
-                        modelSelection: row.modelSelection,
-                        runtimeMode: row.runtimeMode,
-                        interactionMode: row.interactionMode,
-                        branch: row.branch,
-                        worktreePath: row.worktreePath,
-                        branchPullRequest: row.branchPullRequest,
-                        ...mapThreadPullRequests(
-                          pullRequestsByThread.get(row.threadId) ?? [],
-                          row.projectId,
-                          repositoryIdentities.get(row.projectId),
-                        ),
-                        latestTurn: latestTurnByThread.get(row.threadId) ?? null,
-                        createdAt: row.createdAt,
-                        updatedAt: row.updatedAt,
-                        archivedAt: row.archivedAt,
-                        settledOverride: row.settledOverride,
-                        settledAt: row.settledAt,
-                        unsettledAt: row.unsettledAt,
-                        snoozedUntil: row.snoozedUntil,
-                        snoozedAt: row.snoozedAt,
-                        pinnedAt: row.pinnedAt,
-                        pinOrderKey: row.pinOrderKey ?? null,
-                        activeOrderKey: row.activeOrderKey ?? null,
-                        titleRegeneration: mapTitleRegeneration(row),
-                        session: sessionByThread.get(row.threadId) ?? null,
-                        latestUserMessageAt: row.latestUserMessageAt,
-                        hasPendingApprovals: row.pendingApprovalCount > 0,
-                        hasPendingUserInput: row.pendingUserInputCount > 0,
-                        hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
-                        backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
-                          row.threadId,
-                        ),
-                        planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
-                      } satisfies OrchestrationThreadShell)
-                    : Result.failVoid,
-                ),
-                updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
-              };
+            const snapshot = {
+              snapshotSequence: computeSnapshotSequence(stateRows),
+              projects: Arr.filterMap(projectRows, (row) =>
+                row.deletedAt === null
+                  ? Result.succeed(
+                      mapProjectShellRow(row, repositoryIdentities.get(row.projectId) ?? null),
+                    )
+                  : Result.failVoid,
+              ),
+              threads: Arr.filterMap(threadRows, (row) =>
+                row.deletedAt === null
+                  ? Result.succeed({
+                      id: row.threadId,
+                      projectId: row.projectId,
+                      title: row.title,
+                      modelSelection: row.modelSelection,
+                      runtimeMode: row.runtimeMode,
+                      interactionMode: row.interactionMode,
+                      branch: row.branch,
+                      worktreePath: row.worktreePath,
+                      branchPullRequest: row.branchPullRequest,
+                      ...mapThreadPullRequests(
+                        pullRequestsByThread.get(row.threadId) ?? [],
+                        row.projectId,
+                        repositoryIdentities.get(row.projectId),
+                      ),
+                      latestTurn: latestTurnByThread.get(row.threadId) ?? null,
+                      createdAt: row.createdAt,
+                      updatedAt: row.updatedAt,
+                      archivedAt: row.archivedAt,
+                      settledOverride: row.settledOverride,
+                      settledAt: row.settledAt,
+                      unsettledAt: row.unsettledAt,
+                      snoozedUntil: row.snoozedUntil,
+                      snoozedAt: row.snoozedAt,
+                      pinnedAt: row.pinnedAt,
+                      pinOrderKey: row.pinOrderKey ?? null,
+                      activeOrderKey: row.activeOrderKey ?? null,
+                      titleRegeneration: mapTitleRegeneration(row),
+                      session: sessionByThread.get(row.threadId) ?? null,
+                      latestUserMessageAt: row.latestUserMessageAt,
+                      hasPendingApprovals: row.pendingApprovalCount > 0,
+                      hasPendingUserInput: row.pendingUserInputCount > 0,
+                      hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
+                      backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
+                        row.threadId,
+                      ),
+                      planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
+                    } satisfies OrchestrationThreadShell)
+                  : Result.failVoid,
+              ),
+              updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
+            };
 
-              return yield* decodeShellSnapshot(snapshot).pipe(
-                Effect.mapError(
-                  toPersistenceDecodeError(
-                    "ProjectionSnapshotQuery.getShellSnapshot:decodeShellSnapshot",
-                  ),
+            return yield* decodeShellSnapshot(snapshot).pipe(
+              Effect.mapError(
+                toPersistenceDecodeError(
+                  "ProjectionSnapshotQuery.getShellSnapshot:decodeShellSnapshot",
                 ),
-              );
-            }),
+              ),
+            );
+          }),
         ),
         Effect.mapError((error) => {
           if (isPersistenceError(error)) {
@@ -2924,111 +2931,119 @@ pending_approval_requests AS (
         ]),
       )
       .pipe(
-        Effect.flatMap(
-          (rows) =>
-            Effect.gen(function* () {
-              const [projectRows, threadRows, sessionRows, pullRequestRows, latestTurnRows, stateRows] =
-                rows;
-              // ThroughLine: native session identity rows ride the same query tuple.
-              const runtimeIdentityRows = rows[6];
-              let updatedAt: string | null = null;
-              for (const row of projectRows) {
-                updatedAt = maxIso(updatedAt, row.updatedAt);
+        Effect.flatMap((rows) =>
+          Effect.gen(function* () {
+            const [
+              projectRows,
+              threadRows,
+              sessionRows,
+              pullRequestRows,
+              latestTurnRows,
+              stateRows,
+            ] = rows;
+            // ThroughLine: native session identity rows ride the same query tuple.
+            const runtimeIdentityRows = rows[6];
+            let updatedAt: string | null = null;
+            for (const row of projectRows) {
+              updatedAt = maxIso(updatedAt, row.updatedAt);
+            }
+            for (const row of threadRows) {
+              updatedAt = maxIso(updatedAt, row.updatedAt);
+            }
+            for (const row of sessionRows) {
+              updatedAt = maxIso(updatedAt, row.updatedAt);
+            }
+            for (const row of latestTurnRows) {
+              updatedAt = maxIso(updatedAt, row.requestedAt);
+              if (row.startedAt !== null) {
+                updatedAt = maxIso(updatedAt, row.startedAt);
               }
-              for (const row of threadRows) {
-                updatedAt = maxIso(updatedAt, row.updatedAt);
+              if (row.completedAt !== null) {
+                updatedAt = maxIso(updatedAt, row.completedAt);
               }
-              for (const row of sessionRows) {
-                updatedAt = maxIso(updatedAt, row.updatedAt);
-              }
-              for (const row of latestTurnRows) {
-                updatedAt = maxIso(updatedAt, row.requestedAt);
-                if (row.startedAt !== null) {
-                  updatedAt = maxIso(updatedAt, row.startedAt);
-                }
-                if (row.completedAt !== null) {
-                  updatedAt = maxIso(updatedAt, row.completedAt);
-                }
-              }
-              for (const row of stateRows) {
-                updatedAt = maxIso(updatedAt, row.updatedAt);
-              }
+            }
+            for (const row of stateRows) {
+              updatedAt = maxIso(updatedAt, row.updatedAt);
+            }
 
-              const pullRequestsByThread = groupPullRequestRowsByThread(pullRequestRows);
-              const activeProjectIds = new Set(threadRows.map((row) => row.projectId));
-              const repositoryIdentities = yield* resolveRepositoryIdentitiesForProjects(
-                projectRows.filter((row) => activeProjectIds.has(row.projectId)),
-              );
-              const latestTurnByThread = new Map(
-                latestTurnRows.map((row) => [row.threadId, mapLatestTurn(row)] as const),
-              );
-              // ThroughLine: native session identity, keyed by thread for the session map below.
-              const nativeIdentityByThread = buildNativeIdentityMap(runtimeIdentityRows);
-              const sessionByThread = new Map(
-                sessionRows.map(
-                  (row) =>
-                    [row.threadId, mapSessionRow(row, nativeIdentityByThread.get(row.threadId))] as const,
-                ),
-              );
-
-              const snapshot = {
-                snapshotSequence: computeSnapshotSequence(stateRows),
-                projects: Arr.filterMap(projectRows, (row) =>
-                  row.deletedAt === null && activeProjectIds.has(row.projectId)
-                    ? Result.succeed(
-                        mapProjectShellRow(row, repositoryIdentities.get(row.projectId) ?? null),
-                      )
-                    : Result.failVoid,
-                ),
-                threads: threadRows.map((row): OrchestrationThreadShell => ({
-                  id: row.threadId,
-                  projectId: row.projectId,
-                  title: row.title,
-                  modelSelection: row.modelSelection,
-                  runtimeMode: row.runtimeMode,
-                  interactionMode: row.interactionMode,
-                  branch: row.branch,
-                  worktreePath: row.worktreePath,
-                  branchPullRequest: row.branchPullRequest,
-                  ...mapThreadPullRequests(
-                    pullRequestsByThread.get(row.threadId) ?? [],
-                    row.projectId,
-                    repositoryIdentities.get(row.projectId),
-                  ),
-                  latestTurn: latestTurnByThread.get(row.threadId) ?? null,
-                  createdAt: row.createdAt,
-                  updatedAt: row.updatedAt,
-                  archivedAt: row.archivedAt,
-                  settledOverride: row.settledOverride,
-                  settledAt: row.settledAt,
-                  unsettledAt: row.unsettledAt,
-                  snoozedUntil: row.snoozedUntil,
-                  snoozedAt: row.snoozedAt,
-                  pinnedAt: row.pinnedAt,
-                  pinOrderKey: row.pinOrderKey ?? null,
-                  activeOrderKey: row.activeOrderKey ?? null,
-                  titleRegeneration: mapTitleRegeneration(row),
-                  session: sessionByThread.get(row.threadId) ?? null,
-                  latestUserMessageAt: row.latestUserMessageAt,
-                  hasPendingApprovals: row.pendingApprovalCount > 0,
-                  hasPendingUserInput: row.pendingUserInputCount > 0,
-                  hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
-                  backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
+            const pullRequestsByThread = groupPullRequestRowsByThread(pullRequestRows);
+            const activeProjectIds = new Set(threadRows.map((row) => row.projectId));
+            const repositoryIdentities = yield* resolveRepositoryIdentitiesForProjects(
+              projectRows.filter((row) => activeProjectIds.has(row.projectId)),
+            );
+            const latestTurnByThread = new Map(
+              latestTurnRows.map((row) => [row.threadId, mapLatestTurn(row)] as const),
+            );
+            // ThroughLine: native session identity, keyed by thread for the session map below.
+            const nativeIdentityByThread = buildNativeIdentityMap(runtimeIdentityRows);
+            const sessionByThread = new Map(
+              sessionRows.map(
+                (row) =>
+                  [
                     row.threadId,
-                  ),
-                  planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
-                })),
-                updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
-              };
+                    mapSessionRow(row, nativeIdentityByThread.get(row.threadId)),
+                  ] as const,
+              ),
+            );
 
-              return yield* decodeShellSnapshot(snapshot).pipe(
-                Effect.mapError(
-                  toPersistenceDecodeError(
-                    "ProjectionSnapshotQuery.getArchivedShellSnapshot:decodeShellSnapshot",
-                  ),
+            const snapshot = {
+              snapshotSequence: computeSnapshotSequence(stateRows),
+              projects: Arr.filterMap(projectRows, (row) =>
+                row.deletedAt === null && activeProjectIds.has(row.projectId)
+                  ? Result.succeed(
+                      mapProjectShellRow(row, repositoryIdentities.get(row.projectId) ?? null),
+                    )
+                  : Result.failVoid,
+              ),
+              threads: threadRows.map((row): OrchestrationThreadShell => ({
+                id: row.threadId,
+                projectId: row.projectId,
+                title: row.title,
+                modelSelection: row.modelSelection,
+                runtimeMode: row.runtimeMode,
+                interactionMode: row.interactionMode,
+                branch: row.branch,
+                worktreePath: row.worktreePath,
+                branchPullRequest: row.branchPullRequest,
+                ...mapThreadPullRequests(
+                  pullRequestsByThread.get(row.threadId) ?? [],
+                  row.projectId,
+                  repositoryIdentities.get(row.projectId),
                 ),
-              );
-            }),
+                latestTurn: latestTurnByThread.get(row.threadId) ?? null,
+                createdAt: row.createdAt,
+                updatedAt: row.updatedAt,
+                archivedAt: row.archivedAt,
+                settledOverride: row.settledOverride,
+                settledAt: row.settledAt,
+                unsettledAt: row.unsettledAt,
+                snoozedUntil: row.snoozedUntil,
+                snoozedAt: row.snoozedAt,
+                pinnedAt: row.pinnedAt,
+                pinOrderKey: row.pinOrderKey ?? null,
+                activeOrderKey: row.activeOrderKey ?? null,
+                titleRegeneration: mapTitleRegeneration(row),
+                session: sessionByThread.get(row.threadId) ?? null,
+                latestUserMessageAt: row.latestUserMessageAt,
+                hasPendingApprovals: row.pendingApprovalCount > 0,
+                hasPendingUserInput: row.pendingUserInputCount > 0,
+                hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
+                backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
+                  row.threadId,
+                ),
+                planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
+              })),
+              updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
+            };
+
+            return yield* decodeShellSnapshot(snapshot).pipe(
+              Effect.mapError(
+                toPersistenceDecodeError(
+                  "ProjectionSnapshotQuery.getArchivedShellSnapshot:decodeShellSnapshot",
+                ),
+              ),
+            );
+          }),
         ),
         Effect.mapError((error) => {
           if (isPersistenceError(error)) {
@@ -3274,49 +3289,50 @@ pending_approval_requests AS (
 
   const getThreadShellById: ProjectionSnapshotQueryShape["getThreadShellById"] = (threadId) =>
     Effect.gen(function* () {
-      const [threadRow, latestTurnRow, sessionRow, runtimeIdentityRow, pullRequestRows] = yield* Effect.all([
-        getActiveThreadRowById({ threadId }).pipe(
-          Effect.mapError(
-            toPersistenceSqlOrDecodeError(
-              "ProjectionSnapshotQuery.getThreadShellById:getThread:query",
-              "ProjectionSnapshotQuery.getThreadShellById:getThread:decodeRow",
+      const [threadRow, latestTurnRow, sessionRow, runtimeIdentityRow, pullRequestRows] =
+        yield* Effect.all([
+          getActiveThreadRowById({ threadId }).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getThreadShellById:getThread:query",
+                "ProjectionSnapshotQuery.getThreadShellById:getThread:decodeRow",
+              ),
             ),
           ),
-        ),
-        getLatestTurnRowByThread({ threadId }).pipe(
-          Effect.mapError(
-            toPersistenceSqlOrDecodeError(
-              "ProjectionSnapshotQuery.getThreadShellById:getLatestTurn:query",
-              "ProjectionSnapshotQuery.getThreadShellById:getLatestTurn:decodeRow",
+          getLatestTurnRowByThread({ threadId }).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getThreadShellById:getLatestTurn:query",
+                "ProjectionSnapshotQuery.getThreadShellById:getLatestTurn:decodeRow",
+              ),
             ),
           ),
-        ),
-        getThreadSessionRowByThread({ threadId }).pipe(
-          Effect.mapError(
-            toPersistenceSqlOrDecodeError(
-              "ProjectionSnapshotQuery.getThreadShellById:getSession:query",
-              "ProjectionSnapshotQuery.getThreadShellById:getSession:decodeRow",
+          getThreadSessionRowByThread({ threadId }).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getThreadShellById:getSession:query",
+                "ProjectionSnapshotQuery.getThreadShellById:getSession:decodeRow",
+              ),
             ),
           ),
-        ),
-        // ThroughLine: native session identity for the copy-session-uuid row actions.
-        getProviderSessionRuntimeIdentityRowByThread({ threadId }).pipe(
-          Effect.mapError(
-            toPersistenceSqlOrDecodeError(
-              "ProjectionSnapshotQuery.getThreadShellById:getProviderSessionRuntimeIdentity:query",
-              "ProjectionSnapshotQuery.getThreadShellById:getProviderSessionRuntimeIdentity:decodeRow",
+          // ThroughLine: native session identity for the copy-session-uuid row actions.
+          getProviderSessionRuntimeIdentityRowByThread({ threadId }).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getThreadShellById:getProviderSessionRuntimeIdentity:query",
+                "ProjectionSnapshotQuery.getThreadShellById:getProviderSessionRuntimeIdentity:decodeRow",
+              ),
             ),
           ),
-        ),
-        listThreadPullRequestRowsByThread({ threadId }).pipe(
-          Effect.mapError(
-            toPersistenceSqlOrDecodeError(
-              "ProjectionSnapshotQuery.getThreadShellById:listPullRequests:query",
-              "ProjectionSnapshotQuery.getThreadShellById:listPullRequests:decodeRows",
+          listThreadPullRequestRowsByThread({ threadId }).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getThreadShellById:listPullRequests:query",
+                "ProjectionSnapshotQuery.getThreadShellById:listPullRequests:decodeRows",
+              ),
             ),
           ),
-        ),
-      ]);
+        ]);
 
       if (Option.isNone(threadRow)) {
         return Option.none<OrchestrationThreadShell>();

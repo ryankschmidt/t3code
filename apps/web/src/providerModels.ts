@@ -9,7 +9,11 @@ import {
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
-import { createModelCapabilities, normalizeModelSlug, resolveSelectableModel } from "@t3tools/shared/model";
+import {
+  createModelCapabilities,
+  normalizeModelSlug,
+  resolveSelectableModel,
+} from "@t3tools/shared/model";
 import { applyModelFamilyOrdering } from "./modelFamilyOrdering";
 
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({

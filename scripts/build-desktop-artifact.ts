@@ -3754,12 +3754,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stageDependencies =
     options.platform === "win"
       ? { ...resolvedDesktopRuntimeDependencies }
-      // ThroughLine fork: the server bundle inlines every dependency except the runtime-external
-      // roots selected above. Carrying all declared dependencies leaks local file: workspace
-      // links (for example @ryan/coms-net) into the detached staging directory, where they
-      // cannot resolve and are redundant with bytes already in bin.mjs. Upstream's mac/linux
-      // split is kept; the dependency set is the fork's runtime-external set on both.
-      : options.platform === "mac"
+      : // ThroughLine fork: the server bundle inlines every dependency except the runtime-external
+        // roots selected above. Carrying all declared dependencies leaks local file: workspace
+        // links (for example @ryan/coms-net) into the detached staging directory, where they
+        // cannot resolve and are redundant with bytes already in bin.mjs. Upstream's mac/linux
+        // split is kept; the dependency set is the fork's runtime-external set on both.
+        options.platform === "mac"
         ? resolveMacStageDependencies({
             serverDependencies: resolvedServerRuntimeExternalDependencies,
             desktopDependencies: resolvedDesktopRuntimeDependencies,

@@ -64,7 +64,10 @@ describe("buildThreadActionMenuItems", () => {
     expect(allIds(baseState)).not.toContain("copy-session-uuid");
     expect(allIds(baseState)).not.toContain("copy-transcript-path");
 
-    const withSession = allIds({ ...baseState, sessionUuid: "99ff54ed-45a4-4838-b203-8d974a4d1618" });
+    const withSession = allIds({
+      ...baseState,
+      sessionUuid: "99ff54ed-45a4-4838-b203-8d974a4d1618",
+    });
     expect(withSession).toContain("copy-session-uuid");
     expect(withSession).not.toContain("copy-transcript-path");
 
