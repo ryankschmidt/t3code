@@ -184,7 +184,7 @@ export function parsePiMeridianRouteConfig(
  * `reason` is machine-routable; `detail` is the operator-facing message that
  * names the seam. Never carries credential values.
  */
-export class PiMeridianRouteError extends Schema.TaggedErrorClass<PiMeridianRouteError>()(
+export class PiMeridianRouteError extends Schema.TaggedError<PiMeridianRouteError>()(
   "PiMeridianRouteError",
   {
     reason: Schema.Literals(["not-configured", "config-invalid", "unreachable"]),

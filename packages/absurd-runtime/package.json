@@ -19,7 +19,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsc --noEmit",
     "smoke": "node --env-file=.env --experimental-strip-types src/smoke.ts"
   },
   "dependencies": {

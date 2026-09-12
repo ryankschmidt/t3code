@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  McpCapabilityUnavailableError,
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
   type ThreadId,
@@ -8,7 +9,7 @@ import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 
-export type McpCapability = "preview" | "comsnet";
+export type McpCapability = "preview" | "device" | "pull-requests" | "comsnet";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
@@ -24,36 +25,36 @@ export class McpInvocationContext extends Context.Service<
   McpInvocationScope
 >()("t3/mcp/McpInvocationContext") {}
 
-export class McpCapabilityUnavailableError extends Data.TaggedError(
-  "McpCapabilityUnavailableError",
-)<{
-  readonly capability: McpCapability;
-  readonly threadId: ThreadId;
-}> {}
+/** The error a missing capability surfaces as; preview keeps its own so the broker can route it. */
+export type McpCapabilityError<C extends McpCapability> = C extends "preview"
+  ? PreviewAutomationUnavailableError
+  : McpCapabilityUnavailableError;
 
-export const requireMcpCapability = Effect.fn("mcp.requireCapability")(function* (
-  _capability: "preview" = "preview",
-) {
-  const invocation = yield* McpInvocationContext;
-  if (!invocation.capabilities.has("preview")) {
-    return yield* new PreviewAutomationUnavailableError({
-      capability: "preview",
-      environmentId: invocation.environmentId,
-      threadId: invocation.threadId,
-      providerSessionId: invocation.providerSessionId,
-      providerInstanceId: invocation.providerInstanceId,
-    });
-  }
-  return invocation;
-});
+const missingCapability = (
+  invocation: McpInvocationScope,
+  capability: McpCapability,
+): PreviewAutomationUnavailableError | McpCapabilityUnavailableError => {
+  const fields = {
+    environmentId: invocation.environmentId,
+    threadId: invocation.threadId,
+    providerSessionId: invocation.providerSessionId,
+    providerInstanceId: invocation.providerInstanceId,
+  };
+  return capability === "preview"
+    ? new PreviewAutomationUnavailableError({ capability, ...fields })
+    : new McpCapabilityUnavailableError({ capability, ...fields });
+};
 
-export const requireComsNetCapability = Effect.fn("mcp.requireComsNetCapability")(function* () {
-  const invocation = yield* McpInvocationContext;
-  if (!invocation.capabilities.has("comsnet")) {
-    return yield* new McpCapabilityUnavailableError({
-      capability: "comsnet",
-      threadId: invocation.threadId,
-    });
-  }
-  return invocation;
-});
+export const requireMcpCapability = <const C extends McpCapability>(
+  capability: C,
+): Effect.Effect<McpInvocationScope, McpCapabilityError<C>, McpInvocationContext> =>
+  Effect.flatMap(McpInvocationContext, (invocation) =>
+    invocation.capabilities.has(capability)
+      ? Effect.succeed(invocation)
+      : // The conditional type narrows what the literal argument decided at runtime.
+        Effect.fail(missingCapability(invocation, capability) as McpCapabilityError<C>),
+  ).pipe(Effect.withSpan("mcp.requireCapability"));
+
+// ThroughLine: the ComsNet toolkit keeps its named guard; it is upstream's generic guard
+// applied to the fork-owned "comsnet" capability.
+export const requireComsNetCapability = () => requireMcpCapability("comsnet");

@@ -85,6 +85,7 @@ it.layer(TestLayer)("ComsNetTransport real provider lifecycle join", (it) => {
             providerInstanceId,
             endpoint: "http://127.0.0.1:3773/mcp",
             authorizationHeader: "Bearer token-a",
+            capabilities: new Set(["comsnet"]),
           });
           McpProviderSession.setMcpProviderSession({
             environmentId: EnvironmentId.make("environment-a"),
@@ -93,6 +94,7 @@ it.layer(TestLayer)("ComsNetTransport real provider lifecycle join", (it) => {
             providerInstanceId,
             endpoint: "http://127.0.0.1:3773/mcp",
             authorizationHeader: "Bearer token-b",
+            capabilities: new Set(["comsnet"]),
           });
         }),
         () =>

@@ -132,7 +132,7 @@ export const SymphonyTaskStatusOutput = Schema.Struct({
 export type SymphonyTaskStatusOutput = typeof SymphonyTaskStatusOutput.Type;
 
 /** Fail-closed error when the server-owned AbsurdRuntime service is absent. */
-export class SymphonyRuntimeUnavailableError extends Schema.TaggedErrorClass<SymphonyRuntimeUnavailableError>()(
+export class SymphonyRuntimeUnavailableError extends Schema.TaggedError<SymphonyRuntimeUnavailableError>()(
   "SymphonyRuntimeUnavailableError",
   {
     message: TrimmedNonEmptyString,
@@ -141,7 +141,7 @@ export class SymphonyRuntimeUnavailableError extends Schema.TaggedErrorClass<Sym
 ) {}
 
 /** Spawn rejected (off-table model) or the in-process spawn call failed. */
-export class SymphonySpawnError extends Schema.TaggedErrorClass<SymphonySpawnError>()(
+export class SymphonySpawnError extends Schema.TaggedError<SymphonySpawnError>()(
   "SymphonySpawnError",
   {
     message: TrimmedNonEmptyString,
@@ -150,7 +150,7 @@ export class SymphonySpawnError extends Schema.TaggedErrorClass<SymphonySpawnErr
 ) {}
 
 /** Status read failed, or the task id is unknown to the queue. */
-export class SymphonyTaskStatusError extends Schema.TaggedErrorClass<SymphonyTaskStatusError>()(
+export class SymphonyTaskStatusError extends Schema.TaggedError<SymphonyTaskStatusError>()(
   "SymphonyTaskStatusError",
   {
     message: TrimmedNonEmptyString,
@@ -225,7 +225,7 @@ export const SYMPHONY_REQUIRED_READINESS_CHECKS = [
  * operational detail. Nothing is enqueued, no claim or lease is consumed, and
  * the silent-hang failure shape is unreachable from a not-ready spawn.
  */
-export class RuntimeNotReady extends Schema.TaggedErrorClass<RuntimeNotReady>()("RuntimeNotReady", {
+export class RuntimeNotReady extends Schema.TaggedError<RuntimeNotReady>()("RuntimeNotReady", {
   message: TrimmedNonEmptyString,
   notReady: Schema.Array(SymphonyReadinessCheckName),
 }) {}

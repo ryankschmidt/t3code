@@ -75,6 +75,7 @@ function makeThread(input: {
     activities: [],
     checkpoints: [],
     session: input.session,
+    pullRequests: [],
   };
 }
 
@@ -119,6 +120,11 @@ function makeSnapshotQueryLayer(input: {
     getFullThreadDiffContext: () => Effect.die("unused"),
     getThreadShellById: () => Effect.die("unused"),
     getThreadDetailById: () => Effect.die("unused"),
+    getUserInputActivity: () => Effect.die("unused"),
+    getEventReplayStats: () => Effect.die("unused"),
+    getImportedAgentSessionSources: () => Effect.die("unused"),
+    getThreadRuntimeContext: () => Effect.die("unused"),
+    getTurnStartMessage: () => Effect.die("unused"),
   });
 }
 
@@ -138,6 +144,9 @@ function makeEngine(input?: { readonly failFor?: ReadonlySet<string> }): {
           }),
     streamDomainEvents: Stream.empty,
     latestSequence: Effect.succeed(0),
+    readThreadEvents: () => Stream.empty,
+    getThreadReplayStats: () => Effect.die("unused"),
+    subscribeDomainEvents: Effect.die("unused"),
   };
   return { engine, dispatched };
 }
