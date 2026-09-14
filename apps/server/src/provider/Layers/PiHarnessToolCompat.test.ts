@@ -71,6 +71,9 @@ import { OrchestrationProjectionSnapshotQueryLive } from "../../orchestration/La
 import { ProviderRuntimeIngestionLive } from "../../orchestration/Layers/ProviderRuntimeIngestion.ts";
 import { layer as ThreadBackgroundLivenessLive } from "../../orchestration/ThreadBackgroundLiveness.ts";
 import { layer as ThreadPlanProgressLive } from "../../orchestration/ThreadPlanProgress.ts";
+import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
+import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
+import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderRuntimeIngestionService } from "../../orchestration/Services/ProviderRuntimeIngestion.ts";
@@ -746,6 +749,9 @@ function createProviderServiceHarness() {
     respondToUserInput: () => unsupported(),
     stopSession: () => unsupported(),
     listSessions: () => Effect.succeed([...runtimeSessions]),
+    compactThread: () => unsupported(),
+    assertConversationRollbackSupported: () => unsupported(),
+    uploadFeedback: () => unsupported(),
     getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
     getInstanceInfo: (instanceId) => {
       const driverKind = ProviderDriverKind.make(String(instanceId));
@@ -808,6 +814,9 @@ describe("Pi harness tool-compatibility pack (scenario 8, restart durability)", 
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
       Layer.provideMerge(ThreadBackgroundLivenessLive),
       Layer.provideMerge(ThreadPlanProgressLive),
+      // ThroughLine: upstream's ingestion layer now requires the checkpoint store.
+      Layer.provideMerge(CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer))),
+      Layer.provideMerge(VcsProcess.layer),
       Layer.provideMerge(NodeServices.layer),
     );
     const runtime = ManagedRuntime.make(layer);

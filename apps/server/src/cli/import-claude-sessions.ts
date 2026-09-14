@@ -50,7 +50,7 @@ import { FetchHttpClient, HttpClient } from "effect/unstable/http";
 import * as ServerConfig from "../config.ts";
 import { OrchestrationLayerLive } from "../orchestration/runtimeLayer.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProviderSessionRuntimeRepositoryLive } from "../persistence/Layers/ProviderSessionRuntime.ts";
+import { layer as ProviderSessionRuntimeRepositoryLive } from "../persistence/ProviderSessionRuntime.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "../persistence/Layers/Sqlite.ts";
 import {
   ProviderSessionRuntime,
@@ -318,7 +318,7 @@ const selectSessions = Effect.fn(function* () {
 
 // ── Live-server refusal guard (HttpClient) ─────────────────────────────
 
-class ServerHoldsStateError extends Schema.TaggedErrorClass<ServerHoldsStateError>()(
+class ServerHoldsStateError extends Schema.TaggedError<ServerHoldsStateError>()(
   "ServerHoldsStateError",
   { message: Schema.String },
 ) {}

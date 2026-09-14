@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - ThroughLine: the lockstep install test builds real staging layouts on disk before any Effect runtime exists.
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

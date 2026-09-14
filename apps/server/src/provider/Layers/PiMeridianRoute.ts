@@ -170,12 +170,10 @@ export function parsePiMeridianRouteConfig(
       }
       return { _tag: "configured", target };
     }),
-    Effect.orElseSucceed(
-      (): PiMeridianRouteConfigResult => ({
-        _tag: "invalid",
-        reason: "models.json is not parseable JSON in the expected shape",
-      }),
-    ),
+    Effect.orElseSucceed((): PiMeridianRouteConfigResult => ({
+      _tag: "invalid",
+      reason: "models.json is not parseable JSON in the expected shape",
+    })),
   );
 }
 
@@ -184,7 +182,7 @@ export function parsePiMeridianRouteConfig(
  * `reason` is machine-routable; `detail` is the operator-facing message that
  * names the seam. Never carries credential values.
  */
-export class PiMeridianRouteError extends Schema.TaggedErrorClass<PiMeridianRouteError>()(
+export class PiMeridianRouteError extends Schema.TaggedError<PiMeridianRouteError>()(
   "PiMeridianRouteError",
   {
     reason: Schema.Literals(["not-configured", "config-invalid", "unreachable"]),
@@ -307,9 +305,10 @@ export function makePiMeridianRouteGuard(
 
   const guardAnthropicTurn: PiMeridianRouteGuardShape["guardAnthropicTurn"] = (model) =>
     Effect.gen(function* () {
-      const contents = yield* fileSystem
-        .readFileString(configPath)
-        .pipe(Effect.map((value): string | undefined => value), Effect.orElseSucceed(() => undefined));
+      const contents = yield* fileSystem.readFileString(configPath).pipe(
+        Effect.map((value): string | undefined => value),
+        Effect.orElseSucceed(() => undefined),
+      );
       if (contents === undefined) {
         return yield* new PiMeridianRouteError({
           reason: "not-configured",
