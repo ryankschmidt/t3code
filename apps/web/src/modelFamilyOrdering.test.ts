@@ -127,6 +127,8 @@ describe("applyModelFamilyOrdering", () => {
     expect(ordered.map((model) => model.slug)).toEqual([
       "anthropic/claude-sonnet-4-9",
       "anthropic/claude-opus-4-8",
+      "openai/gpt-5.5",
+      "openai/gpt-5.4",
       "kimi/k2",
       "openrouter/meta-llama-3",
     ]);
@@ -211,8 +213,6 @@ describe("getAppModelOptionsForInstance (pi end-to-end)", () => {
     expect(piOptions()).toEqual([
       "anthropic/claude-sonnet-4-9",
       "anthropic/claude-opus-4-8",
-      "openai/gpt-5.5",
-      "openai/gpt-5.4",
       "kimi/k2",
       "openrouter/meta-llama-3",
     ]);

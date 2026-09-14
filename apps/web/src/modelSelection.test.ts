@@ -298,7 +298,7 @@ describe("instance-scoped model selection", () => {
       getAppModelOptionsForInstance(settingsWithProviderInstances(), openrouter).map(
         (option) => option.slug,
       ),
-    ).toEqual(["claude-sonnet-4-6", "openai/gpt-5.5"]);
+    ).toEqual(["claude-sonnet-4-6", "openai/gpt-5.6-sol"]);
   });
 
   it("applies persisted per-instance model ordering", () => {
@@ -805,7 +805,7 @@ describe("instance-scoped model selection", () => {
     const threadSelection = createModelSelection(instanceId, "claude-opus-5", [
       { id: "effort", value: "high" },
     ]);
-    const draftSelection = createModelSelection(instanceId, "openai/gpt-5.5", [
+    const draftSelection = createModelSelection(instanceId, "openai/gpt-5.6-sol", [
       { id: "effort", value: "max" },
     ]);
     const state = deriveEffectiveComposerModelState({
@@ -830,7 +830,7 @@ describe("instance-scoped model selection", () => {
 
     expect(
       createModelSelection(instanceId, state.selectedModel, dispatch.modelOptionsForDispatch),
-    ).toEqual(createModelSelection(instanceId, "openai/gpt-5.5"));
+    ).toEqual(createModelSelection(instanceId, "openai/gpt-5.6-sol"));
   });
 
   it("preserves custom provider instances in settings model selection", () => {

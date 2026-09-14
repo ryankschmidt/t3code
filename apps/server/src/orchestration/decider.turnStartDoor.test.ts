@@ -50,6 +50,7 @@ function makeReadModel(messages: ReadonlyArray<OrchestrationMessage>): Orchestra
         messages,
         proposedPlans: [],
         activities: [],
+        pullRequests: [],
         checkpoints: [],
         session: null,
       },
