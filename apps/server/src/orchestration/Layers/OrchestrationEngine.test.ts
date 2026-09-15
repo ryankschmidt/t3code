@@ -2,6 +2,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import { JsonFileComsNetStore } from "@ryan/coms-net";
 
 import {
   ApprovalRequestId,
@@ -54,6 +55,7 @@ import {
 } from "../Services/ProjectionPipeline.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
+import { layer as ComsNetTransportLive } from "../../mcp/ComsNetTransport.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
@@ -63,6 +65,7 @@ const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(val
 function makeOrchestrationLayer(
   databasePath?: string,
   repositoryIdentityResolver?: RepositoryIdentityResolver.RepositoryIdentityResolver["Service"],
+  realComsNet = false,
 ) {
   const persistence = databasePath
     ? makeSqlitePersistenceLive(databasePath)
@@ -73,7 +76,14 @@ function makeOrchestrationLayer(
   return Layer.mergeAll(
     OrchestrationEngineLive.pipe(
       Layer.provide(OrchestrationProjectionSnapshotQueryLive),
-      Layer.provide(OrchestrationProjectionPipelineLive),
+      Layer.provide(
+        realComsNet
+          ? OrchestrationProjectionPipelineLive.pipe(
+              Layer.provide(ComsNetTransportLive),
+              Layer.provide(OrchestrationProjectionSnapshotQueryLive),
+            )
+          : OrchestrationProjectionPipelineLive,
+      ),
     ),
     OrchestrationProjectionSnapshotQueryLive,
   ).pipe(
@@ -130,6 +140,119 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  it("settles a ComsNet-marked orphan without waiting on its own SQLite transaction", async () => {
+    const runtime = ManagedRuntime.make(makeOrchestrationLayer(undefined, undefined, true));
+    try {
+      const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
+      const snapshots = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
+      const config = await runtime.runPromise(Effect.service(ServerConfig));
+      const threadId = ThreadId.make("comsnet-orphan");
+      const projectId = ProjectId.make("comsnet-orphan-project");
+      const turnId = TurnId.make("comsnet-orphan-turn");
+      const requestId = "11111111-1111-1111-1111-111111111111";
+      const dispatch = (command: OrchestrationCommand) =>
+        runtime.runPromise(engine.dispatch(command));
+      await dispatch({
+        type: "project.create",
+        commandId: CommandId.make("comsnet-project"),
+        projectId,
+        title: "ComsNet",
+        workspaceRoot: config.stateDir,
+        createdAt: now(),
+      });
+      await dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("comsnet-thread"),
+        threadId,
+        projectId,
+        title: "ComsNet orphan",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdAt: now(),
+      });
+      await dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("comsnet-turn"),
+        threadId,
+        message: {
+          messageId: MessageId.make("comsnet-marker"),
+          role: "user",
+          text: `<!-- comsnet-request:${requestId} -->`,
+          attachments: [],
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt: now(),
+      });
+      const session = {
+        threadId,
+        providerName: "codex" as const,
+        runtimeMode: "full-access" as const,
+        activeTurnId: turnId,
+        lastError: null,
+        updatedAt: now(),
+      };
+      await dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("comsnet-running"),
+        threadId,
+        createdAt: now(),
+        session: { ...session, status: "running" },
+      });
+      const before = await runtime.runPromise(snapshots.getSnapshot());
+      expect(before.threads[0]?.session?.status).toBe("running");
+      expect(before.threads[0]?.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ turnId, text: `<!-- comsnet-request:${requestId} -->` }),
+        ]),
+      );
+      const store = new JsonFileComsNetStore(
+        NodePath.join(config.stateDir, "coms-net", "requests.json"),
+      );
+      // A persisted terminal request still resolves peers before terminal handling.
+      // No surviving MCP session is needed to reproduce the startup deadlock.
+      const request = {
+        requestId,
+        senderPeerId: "codex:sender",
+        senderThreadId: "sender",
+        receiverPeerId: "codex:receiver",
+        receiverThreadId: threadId,
+        kind: "test",
+        payload: {},
+        status: "failed" as const,
+        error: "previous failure",
+        createdAt: now(),
+      };
+      await store.insert(request);
+      await runtime.runPromise(
+        engine
+          .dispatch({
+            type: "thread.session.set",
+            commandId: CommandId.make("comsnet-error"),
+            threadId,
+            createdAt: now(),
+            session: {
+              ...session,
+              status: "error",
+              activeTurnId: null,
+              lastError: "Provider session did not survive a server restart",
+            },
+          })
+          .pipe(Effect.timeout("5 seconds")),
+      );
+      const after = await runtime.runPromise(
+        snapshots.getSnapshot().pipe(Effect.timeout("5 seconds")),
+      );
+      expect(after.threads[0]?.session?.status).toBe("error");
+      expect(await store.get(requestId)).toEqual(request);
+    } finally {
+      await runtime.dispose();
+    }
+  }, 15_000);
+
   it.each(["running", "stopped"] as const)(
     "sends async answers with a %s session and rejects old duplicate replies",
     async (status) => {

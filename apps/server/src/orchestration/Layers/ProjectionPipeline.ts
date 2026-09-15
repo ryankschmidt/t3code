@@ -113,13 +113,17 @@ interface ProjectorDefinition {
   readonly name: ProjectorName;
   readonly apply: (
     event: OrchestrationEvent,
-    attachmentSideEffects: AttachmentSideEffects,
+    attachmentSideEffects: ProjectionSideEffects,
   ) => Effect.Effect<void, ProjectionRepositoryError>;
 }
 
 interface AttachmentSideEffects {
   readonly deletedThreadIds: Set<string>;
   readonly prunedThreadRelativePaths: Map<string, Set<string>>;
+}
+
+interface ProjectionSideEffects extends AttachmentSideEffects {
+  readonly comsNetNotifications: Array<Effect.Effect<void>>;
 }
 
 const materializeAttachmentsForProjection = Effect.fn("materializeAttachmentsForProjection")(
@@ -1541,7 +1545,18 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyThreadTurnsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadTurnsProjection",
-    )(function* (event, _attachmentSideEffects) {
+    )(function* (event, sideEffects) {
+      // The transport resolves peers through a separate Effect runtime. Running it
+      // here would wait for the SQLite permit held by the enclosing transaction.
+      const notifyAfterCommit = (notification: Effect.Effect<void, ProjectionRepositoryError>) => {
+        sideEffects.comsNetNotifications.push(
+          notification.pipe(
+            Effect.catch((cause) =>
+              Effect.logError("Failed to notify ComsNet after projection commit", { cause }),
+            ),
+          ),
+        );
+      };
       switch (event.type) {
         case "thread.created":
           yield* projectionTurnRepository.deleteByThreadId({
@@ -1646,19 +1661,19 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                     completedAt: event.payload.session.updatedAt,
                   });
                   if (settledTurnState !== "completed" || turn.assistantMessageId === null) {
-                    yield* failComsNetTurn(
-                      event.payload.threadId,
-                      turnId,
-                      settledTurnState === "completed"
-                        ? `receiver turn ${turnId} settled without an assistant message`
-                        : `receiver turn ${turnId} ended with status ${event.payload.session.status}`,
+                    notifyAfterCommit(
+                      failComsNetTurn(
+                        event.payload.threadId,
+                        turnId,
+                        settledTurnState === "completed"
+                          ? `receiver turn ${turnId} settled without an assistant message`
+                          : `receiver turn ${turnId} ended with status ${event.payload.session.status}`,
+                      ),
                     );
                     return;
                   }
-                  yield* completeComsNetTurn(
-                    event.payload.threadId,
-                    turnId,
-                    turn.assistantMessageId,
+                  notifyAfterCommit(
+                    completeComsNetTurn(event.payload.threadId, turnId, turn.assistantMessageId),
                   );
                 });
               },
@@ -1927,18 +1942,22 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           }
           if (!turnStillRunning) {
             if (event.payload.status === "error" || event.payload.assistantMessageId === null) {
-              yield* failComsNetTurn(
-                event.payload.threadId,
-                event.payload.turnId,
-                event.payload.status === "error"
-                  ? `receiver turn ${event.payload.turnId} ended with status error`
-                  : `receiver turn ${event.payload.turnId} settled without an assistant message`,
+              notifyAfterCommit(
+                failComsNetTurn(
+                  event.payload.threadId,
+                  event.payload.turnId,
+                  event.payload.status === "error"
+                    ? `receiver turn ${event.payload.turnId} ended with status error`
+                    : `receiver turn ${event.payload.turnId} settled without an assistant message`,
+                ),
               );
             } else {
-              yield* completeComsNetTurn(
-                event.payload.threadId,
-                event.payload.turnId,
-                event.payload.assistantMessageId,
+              notifyAfterCommit(
+                completeComsNetTurn(
+                  event.payload.threadId,
+                  event.payload.turnId,
+                  event.payload.assistantMessageId,
+                ),
               );
             }
           }
@@ -2253,9 +2272,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       projector: ProjectorDefinition,
       event: OrchestrationEvent,
     ) {
-      const attachmentSideEffects: AttachmentSideEffects = {
+      const attachmentSideEffects: ProjectionSideEffects = {
         deletedThreadIds: new Set<string>(),
         prunedThreadRelativePaths: new Map<string, Set<string>>(),
+        comsNetNotifications: [],
       };
 
       yield* sql.withTransaction(
@@ -2268,6 +2288,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           });
         }),
       );
+      yield* Effect.forEach(attachmentSideEffects.comsNetNotifications, (effect) => effect, {
+        concurrency: 1,
+        discard: true,
+      });
     });
 
     const bootstrapProjector = (projector: ProjectorDefinition) =>
@@ -2290,9 +2314,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectEventDeferred: OrchestrationProjectionPipelineShape["projectEventDeferred"] =
       Effect.fn("projectEventDeferred")(
         function* (event) {
-          const attachmentSideEffects: AttachmentSideEffects = {
+          const attachmentSideEffects: ProjectionSideEffects = {
             deletedThreadIds: new Set<string>(),
             prunedThreadRelativePaths: new Map<string, Set<string>>(),
+            comsNetNotifications: [],
           };
           yield* sql.withTransaction(
             Effect.gen(function* () {
@@ -2313,7 +2338,13 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           );
           // Return the cleanup effect so the caller runs it after the outer transaction commits.
           // @effect-diagnostics-next-line returnEffectInGen:off
-          return applyAttachmentSideEffects(event, attachmentSideEffects).pipe(Effect.asVoid);
+          return Effect.gen(function* () {
+            yield* Effect.forEach(attachmentSideEffects.comsNetNotifications, (effect) => effect, {
+              concurrency: 1,
+              discard: true,
+            });
+            yield* applyAttachmentSideEffects(event, attachmentSideEffects);
+          }).pipe(Effect.asVoid);
         },
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
