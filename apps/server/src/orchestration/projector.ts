@@ -46,7 +46,6 @@ import {
   ThreadPullRequestSyncedPayload,
   ThreadPullRequestUnlinkedPayload,
   ThreadSnoozedPayload,
-  ThreadTurnStartRefusedPayload,
   ThreadUnpinnedPayload,
   ThreadUnarchivedPayload,
   ThreadUnsettledPayload,
@@ -762,9 +761,6 @@ export function projectEvent(
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
-            // The door reads sender off the thread's own messages, so this
-            // field has to survive projection or the budget resets silently.
-            ...(payload.sender !== undefined ? { sender: payload.sender } : {}),
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
           },
@@ -1028,55 +1024,6 @@ export function projectEvent(
           };
         }),
       );
-
-    // A refused turn start renders in the thread's own timeline as an error
-    // activity. Nothing is refused silently: the operator sees which sender
-    // was stopped, on which message shape, after how many turns, and why.
-    case "thread.turn-start-refused":
-      return Effect.gen(function* () {
-        const payload = yield* decodeForEvent(
-          ThreadTurnStartRefusedPayload,
-          event.payload,
-          event.type,
-          "payload",
-        );
-        const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
-        if (!thread) {
-          return nextBase;
-        }
-        const activity: OrchestrationThreadActivity = {
-          id: event.eventId,
-          tone: "error",
-          kind: "turn-start.refused",
-          summary: `Turn refused (${payload.reason}): ${payload.detail}`,
-          payload: {
-            sender: payload.sender,
-            reason: payload.reason,
-            detail: payload.detail,
-            textShapeHash: payload.textShapeHash,
-            deliveryCount: payload.deliveryCount,
-            budget: payload.budget,
-            messageId: payload.messageId,
-          },
-          turnId: null,
-          createdAt: payload.createdAt,
-        };
-        const activities = [
-          ...thread.activities.filter((entry) => entry.id !== activity.id),
-          activity,
-        ]
-          .toSorted(compareThreadActivities)
-          .slice(-500);
-        return {
-          ...nextBase,
-          threads: updateThread(nextBase.threads, payload.threadId, {
-            activities,
-            // A refusal is not activity: it must not move the thread's
-            // updatedAt, or a refused wake would resurface a parked thread in
-            // the operator's inbox — the exact outcome the door prevents.
-          }),
-        };
-      });
 
     case "thread.activity-appended":
       return decodeForEvent(

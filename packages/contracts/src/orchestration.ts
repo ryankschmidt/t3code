@@ -483,49 +483,6 @@ export type OrchestrationProject = typeof OrchestrationProject.Type;
 export const OrchestrationMessageRole = Schema.Literals(["user", "assistant", "system"]);
 export type OrchestrationMessageRole = typeof OrchestrationMessageRole.Type;
 
-/**
- * Who asked for a turn to start. Closed vocabulary, because the door that
- * budgets machine-driven turns must never have to guess. Before this field
- * existed the only sender signal that reached the decider was the commandId
- * string prefix, and `inferActorKind` in the event store recorded every
- * daemon-driven turn as "client" — the same value a human composer turn gets.
- * That is how 1,116 breather deliveries into one thread looked like a person
- * typing.
- *
- * "human-composer" is the only member that passes the door unbudgeted, so an
- * absent or unrecognised sender decodes to "unknown" and is budgeted.
- *
- * One member is reserved rather than live, and saying so is the point: as of
- * 2026-09-12 NOTHING on the server starts a turn when a snooze elapses, so
- * "snooze-wake" has no producer. Every server-side use of `snoozedUntil` is
- * persistence, projection, or a decider invariant; the only code that computes
- * "woke" is the client's own display classification in
- * packages/client-runtime/src/state/threadSettled.ts. The member stays because
- * a wake driver is a plausible future and the door should already have a name
- * for it — not because one exists. Check before assuming any other member is
- * live; a vocabulary nobody re-measures is how this kind of list rots.
- */
-export const TurnStartSender = Schema.Literals([
-  "human-composer",
-  "comsnet-send",
-  "dispatch-socket",
-  "snooze-wake",
-  "importer",
-  "provider-refire",
-  "unknown",
-]);
-export type TurnStartSender = typeof TurnStartSender.Type;
-
-/** The only sender allowed to start turns without a budget. */
-export const HUMAN_TURN_START_SENDER = "human-composer" as const;
-
-/** Named reasons the turn-start door refuses. Never refuse without one. */
-export const TurnStartRefusalReason = Schema.Literals(["budget-exhausted", "unchanged-repeat"]);
-export type TurnStartRefusalReason = typeof TurnStartRefusalReason.Type;
-
-/** Turns a non-human sender gets per (sender, thread, message shape) window. */
-export const DEFAULT_TURN_START_BUDGET = 3;
-
 export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
@@ -533,10 +490,6 @@ export const OrchestrationMessage = Schema.Struct({
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
-  // Who asked for the turn this message started. Optional so every message
-  // persisted before the turn-start door existed still decodes; absent is
-  // read as "unknown" by the door, never as human.
-  sender: Schema.optional(TurnStartSender),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1273,9 +1226,6 @@ export const ThreadTurnStartCommand = Schema.Struct({
   ),
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
-  // Absent means "unknown", which the turn-start door budgets. A producer
-  // that wants unbudgeted turns must say "human-composer" and mean it.
-  sender: Schema.optional(TurnStartSender),
   createdAt: IsoDateTime,
 });
 
@@ -1295,9 +1245,6 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
-  // Absent means "unknown", which the turn-start door budgets. A producer
-  // that wants unbudgeted turns must say "human-composer" and mean it.
-  sender: Schema.optional(TurnStartSender),
   createdAt: IsoDateTime,
 });
 
@@ -1583,7 +1530,6 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.interaction-mode-set",
   "thread.message-sent",
   "thread.turn-start-requested",
-  "thread.turn-start-refused",
   "thread.turn-interrupt-requested",
   "thread.approval-response-requested",
   "thread.user-input-response-requested",
@@ -1782,9 +1728,6 @@ export const ThreadMessageSentPayload = Schema.Struct({
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
-  // Persisted so the door reads sender history straight off the thread and
-  // needs no separate table to hydrate after a server restart.
-  sender: Schema.optional(TurnStartSender),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1799,23 +1742,6 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
-  createdAt: IsoDateTime,
-});
-
-/**
- * A turn that was asked for and not started. Persisted so a refusal is never
- * silent: sender, thread, the shape hash the door keyed on, how many turns
- * that key had already spent, and the named reason.
- */
-export const ThreadTurnStartRefusedPayload = Schema.Struct({
-  threadId: ThreadId,
-  messageId: MessageId,
-  sender: TurnStartSender,
-  textShapeHash: TrimmedNonEmptyString,
-  deliveryCount: NonNegativeInt,
-  budget: NonNegativeInt,
-  reason: TurnStartRefusalReason,
-  detail: TrimmedNonEmptyString,
   createdAt: IsoDateTime,
 });
 
@@ -2027,11 +1953,6 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.turn-start-requested"),
     payload: ThreadTurnStartRequestedPayload,
-  }),
-  Schema.Struct({
-    ...EventBaseFields,
-    type: Schema.Literal("thread.turn-start-refused"),
-    payload: ThreadTurnStartRefusedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

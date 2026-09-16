@@ -413,58 +413,6 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   yield* projectionPipeline.bootstrap;
   commandReadModel = yield* projectionSnapshotQuery.getCommandReadModel();
 
-  // TURN-START DOOR HYDRATION.
-  //
-  // getCommandReadModel deliberately rebuilds every thread with `messages: []`
-  // — the decider does not need conversation text to decide most commands, and
-  // carrying it for every thread would be expensive. The turn-start door does
-  // need it: it counts a machine sender's deliveries since the last human
-  // message straight off the thread's own history, which is what lets it stay a
-  // pure function with no table of its own.
-  //
-  // Without this replay the door would forget every count at each restart, and
-  // a daemon that re-fires every three minutes would simply collect a fresh
-  // budget every time the server came back. So the tail of the event log is
-  // replayed here — ONLY `thread.message-sent`, never lifecycle events, which
-  // the SQL projection has already applied and which must not be applied twice.
-  const DOOR_HYDRATION_EVENT_TAIL = 5_000;
-  const doorHydrationFrom = Math.max(
-    0,
-    commandReadModel.snapshotSequence - DOOR_HYDRATION_EVENT_TAIL,
-  );
-  const doorHydrationEvents = yield* Stream.runCollect(
-    eventStore.readFromSequence(doorHydrationFrom),
-  ).pipe(
-    Effect.map((chunk): OrchestrationEvent[] =>
-      Array.from(chunk).filter((event) => event.type === "thread.message-sent"),
-    ),
-    Effect.catchCause((cause) =>
-      Effect.logWarning("turn-start door history replay failed; budgets start from empty", {
-        cause,
-      }).pipe(Effect.as<OrchestrationEvent[]>([])),
-    ),
-  );
-  if (doorHydrationEvents.length > 0) {
-    const restoredSequence = commandReadModel.snapshotSequence;
-    commandReadModel = yield* projectEventsOntoReadModel(
-      commandReadModel,
-      doorHydrationEvents,
-    ).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("turn-start door history replay could not be projected", { cause }).pipe(
-          Effect.as(commandReadModel),
-        ),
-      ),
-      // Replaying a tail rewinds snapshotSequence to the last replayed event.
-      // The engine's own dispatch bookkeeping reads that number, so it is put
-      // back to where the projection snapshot actually left off.
-      Effect.map((model) => ({ ...model, snapshotSequence: restoredSequence })),
-    );
-    yield* Effect.logDebug("turn-start door history replayed").pipe(
-      Effect.annotateLogs({ messageEvents: doorHydrationEvents.length }),
-    );
-  }
-
   const worker = Effect.forever(Queue.take(commandQueue).pipe(Effect.flatMap(processEnvelope)));
   yield* Effect.forkScoped(worker);
   yield* Effect.logDebug("orchestration engine started").pipe(
