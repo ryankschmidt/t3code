@@ -1302,31 +1302,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           });
           return;
 
-        // A refused turn start becomes a real row in the activity table, which
-        // is what the client actually renders. Writing it only into the
-        // in-memory read model would mean the refusal existed for the decider
-        // and nowhere the operator could see it.
-        case "thread.turn-start-refused":
-          yield* projectionThreadActivityRepository.upsert({
-            activityId: event.eventId,
-            threadId: event.payload.threadId,
-            turnId: null,
-            tone: "error",
-            kind: "turn-start.refused",
-            summary: `Turn refused (${event.payload.reason}): ${event.payload.detail}`,
-            payload: {
-              sender: event.payload.sender,
-              reason: event.payload.reason,
-              detail: event.payload.detail,
-              textShapeHash: event.payload.textShapeHash,
-              deliveryCount: event.payload.deliveryCount,
-              budget: event.payload.budget,
-              messageId: event.payload.messageId,
-            },
-            createdAt: event.payload.createdAt,
-          });
-          return;
-
         case "thread.reverted": {
           const existingRows = yield* projectionThreadActivityRepository.listByThreadId({
             threadId: event.payload.threadId,
