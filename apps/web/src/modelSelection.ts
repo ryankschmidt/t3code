@@ -2,9 +2,10 @@ import {
   ANTIGRAVITY_DEFAULT_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  buildCatalogueParity,
   defaultInstanceIdForDriver,
-  isAllowedProviderModel,
   isCurrentCodexModel,
+  isOfferedProviderModel,
   type ModelSelection,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -156,6 +157,11 @@ function applyInstanceModelPreferences(
   ordering?: {
     readonly driverKind: ProviderDriverKind;
     readonly floor: ModelFloorConfig | undefined;
+    /**
+     * ThroughLine: catalogue parity. Models the Claude and Codex providers
+     * actually report, which is the whole offer for a mirror driver.
+     */
+    readonly parity?: ReadonlySet<string> | undefined;
   },
 ): AppModelOption[] {
   const hiddenModels = new Set(preferences.hiddenModels);
@@ -167,7 +173,10 @@ function applyInstanceModelPreferences(
   return sortModelsForProviderInstance(
     familyOrdered.filter(
       (option) =>
-        isAllowedProviderModel(option.slug, ordering?.driverKind ?? "") &&
+        isOfferedProviderModel(option.slug, ordering?.driverKind ?? "", {
+          parity: ordering?.parity,
+          isCustom: option.isCustom,
+        }) &&
         (option.isCustom || !hiddenModels.has(option.slug)),
     ),
     { modelOrder: preferences.modelOrder },
@@ -198,6 +207,30 @@ function normalizeCustomModelEntries(
   }
 
   return normalizedModels;
+}
+
+/**
+ * ThroughLine: one catalogue across providers.
+ *
+ * The parity set the mirror drivers are filtered against, derived from the
+ * live snapshots the Claude and Codex providers report. Nothing here is a
+ * written list: a model appears here because its own provider reported it.
+ */
+export function buildProviderCatalogueParity(
+  providers: ReadonlyArray<ServerProvider>,
+): ReadonlySet<string> {
+  return buildCatalogueParity(
+    providers.map((provider) => ({ driver: provider.driver, models: provider.models })),
+  );
+}
+
+/** Instance-entry form of {@link buildProviderCatalogueParity}. */
+export function buildInstanceCatalogueParity(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+): ReadonlySet<string> {
+  return buildCatalogueParity(
+    entries.map((entry) => ({ driver: entry.driverKind, models: entry.models })),
+  );
 }
 
 function getAppModelOptions(
@@ -243,6 +276,7 @@ function getAppModelOptions(
         provider,
         settings.providerInstances?.[defaultInstanceId]?.config,
       ),
+      parity: buildProviderCatalogueParity(providers),
     }),
     rawModels,
     provider,
@@ -268,6 +302,12 @@ export function getAppModelOptionsForInstance(
   settings: UnifiedSettings,
   entry: ProviderInstanceEntry,
   selectedModel?: string | null,
+  /**
+   * ThroughLine: catalogue parity across the instance list. Omitted by callers
+   * that hold a single instance; a mirror driver is then left unfiltered
+   * rather than emptied.
+   */
+  parity?: ReadonlySet<string>,
 ): AppModelOption[] {
   const options: AppModelOption[] = entry.models
     .filter((model) => !model.isCustom)
@@ -297,6 +337,7 @@ export function getAppModelOptionsForInstance(
         entry.driverKind,
         settings.providerInstances?.[entry.instanceId]?.config,
       ),
+      parity,
     }),
     entry.models,
     entry.driverKind,
@@ -369,13 +410,16 @@ export function getCustomModelOptionsByInstance(
   selectedModel?: string | null,
 ): ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>> {
   const out = new Map<ProviderInstanceId, ReadonlyArray<ModelEsque>>();
-  for (const entry of deriveProviderInstanceEntries(providers)) {
+  const entries = deriveProviderInstanceEntries(providers);
+  const parity = buildInstanceCatalogueParity(entries);
+  for (const entry of entries) {
     out.set(
       entry.instanceId,
       getAppModelOptionsForInstance(
         settings,
         entry,
         entry.instanceId === selectedInstanceId ? selectedModel : null,
+        parity,
       ),
     );
   }

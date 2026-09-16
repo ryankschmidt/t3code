@@ -866,7 +866,11 @@ import {
   sortProviderInstanceEntries,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
-import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
+import {
+  type AppModelOption,
+  buildInstanceCatalogueParity,
+  getAppModelOptionsForInstance,
+} from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import {
   type ChatMessage,
@@ -1885,6 +1889,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ReadonlyMap<ProviderInstanceId, ReadonlyArray<AppModelOption>>
   >(() => {
     const out = new Map<ProviderInstanceId, ReadonlyArray<AppModelOption>>();
+    // ThroughLine: one catalogue. A mirror driver (Pi) offers exactly what the
+    // Claude and Codex instances in this same list report, so parity is
+    // derived once across the entries and handed to each instance.
+    const parity = buildInstanceCatalogueParity(providerInstanceEntries);
     for (const entry of providerInstanceEntries) {
       out.set(
         entry.instanceId,
@@ -1892,6 +1900,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           settings,
           entry,
           entry.instanceId === selectedInstanceId ? selectedModelForPicker : null,
+          parity,
         ),
       );
     }

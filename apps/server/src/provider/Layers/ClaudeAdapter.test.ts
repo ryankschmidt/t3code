@@ -4468,6 +4468,112 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  // ThroughLine: the picker cannot lie. The operator has twice watched this
+  // app name one model while another answered. The label and the answering
+  // model are separate facts, so the turn compares them and says so.
+  const assistantAnsweredBy = (model: string, uuid: string) =>
+    ({
+      type: "assistant",
+      session_id: "sdk-session-model",
+      uuid,
+      parent_tool_use_id: null,
+      message: {
+        id: `assistant-message-${uuid}`,
+        model,
+        content: [{ type: "text", text: "answered" }],
+      },
+    }) as unknown as SDKMessage;
+
+  it.effect("warns when a different model answers than the one the picker named", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
+        yield* observeUsageLimitEvents(adapter, harness.query);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+        },
+      });
+
+      harness.query.emit(assistantAnsweredBy(SYNTHETIC_CLAUDE_CAPABLE_MODEL, "assistant-mismatch"));
+      yield* drainSdkMessages;
+
+      const mismatches = runtimeEvents
+        .filter((event) => event.type === "runtime.warning")
+        .map((event) => (event.type === "runtime.warning" ? event.payload.message : ""))
+        .filter((message) => message.startsWith("Model mismatch"));
+      assert.equal(mismatches.length, 1);
+      assert.match(mismatches[0] ?? "", /claude-synthetic-capable/);
+
+      // One report per turn, however many snapshots the turn produces.
+      harness.query.emit(assistantAnsweredBy(SYNTHETIC_CLAUDE_CAPABLE_MODEL, "assistant-repeat"));
+      yield* drainSdkMessages;
+      assert.equal(
+        runtimeEvents
+          .filter((event) => event.type === "runtime.warning")
+          .map((event) => (event.type === "runtime.warning" ? event.payload.message : ""))
+          .filter((message) => message.startsWith("Model mismatch")).length,
+        1,
+      );
+
+      runtimeEventsFiber.interruptUnsafe();
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("stays quiet when the model that answered is the model the picker named", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
+        yield* observeUsageLimitEvents(adapter, harness.query);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+        },
+      });
+
+      harness.query.emit(assistantAnsweredBy(SYNTHETIC_CLAUDE_STANDARD_MODEL, "assistant-match"));
+      yield* drainSdkMessages;
+
+      assert.equal(
+        runtimeEvents
+          .filter((event) => event.type === "runtime.warning")
+          .map((event) => (event.type === "runtime.warning" ? event.payload.message : ""))
+          .filter((message) => message.startsWith("Model mismatch")).length,
+        0,
+      );
+
+      runtimeEventsFiber.interruptUnsafe();
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("keeps allowed and malformed Claude rate-limit events out of the work log", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
