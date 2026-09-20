@@ -4,6 +4,7 @@ import { chmod, lstat } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize } from "node:path";
 import { assertProtectedPath, readProtectedJson } from "./protected-files.ts";
 import { createExecutionGrantResolver } from "./execution-grants.ts";
+import { openExecutionGrantReader } from "./execution-grant-authority.ts";
 import { PublicationStore } from "./index.ts";
 import { createPublisherDispatcher } from "./publisher-ipc.ts";
 import { servePublisherConnection } from "./publisher-connection.ts";
@@ -14,6 +15,7 @@ export type PublisherRuntimeConfig = {
   stateRoot: string;
   grantRoot: string;
   grantAuthorityUid: number;
+  grantBackend: "sqlite-authority" | "legacy-json-rehearsal";
   peerHelper: string;
   nodeExecutable: string;
   connectionEntry: string;
@@ -27,6 +29,7 @@ const keys = [
   "stateRoot",
   "grantRoot",
   "grantAuthorityUid",
+  "grantBackend",
   "peerHelper",
   "nodeExecutable",
   "connectionEntry",
@@ -55,6 +58,7 @@ export async function loadPublisherConfig(
     Object.keys(config).some((k) => !keys.includes(k)) ||
     keys.some((k) => !(k in config)) ||
     config.schema !== "throughline.publisher-runtime.v1" ||
+    !["sqlite-authority", "legacy-json-rehearsal"].includes(config.grantBackend as string) ||
     !bounded(config.grantAuthorityUid, 0, 0xffffffff) ||
     !bounded(config.maxConnections, 1, 64) ||
     !bounded(config.maxRequestBytes, 1, 1024 * 1024) ||
@@ -92,6 +96,19 @@ export async function startPublisherRuntime(configPath: string, authorityUid = 0
   await assertProtectedPath(config.stateRoot, process.getuid());
   if (!(await lstat(config.stateRoot)).isDirectory()) throw Error("INVALID_STATE_ROOT");
   await assertProtectedPath(config.grantRoot, config.grantAuthorityUid);
+  if (!(await lstat(config.grantRoot)).isDirectory()) throw Error("INVALID_GRANT_ROOT");
+  // Read-only validation before exposing a socket. Every child opens its own current reader.
+  if (config.grantBackend === "sqlite-authority") {
+    const validation = await openExecutionGrantReader({
+      root: config.grantRoot,
+      authorityUid: config.grantAuthorityUid,
+    });
+    try {
+      await validation.list();
+    } finally {
+      validation.close();
+    }
+  }
   const children = new Set<ChildProcess>();
   const server = createServer({ pauseOnConnect: true }, (socket) => {
     if (children.size >= config.maxConnections) {
@@ -156,21 +173,33 @@ export async function serveConfiguredPublisherConnection(
   authorityUid = 0,
 ): Promise<void> {
   const config = await loadPublisherConfig(configPath, authorityUid);
-  const dispatch = createPublisherDispatcher({
-    store: new PublicationStore({ root: join(config.stateRoot, "publisher") }),
-    reviewsRoot: join(config.stateRoot, "reviews"),
-    maxRequestBytes: config.maxRequestBytes,
-    resolvePrincipal: createExecutionGrantResolver({
-      grantRoot: config.grantRoot,
-      authorityUid: config.grantAuthorityUid,
-    }),
-  });
-  await servePublisherConnection({
-    input: process.stdin,
-    output: process.stdout,
-    environment: process.env,
-    maxBytes: config.maxRequestBytes,
-    readTimeoutMs: config.readTimeoutMs,
-    dispatch,
-  });
+  const reader =
+    config.grantBackend === "sqlite-authority"
+      ? await openExecutionGrantReader({
+          root: config.grantRoot,
+          authorityUid: config.grantAuthorityUid,
+        })
+      : null;
+  try {
+    const dispatch = createPublisherDispatcher({
+      store: new PublicationStore({ root: join(config.stateRoot, "publisher") }),
+      reviewsRoot: join(config.stateRoot, "reviews"),
+      maxRequestBytes: config.maxRequestBytes,
+      resolvePrincipal: createExecutionGrantResolver({
+        grantRoot: config.grantRoot,
+        authorityUid: config.grantAuthorityUid,
+        ...(reader ? { store: reader } : {}),
+      }),
+    });
+    await servePublisherConnection({
+      input: process.stdin,
+      output: process.stdout,
+      environment: process.env,
+      maxBytes: config.maxRequestBytes,
+      readTimeoutMs: config.readTimeoutMs,
+      dispatch,
+    });
+  } finally {
+    reader?.close();
+  }
 }
