@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdir, open, readFile, rename, rm, mkdtemp, lstat, realpath } from "node:fs/promises";
 import { join, resolve, dirname, basename } from "node:path";
-import { setTimeout } from "node:timers/promises";
+import { publicationChildStdio, withPublicationLock } from "./publication-lock.ts";
 
 export type Change = { path: string; content: string | null };
 export type Task = { taskId: string; agentId: string; baseline: string; scope: string[] };
@@ -121,32 +121,12 @@ export class PublicationStore {
           GIT_COMMITTER_EMAIL: "publisher@localhost",
           ...(index ? { GIT_INDEX_FILE: index } : {}),
         },
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: publicationChildStdio(),
       },
     );
   }
   private async locked<T>(fn: () => Promise<T>): Promise<T> {
-    await mkdir(this.root, { recursive: true, mode: 0o700 });
-    const lock = join(this.root, "publication.lock");
-    const deadline = Date.now() + 5000;
-    let handle;
-    while (!handle) {
-      try {
-        handle = await open(lock, "wx", 0o600);
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-        if (Date.now() >= deadline) fail("PUBLICATION_LOCK_TIMEOUT");
-        await setTimeout(10);
-      }
-    }
-    try {
-      await handle.writeFile(JSON.stringify({ pid: process.pid }));
-      await handle.sync();
-      return await fn();
-    } finally {
-      await handle.close();
-      await rm(lock);
-    }
+    return withPublicationLock(this.root, fn);
   }
   async initialize(files: Record<string, string>): Promise<string> {
     return this.locked(async () => {
@@ -290,6 +270,7 @@ export class PublicationStore {
           ["--git-dir", this.repo, "pack-objects", "--stdout", "--revs"],
           {
             input: `${task.baseline}\n`,
+            stdio: publicationChildStdio(),
             maxBuffer: 64 * 1024 * 1024,
             timeout: 30_000,
             env: {
@@ -303,6 +284,7 @@ export class PublicationStore {
         );
         execFileSync("/usr/bin/git", ["--git-dir", repo, "index-pack", "--stdin"], {
           input: pack,
+          stdio: publicationChildStdio(),
           maxBuffer: 64 * 1024 * 1024,
           timeout: 30_000,
           env: {
