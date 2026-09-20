@@ -175,6 +175,7 @@ export class SystemdExecutionDriver {
     if (process.platform !== "linux") throw Error("LINUX_EXECUTION_REQUIRED");
     const plan = systemdExecutionPlan(structuredClone(binding), this.profile);
     await assertProtectedPath(this.controlRoot, 0);
+    if (!(await lstat(this.controlRoot)).isDirectory()) throw Error("INVALID_CONTROL_ROOT");
     await assertProtectedPath("/usr/bin/systemctl", 0);
     const manager = await lstat("/usr/bin/systemctl");
     if (!manager.isFile() || !(manager.mode & 0o111)) throw Error("PROTECTED_EXECUTABLE_REQUIRED");
@@ -237,6 +238,7 @@ export class SystemdExecutionDriver {
     });
   }
   async stop(binding: ExecutionBinding, expectedInvocationId: string) {
+    binding = structuredClone(binding);
     const plan = await this.managerPlan(binding);
     if (!/^[a-f0-9]{32}$/.test(expectedInvocationId)) throw Error("INVOCATION_ID_REQUIRED");
     if (process.getuid?.() !== 0) throw Error("EXECUTION_ROOT_SERVICE_REQUIRED");

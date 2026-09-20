@@ -70,6 +70,10 @@ test(
         .digest("hex"),
     };
     const driver = new SystemdExecutionDriver("/run", measured);
+    await assert.rejects(
+      new SystemdExecutionDriver("/usr/bin/cat", measured).prepare(binding),
+      /INVALID_CONTROL_ROOT/,
+    );
     const prepared = await driver.prepare(binding);
     assert.match(prepared.unit, /^throughline-exec-[a-f0-9]{24}\.service$/);
     await assert.rejects(driver.start(binding), /EXECUTION_ROOT_SERVICE_REQUIRED/);
