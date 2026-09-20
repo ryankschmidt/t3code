@@ -16,6 +16,10 @@
     "./layer": {
       "types": "./src/layer.ts",
       "import": "./src/layer.ts"
+    },
+    "./workspace-steps": {
+      "types": "./src/workspace-steps.ts",
+      "import": "./src/workspace-steps.ts"
     }
   },
   "scripts": {
