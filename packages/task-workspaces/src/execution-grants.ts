@@ -22,7 +22,16 @@ export type GrantResolverOptions = {
   procRoot?: string;
   now?: () => number;
   maxLeaseMs?: number;
+  store?: ExecutionGrantReader;
 };
+export type ExecutionGrantReader = {
+  list(): Promise<ExecutionGrant[]>;
+  get(grantId: string): Promise<ExecutionGrant | null>;
+};
+export type ExecutionIdentity = Pick<
+  ExecutionGrant,
+  "uid" | "gid" | "bootId" | "cgroup" | "leaderPid" | "leaderStartTicks"
+>;
 
 const identifier = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value);
@@ -81,6 +90,27 @@ async function processSnapshot(procRoot: string, pid: number): Promise<ProcessSn
   return { pid, startTicks: before, uid: ids("Uid"), gid: ids("Gid"), cgroup };
 }
 
+/** Trusted supervisor captures this before issue; caller text is checked against a fresh kernel read. */
+export async function attestExecution(
+  leaderPid: number,
+  procRoot = "/proc",
+): Promise<ExecutionIdentity> {
+  if (!uint(leaderPid) || !leaderPid || !isAbsolute(procRoot)) refuse();
+  const bootPath = join(procRoot, "sys/kernel/random/boot_id");
+  const bootId = (await readFile(bootPath, "utf8")).trim();
+  if (!/^[a-f0-9-]{36}$/.test(bootId)) refuse();
+  const snapshot = await processSnapshot(procRoot, leaderPid);
+  if (!snapshot.uid || (await readFile(bootPath, "utf8")).trim() !== bootId) refuse();
+  return {
+    uid: snapshot.uid,
+    gid: snapshot.gid,
+    bootId,
+    cgroup: snapshot.cgroup,
+    leaderPid,
+    leaderStartTicks: snapshot.startTicks,
+  };
+}
+
 function parseGrant(value: unknown, file: string): ExecutionGrant {
   if (!value || typeof value !== "object" || Array.isArray(value)) return refuse();
   const g = value as ExecutionGrant;
@@ -130,6 +160,18 @@ function parseGrant(value: unknown, file: string): ExecutionGrant {
 
 /** Reads a controller-owned registry; worker text and UID alone are never authorization. */
 export function createExecutionGrantResolver(options: GrantResolverOptions) {
+  const useStore = Object.hasOwn(options, "store");
+  const store = options.store;
+  if (
+    useStore &&
+    (!store ||
+      typeof store !== "object" ||
+      typeof store.list !== "function" ||
+      typeof store.get !== "function")
+  )
+    refuse();
+  const listFromStore = useStore ? store!.list.bind(store) : null;
+  const getFromStore = useStore ? store!.get.bind(store) : null;
   const {
     grantRoot,
     authorityUid,
@@ -148,7 +190,9 @@ export function createExecutionGrantResolver(options: GrantResolverOptions) {
   return async (peer: KernelPeer): Promise<Principal> => {
     if (!peer || !uint(peer.uid) || !uint(peer.gid) || !uint(peer.pid) || !peer.pid) refuse();
     await assertProtectedPath(grantRoot, authorityUid);
-    const files = await readdir(grantRoot);
+    const grants = useStore ? await listFromStore!() : null;
+    if (useStore && !Array.isArray(grants)) refuse();
+    const files = useStore ? grants!.map((g) => `${g.grantId}.json`) : await readdir(grantRoot);
     if (files.length > 1024) refuse();
     const instant = now();
     if (!Number.isSafeInteger(instant)) refuse();
@@ -156,9 +200,12 @@ export function createExecutionGrantResolver(options: GrantResolverOptions) {
     const connector = await processSnapshot(procRoot, peer.pid);
     if (connector.uid !== peer.uid || connector.gid !== peer.gid) refuse();
     const matching: ExecutionGrant[] = [];
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
       if (file.startsWith(".")) continue; // Controller's atomic-write scratch files confer no grants.
-      const grant = parseGrant(await readProtectedJson(join(grantRoot, file), authorityUid), file);
+      const grant = parseGrant(
+        useStore ? grants![index] : await readProtectedJson(join(grantRoot, file), authorityUid),
+        file,
+      );
       if (
         grant.uid !== peer.uid ||
         grant.gid !== peer.gid ||
@@ -183,7 +230,9 @@ export function createExecutionGrantResolver(options: GrantResolverOptions) {
     if (JSON.stringify(after) !== JSON.stringify(connector)) refuse();
     const selected = matching[0]!;
     const current = parseGrant(
-      await readProtectedJson(join(grantRoot, `${selected.grantId}.json`), authorityUid),
+      useStore
+        ? await getFromStore!(selected.grantId)
+        : await readProtectedJson(join(grantRoot, `${selected.grantId}.json`), authorityUid),
       `${selected.grantId}.json`,
     );
     if (JSON.stringify(current) !== JSON.stringify(selected) || now() >= selected.expiresAt)
