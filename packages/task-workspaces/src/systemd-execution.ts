@@ -81,7 +81,8 @@ export function systemdExecutionPlan(binding: ExecutionBinding, profile: Executi
     },
   })}`;
   const home = `/var/lib/throughline-agents/${agentKey}`,
-    workspace = `/var/lib/throughline-tasks/${taskKey}`;
+    workspaceRoot = `/var/lib/throughline-tasks/${taskKey}`,
+    workspace = join(workspaceRoot, binding.taskId);
   const properties = [
     "DynamicUser=yes",
     `User=tl-${agentKey}`,
@@ -111,6 +112,7 @@ export function systemdExecutionPlan(binding: ExecutionBinding, profile: Executi
     unit,
     description,
     home,
+    workspaceRoot,
     workspace,
     args: [
       "--system",
@@ -218,6 +220,15 @@ export class SystemdExecutionDriver {
     const identity = await attestExecution(unit.pid);
     if (identity.cgroup !== unit.cgroup) throw Error("EXECUTION_CGROUP_MISMATCH");
     return { ...unit, identity, home: plan.home, workspace: plan.workspace };
+  }
+  async lookup(binding: ExecutionBinding) {
+    binding = structuredClone(binding);
+    const plan = await this.managerPlan(binding);
+    const output = await this.show(plan.unit);
+    const rows = output.trim().split("\n");
+    if (rows.includes(`Id=${plan.unit}`) && rows.includes("LoadState=not-found")) return null;
+    // Inactive, foreign, malformed and transport failure are not evidence of absence.
+    return this.inspect(binding);
   }
   async start(binding: ExecutionBinding) {
     const plan = await this.prepare(binding);

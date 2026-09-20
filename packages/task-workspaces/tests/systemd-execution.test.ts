@@ -25,6 +25,7 @@ test("private task storage and persistent agent home have different lifetimes", 
   assert.equal(a.unit, b.unit); // one concurrent execution per persistent agent
   assert.equal(a.home, b.home);
   assert.notEqual(a.workspace, b.workspace);
+  assert.equal(a.workspace, `${a.workspaceRoot}/${binding.taskId}`);
   assert.notEqual(a.description, b.description);
   assert.ok(a.args.includes("--property=DynamicUser=yes"));
   assert.ok(a.args.includes("--property=NoNewPrivileges=yes"));
