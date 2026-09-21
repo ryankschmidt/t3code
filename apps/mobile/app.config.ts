@@ -10,6 +10,17 @@ Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+// ThroughLine: build the iOS app without its share and widget extensions.
+//
+// Both extensions hard-code an app group (`group.${iosBundleIdentifier}`). An App Group can
+// only be created and assigned in a browser — App Store Connect's API answers 404 on every
+// /v1/appGroups verb — so until that group exists, a distribution profile carries an EMPTY
+// application-groups entitlement and an extension signed against it silently cannot reach its
+// shared container. Shipping that looks green and breaks on the device.
+//
+// This switch makes the extension-free build an explicit, named choice rather than a lane
+// side effect. Unset, every default below is unchanged.
+const disableIosExtensions = repoEnv.THROUGHLINE_IOS_DISABLE_EXTENSIONS === "1";
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
@@ -183,7 +194,7 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       // Personal Teams cannot sign App Groups or extension targets. Keep the
       // reduced-capability local build usable while release builds expose the
       // real system share target.
-      enabled: !isIosPersonalTeamBuild,
+      enabled: !isIosPersonalTeamBuild && !disableIosExtensions,
       extensionBundleIdentifier: `${iosBundleIdentifier}.sharing`,
       appGroupId: `group.${iosBundleIdentifier}`,
       activationRule: {
@@ -444,7 +455,9 @@ const config: ExpoConfig = {
     // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
     // would delete the asset catalog) and its xcodeproj mod creates the widget
     // target (which must exist before the compile phase can be attached).
-    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
+    ...(!isIosPersonalTeamBuild && !disableIosExtensions
+      ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin]
+      : []),
     "./plugins/withIosSceneLifecycle.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidReleaseSigning.cjs",
