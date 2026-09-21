@@ -1540,8 +1540,19 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.proposed-plan-upserted",
   "thread.turn-diff-completed",
   "thread.activity-appended",
+  // RETIRED 2026-09-16, tolerated on read only. The agent-turn budget check that emitted this
+  // was removed from the code; 877 of its rows remain in the event store and replay must not
+  // reject them. Nothing emits this type. Do not reintroduce a producer.
+  "thread.turn-start-refused",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
+
+/**
+ * RETIRED event payload, read-only. Emitted by the agent-turn budget check between
+ * 2026-09-15 and 2026-09-21 and removed with it. Kept permissive on purpose: its historical
+ * rows must replay without the server rejecting them, and no code may produce a new one.
+ */
+export const ThreadTurnStartRefusedRetiredPayload = Schema.Record(Schema.String, Schema.Unknown);
 
 export const OrchestrationAggregateKind = Schema.Literals(["project", "thread"]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
@@ -2003,6 +2014,12 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.activity-appended"),
     payload: ThreadActivityAppendedPayload,
+  }),
+  // RETIRED, read-only. See ThreadTurnStartRefusedRetiredPayload.
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.turn-start-refused"),
+    payload: ThreadTurnStartRefusedRetiredPayload,
   }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
