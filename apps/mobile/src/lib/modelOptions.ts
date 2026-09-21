@@ -8,6 +8,7 @@ import {
   isAllowedProviderModel,
   isCurrentCodexModel,
   isOfferedProviderModel,
+  isProductDefaultModel,
 } from "@t3tools/contracts";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
@@ -204,7 +205,9 @@ export function buildModelOptions(
         providerKey: provider.instanceId,
         providerLabel,
         providerDriver: provider.driver,
-        isDefault: model.isDefault === true,
+        // The product's declared default wins over the provider's self-reported one:
+        // the Claude CLI reports Fable, and Fable is never a default here.
+        isDefault: isProductDefaultModel(model.slug, provider.driver, model.isDefault === true),
         isLegacy:
           model.isLegacy === true &&
           !isCurrentCodexModel(model.slug.split("/").at(-1) ?? model.slug),

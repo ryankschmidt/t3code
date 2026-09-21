@@ -6,6 +6,7 @@ import {
   defaultInstanceIdForDriver,
   isCurrentCodexModel,
   isOfferedProviderModel,
+  isProductDefaultModel,
   type ModelSelection,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -120,7 +121,10 @@ function appendUnavailableDynamicModelSelection(
   return [...options, { slug, name: slug, isCustom: false, isUnavailable: true }];
 }
 
-function toAppModelOption(model: ServerProvider["models"][number]): AppModelOption {
+function toAppModelOption(
+  model: ServerProvider["models"][number],
+  driver: string,
+): AppModelOption {
   const option: AppModelOption = {
     slug: model.slug,
     name: model.name,
@@ -130,7 +134,9 @@ function toAppModelOption(model: ServerProvider["models"][number]): AppModelOpti
   if (model.subProvider) option.subProvider = model.subProvider;
   if (model.aliases) option.aliases = model.aliases;
   if (model.badge) option.badge = model.badge;
-  if (model.isDefault) option.isDefault = true;
+  // The product's declared default wins over the provider's self-reported one:
+  // the Claude CLI reports Fable, and Fable is never a default here.
+  if (isProductDefaultModel(model.slug, driver, model.isDefault === true)) option.isDefault = true;
   if (model.isLegacy && !isCurrentCodexModel(model.slug.split("/").at(-1) ?? model.slug))
     option.isLegacy = true;
   return option;
@@ -245,7 +251,7 @@ function getAppModelOptions(
   // settings below.
   const options: AppModelOption[] = rawModels
     .filter((model) => !model.isCustom)
-    .map(toAppModelOption);
+    .map((model) => toAppModelOption(model, provider));
   const seen = new Set(options.map((option) => option.slug));
   const builtInModelSlugs = new Set(
     Arr.filterMap(getProviderModels(providers, provider), (model) =>
@@ -311,7 +317,7 @@ export function getAppModelOptionsForInstance(
 ): AppModelOption[] {
   const options: AppModelOption[] = entry.models
     .filter((model) => !model.isCustom)
-    .map(toAppModelOption);
+    .map((model) => toAppModelOption(model, entry.driverKind));
   const seen = new Set(options.map((option) => option.slug));
   const builtInModelSlugs = new Set(
     Arr.filterMap(entry.models, (model) =>

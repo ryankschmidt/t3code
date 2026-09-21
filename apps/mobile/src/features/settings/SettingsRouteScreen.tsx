@@ -1,4 +1,5 @@
 import { useAuth, useUser } from "@clerk/expo";
+import { HAS_LEGAL_DOCUMENTS } from "./lib/legal-document-url";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
@@ -739,7 +740,12 @@ function AppSettingsSection() {
   const updateInFlight = useRef(false);
   const hiddenUpdateTapCount = useRef(0);
 
-  const version = Constants.expoConfig?.version ?? "0.0.0";
+  // Show the ThroughLine version of this build, not apps/mobile's own marketing version.
+  // Those are different numbers and the marketing one read "1.1.1" on a 0.0.44 build.
+  const version =
+    (Constants.expoConfig?.extra?.throughlineVersion as string | undefined) ??
+    Constants.expoConfig?.version ??
+    "0.0.0";
   // Fall back to "production" to match resolveAppVariant in app.config.ts, so a
   // missing variant never mislabels a production build as development.
   const variant = (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? "production";
@@ -821,7 +827,11 @@ function AppSettingsSection() {
   return (
     <SettingsSection title="App">
       <SettingsRow icon="internaldrive" label="Client Storage" target="SettingsClientStorage" />
-      <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
+      {/* Hidden unless this build has legal documents of its own. It used to open T3 Tools'
+          legal page, which is not this app's. See legal-document-url.ts. */}
+      {HAS_LEGAL_DOCUMENTS ? (
+        <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
+      ) : null}
       {updateCheckAvailable ? (
         <Pressable
           accessibilityLabel={`Version ${versionLabel}`}

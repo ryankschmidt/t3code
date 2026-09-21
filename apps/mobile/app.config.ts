@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
@@ -31,6 +33,24 @@ const IOS_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/;
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
+
+// ThroughLine: the phone must report the SAME version the desktop and server report.
+//
+// apps/mobile has its own marketing version (`version` below, 1.1.1), which is what the App
+// Store shows and what Settings used to display. It is not the ThroughLine version, so the
+// Settings screen read "Version 1.1.1" on a 0.0.44 build and Ryan had no way to tell what was
+// installed. Read the real one from the same package the desktop and server are versioned from,
+// rather than writing it here as a literal that goes stale the next time the version moves.
+const throughlineVersion = (() => {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../../packages/contracts/package.json", import.meta.url), "utf8"),
+    ) as { version?: string };
+    return pkg.version ?? null;
+  } catch {
+    return null;
+  }
+})();
 // Android layers are rendered by scripts/export-android-icons.ts from the Icon Composer sources.
 // The wordmark sits inside the adaptive safe zone; the variant artwork is a full-bleed background.
 const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
@@ -469,6 +489,8 @@ const config: ExpoConfig = {
   ],
   extra: {
     appVariant: APP_VARIANT,
+    // The ThroughLine version of this build — the same number the desktop and server report.
+    throughlineVersion,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,

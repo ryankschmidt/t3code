@@ -322,6 +322,42 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [ProviderDriverKind.make("antigravity")]: ANTIGRAVITY_DEFAULT_MODEL,
 };
 
+/**
+ * ThroughLine: the product decides its own default, not the provider.
+ *
+ * A provider reports its OWN default in `model/list`, and the Claude CLI reports Fable. The
+ * pickers used that flag directly, so Fable was marked Default and was what a new thread got —
+ * even though DEFAULT_MODEL_BY_PROVIDER has said Opus since 73bf11e1c0. Ryan, 2026-09-20: "I do
+ * not want Fable to be the default. With agents launching threads, I don't ever want Fable as
+ * the default. It's not worth it. It should be opus with low thinking." Fable is roughly six
+ * times Opus, so an inherited default is a standing cost, not a preference.
+ *
+ * Where the product declares a default for a driver, that declaration wins and the provider's
+ * own flag is ignored. Where it declares none, the provider's flag still decides.
+ */
+export function isProductDefaultModel(
+  model: string,
+  driver: string,
+  providerReportedDefault: boolean,
+): boolean {
+  const declared = (DEFAULT_MODEL_BY_PROVIDER as Record<string, string | undefined>)[driver];
+  if (declared === undefined) return providerReportedDefault;
+  return modelIdentity(model) === modelIdentity(declared);
+}
+
+/**
+ * Reasoning effort a new thread starts at, per driver. Claude starts low because the default
+ * seat is Opus and a default should be the cheap end of a capable model, not its most expensive
+ * setting. A driver absent here keeps whatever the provider's own descriptor defaults to.
+ */
+export const DEFAULT_REASONING_EFFORT_BY_PROVIDER: Partial<Record<string, string>> = {
+  [CLAUDE_DRIVER_KIND as unknown as string]: "low",
+};
+
+export function defaultReasoningEffortForDriver(driver: string): string | undefined {
+  return DEFAULT_REASONING_EFFORT_BY_PROVIDER[driver];
+}
+
 /** Per-provider text generation model defaults. */
 export const DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER: Partial<
   Record<ProviderDriverKind, string>
