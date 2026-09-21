@@ -309,9 +309,10 @@ export function getAppModelOptionsForInstance(
   entry: ProviderInstanceEntry,
   selectedModel?: string | null,
   /**
-   * ThroughLine: catalogue parity across the instance list. Omitted by callers
-   * that hold a single instance; a mirror driver is then left unfiltered
-   * rather than emptied.
+   * ThroughLine: catalogue parity across the instance list. Omitting it means
+   * the caller cannot say what the source providers offer, and a mirror driver
+   * then offers NOTHING rather than falling back to its own catalogue — an
+   * empty list that fills in, never a full list that shrinks.
    */
   parity?: ReadonlySet<string>,
 ): AppModelOption[] {

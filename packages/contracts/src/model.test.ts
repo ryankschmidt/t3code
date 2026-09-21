@@ -84,10 +84,36 @@ describe("one catalogue across providers", () => {
     expect(isOfferedProviderModel("openai/gpt-5.4", "pi", { parity, isCustom: true })).toBe(false);
   });
 
-  it("leaves a mirror unfiltered when no source provider has reported yet", () => {
+  // FIRST PAINT. This is the state Ryan photographed: a cold app start, neither source provider
+  // reported yet, and the Pi picker showing all 331 models it proxies before shrinking a moment
+  // later. An empty list that fills in is correct; a full list that shrinks is the defect.
+  it("offers nothing from a mirror before any source provider has reported", () => {
     const parity = buildCatalogueParity([{ driver: "pi", models: [{ slug: "kimi/k2" }] }]);
     expect(parity.size).toBe(0);
-    expect(isOfferedProviderModel("kimi/k2", "pi", { parity })).toBe(true);
+    expect(isOfferedProviderModel("kimi/k2", "pi", { parity })).toBe(false);
+    expect(isOfferedProviderModel("claude-opus-5", "pi", { parity })).toBe(false);
+  });
+
+  // The same screen reached through the other door: a caller that cannot compute parity at all.
+  // "Unknown" must not render as "everything".
+  it("offers nothing from a mirror when parity was never computed", () => {
+    expect(isOfferedProviderModel("kimi/k2", "pi", {})).toBe(false);
+    expect(isOfferedProviderModel("kimi/k2", "pi")).toBe(false);
+  });
+
+  // A source driver is never emptied by this, at first paint or ever — only mirrors are.
+  it("still offers a source driver's models before parity exists", () => {
+    const parity = buildCatalogueParity([]);
+    expect(parity.size).toBe(0);
+    expect(isOfferedProviderModel("claude-opus-5", "claudeAgent", { parity })).toBe(true);
+    expect(isOfferedProviderModel("gpt-6-astra", "codex", { parity })).toBe(true);
+    expect(isOfferedProviderModel("claude-opus-5", "claudeAgent")).toBe(true);
+  });
+
+  // A user-authored slug on the mirror is that user's explicit request, not a catalogue entry,
+  // so it survives first paint.
+  it("still offers a custom model on a mirror before parity exists", () => {
+    expect(isOfferedProviderModel("kimi/k2", "pi", { isCustom: true })).toBe(true);
   });
 
   it("excludes a source provider's custom models from parity", () => {

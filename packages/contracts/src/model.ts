@@ -229,9 +229,10 @@ export function buildCatalogueParity(
 
 /**
  * Whether a model is offered for a driver: the allowlist for every driver,
- * plus catalogue parity for mirror drivers. An empty parity set means the
- * source providers have not reported yet, and a mirror is left unfiltered
- * rather than emptied. Custom models are never filtered.
+ * plus catalogue parity for mirror drivers. An empty or absent parity set
+ * means the source providers have not reported yet, and a mirror then offers
+ * NOTHING rather than falling back to its own catalogue. Custom models are
+ * never filtered.
  */
 export function isOfferedProviderModel(
   model: string,
@@ -245,9 +246,21 @@ export function isOfferedProviderModel(
   // retired however it was entered. Only parity is waived for custom slugs.
   if (!isAllowedProviderModel(model, driver)) return false;
   if (context?.isCustom === true) return true;
-  const parity = context?.parity;
-  if (parity === undefined || parity.size === 0) return true;
   if (!isCatalogueMirrorDriver(driver)) return true;
+
+  // A mirror driver with nothing to mirror offers NOTHING, and the order of these two lines is
+  // the whole fix. This used to return true when parity was empty or absent, so on a cold start
+  // — before either source provider had reported — Pi fell back to its own unfiltered catalogue
+  // and the picker showed all 331 models it proxies, then shrank a moment later once Claude and
+  // Codex reported. Ryan photographed exactly that screen. His ruling is "the same models as
+  // Claude provider and Codex provider and nothing more, nothing more", and a list that briefly
+  // shows 331 shows 331.
+  //
+  // An empty list that fills in is correct. A full list that shrinks is the defect. Absent
+  // parity is treated the same as empty parity on purpose: a caller that cannot compute parity
+  // does not know what the mirror may offer, and "unknown" must not render as "everything".
+  const parity = context?.parity;
+  if (parity === undefined || parity.size === 0) return false;
   return parity.has(modelIdentity(model));
 }
 
