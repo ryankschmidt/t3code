@@ -1,6 +1,6 @@
 import { CommandId, MessageId, ThreadId } from "@t3tools/contracts";
 import type { PeerIdentity } from "@ryan/coms-net";
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -9,10 +9,19 @@ import * as ComsNetTransport from "../../ComsNetTransport.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { ComsNetToolkit } from "./tools.ts";
+import { ComsNetToolkit, ComsNetToolError } from "./tools.ts";
 
 const asFailure = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const asToolFailure = (error: unknown): ComsNetToolError =>
+  new ComsNetToolError({
+    // Expose expected transport refusals, not unexpected storage/provider details.
+    message:
+      error instanceof ComsNetTransport.ComsNetTransportError && error.code !== undefined
+        ? error.message
+        : "Tool execution failed due to an internal server error.",
+  });
 
 export const COMSNET_DISPATCH_ACK_TIMEOUT_MS = Math.floor(
   ComsNetTransport.COMSNET_REQUEST_LEASE_MS * 0.75,
@@ -103,8 +112,8 @@ const handlers = {
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.requireComsNetCapability();
       const transport = yield* ComsNetTransport.ComsNetTransport;
-      return markCallerPeer(scope, yield* transport.listPeers());
-    }).pipe(Effect.mapError(asFailure)),
+      return { peers: markCallerPeer(scope, yield* transport.listPeers()) };
+    }).pipe(Effect.mapError(asToolFailure)),
 
   comsnet_send: (input) =>
     Effect.gen(function* () {
@@ -138,7 +147,7 @@ const handlers = {
             commandId: CommandId.make(`comsnet:${request.requestId}`),
             threadId: ThreadId.make(request.receiverThreadId),
             message: {
-              messageId: MessageId.make(`comsnet:${request.requestId}:${randomUUID()}`),
+              messageId: MessageId.make(`comsnet:${request.requestId}:${NodeCrypto.randomUUID()}`),
               role: "user",
               text: requestText(request),
               attachments: [],
@@ -152,7 +161,7 @@ const handlers = {
         (message) => transport.failDispatch(scope, request.requestId, message),
       );
       return request;
-    }).pipe(Effect.mapError(asFailure)),
+    }).pipe(Effect.mapError(asToolFailure)),
 
   comsnet_subscribe: (input) =>
     Effect.gen(function* () {
@@ -163,18 +172,19 @@ const handlers = {
       const receiverTurnId = Option.isSome(currentThread)
         ? (currentThread.value.session?.activeTurnId ?? undefined)
         : undefined;
-      return yield* transport.subscribe(scope, {
+      const requests = yield* transport.subscribe(scope, {
         ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
         ...(receiverTurnId === undefined || receiverTurnId === null ? {} : { receiverTurnId }),
       });
-    }).pipe(Effect.mapError(asFailure)),
+      return { requests };
+    }).pipe(Effect.mapError(asToolFailure)),
 
   comsnet_status: (input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.requireComsNetCapability();
       const transport = yield* ComsNetTransport.ComsNetTransport;
       return yield* transport.status(scope, input.requestId);
-    }).pipe(Effect.mapError(asFailure)),
+    }).pipe(Effect.mapError(asToolFailure)),
 
   comsnet_result: (input) =>
     Effect.gen(function* () {
@@ -182,10 +192,12 @@ const handlers = {
       const transport = yield* ComsNetTransport.ComsNetTransport;
       return "result" in input && input.result !== undefined
         ? yield* transport.complete(scope, input.requestId, input.result)
-        : yield* transport.waitForResult(scope, input.requestId, {
-            ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
-          });
-    }).pipe(Effect.mapError(asFailure)),
+        : yield* transport.waitForResult(
+            scope,
+            input.requestId,
+            input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs },
+          );
+    }).pipe(Effect.mapError(asToolFailure)),
 } satisfies Parameters<typeof ComsNetToolkit.toLayer>[0];
 
 export const ComsNetToolkitHandlersLive = ComsNetToolkit.toLayer(handlers);

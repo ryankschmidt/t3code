@@ -27,8 +27,29 @@ const SendInput = Schema.Struct({
   kind: Schema.String,
   payload: Schema.Unknown,
 });
-const Failure = Schema.String;
-const Success = Schema.Unknown;
+// MCP only exposes a declared failure's message when the value is an Error.
+// A string failure is otherwise replaced with a generic internal-server error.
+export class ComsNetToolError extends Schema.TaggedError<ComsNetToolError>()("ComsNetToolError", {
+  message: Schema.String,
+}) {}
+const Failure = ComsNetToolError;
+const Success = Schema.Struct({
+  requestId: Schema.String,
+  senderPeerId: Schema.String,
+  senderThreadId: Schema.String,
+  receiverPeerId: Schema.String,
+  receiverThreadId: Schema.String,
+  kind: Schema.String,
+  payload: Schema.Unknown,
+  status: Schema.Literals(["queued", "delivered", "completed", "failed"]),
+  createdAt: Schema.String,
+  deliveredAt: Schema.optional(Schema.String),
+  lastClaimedAt: Schema.optional(Schema.String),
+  receiverTurnId: Schema.optional(Schema.String),
+  completedAt: Schema.optional(Schema.String),
+  result: Schema.optional(Schema.Unknown),
+  error: Schema.optional(Schema.String),
+});
 
 const readonlyTool = <T extends Tool.Any>(tool: T): T =>
   tool
@@ -44,7 +65,7 @@ export const ComsNetPeersTool = readonlyTool(
     // `Schema.Struct({})` emitted a bare schema that OpenAI rejects for every hosted Codex
     // thread (`invalid_function_parameters … comsnet_peers`, measured 2026-09-10).
     parameters: Schema.Struct({ includeSelf: Schema.optional(Schema.Boolean) }),
-    success: Success,
+    success: Schema.Struct({ peers: Schema.Array(Schema.Unknown) }),
     failure: Failure,
     dependencies,
   }).annotate(Tool.Title, "List ComsNet peers"),
@@ -66,7 +87,7 @@ export const ComsNetSubscribeTool = Tool.make("comsnet_subscribe", {
   description:
     "Receive queued requests for this exact seat, or wait once up to timeoutMs for the next request. The MCP credential determines the receiver.",
   parameters: SubscribeInput,
-  success: Success,
+  success: Schema.Struct({ requests: Schema.Array(Success) }),
   failure: Failure,
   dependencies,
 })
