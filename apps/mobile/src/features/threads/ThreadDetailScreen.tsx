@@ -1,3 +1,4 @@
+import type { ContextWindowSnapshot } from "@t3tools/client-runtime/context-window";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import {
   appendCodexArtifactTemplateUsePrompt,
@@ -84,6 +85,7 @@ import type {
 import { PendingApprovalCard } from "./PendingApprovalCard";
 import { ComposerFeedback } from "./ComposerFeedback";
 import { ComposerUsageLimits } from "./ComposerUsageLimits";
+import { ContextWindowMeter } from "./ContextWindowMeter";
 import { PendingUserInputCard } from "./PendingUserInputCard";
 import { ThreadCreationFailedCard } from "./ThreadCreationFailedCard";
 import {
@@ -109,6 +111,8 @@ import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-live-follow";
 
 export interface ThreadDetailScreenProps {
   readonly selectedThread: OrchestrationThreadShell;
+  /** The context-window reading for this thread, or null before the first report. */
+  readonly contextWindowUsage: ContextWindowSnapshot | null;
   readonly contentPresentation: ThreadContentPresentation;
   readonly screenTone: StatusTone;
   readonly connectionError: string | null;
@@ -943,6 +947,11 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                     onDismiss={() => props.onDismissFeedback(submission.id)}
                   />
                 ))}
+                {props.contextWindowUsage ? (
+                  <View className="shrink-0 px-4 pb-2">
+                    <ContextWindowMeter usage={props.contextWindowUsage} />
+                  </View>
+                ) : null}
                 {usageLimitsReport && activeUserInputRequestId === null ? (
                   <Animated.View
                     className="shrink-0 px-4 pb-3"

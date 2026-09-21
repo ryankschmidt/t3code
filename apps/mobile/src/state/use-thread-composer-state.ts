@@ -1,3 +1,4 @@
+import { deriveLatestContextWindowSnapshot } from "@t3tools/client-runtime/context-window";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
@@ -612,7 +613,15 @@ export function useThreadComposerState() {
     [selectedEnvironmentRuntime?.serverConfig, selectedThread?.modelSelection, selectedThreadKey],
   );
 
+  // ThroughLine: the same context-window reading the desktop shows, derived by the same shared
+  // function rather than a second implementation. See @t3tools/client-runtime/context-window.
+  const contextWindowUsage = useMemo(
+    () => deriveLatestContextWindowSnapshot(selectedThreadDetail?.activities ?? []),
+    [selectedThreadDetail?.activities],
+  );
+
   return {
+    contextWindowUsage,
     feedbackSubmissions,
     dismissFeedback,
     selectedThreadFeed,

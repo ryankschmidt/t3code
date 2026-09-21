@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./context-window": {
+      "types": "./src/contextWindow.ts",
+      "default": "./src/contextWindow.ts"
+    },
     "./load-balancing": {
       "types": "./src/load-balancing.ts",
       "default": "./src/load-balancing.ts"

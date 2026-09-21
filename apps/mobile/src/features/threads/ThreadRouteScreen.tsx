@@ -861,6 +861,7 @@ function ThreadRouteContent(
           screenTone={connectionTone(routeConnectionState)}
           connectionError={routeConnectionError}
           environmentLabel={selectedEnvironmentConnection?.environmentLabel ?? null}
+          contextWindowUsage={composer.contextWindowUsage}
           feedbackSubmissions={composer.feedbackSubmissions}
           onDismissFeedback={composer.dismissFeedback}
           selectedThreadFeed={composer.selectedThreadFeed}
