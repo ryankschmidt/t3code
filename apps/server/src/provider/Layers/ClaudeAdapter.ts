@@ -26,6 +26,7 @@ import { type ClaudeScopedLimitNames, claudeRateLimitEventToUpdate } from "./cla
 import {
   ApprovalRequestId,
   classifyTaskAgentKind,
+  compareSelectedAndAnsweringModel,
   type CanonicalItemType,
   type CanonicalRequestType,
   type ClaudeSettings,
@@ -174,6 +175,14 @@ interface ClaudeTurnState {
   authenticationFailureMessage: string | undefined;
   rejectedRateLimitTypes: Set<string>;
   latestAssistantRateLimited: boolean;
+  /**
+   * ThroughLine: the picker cannot lie. The API model the SDK reported on
+   * this turn's own assistant snapshots, and whether it has already been
+   * compared against the selected model (one report per turn, not per
+   * snapshot).
+   */
+  answeringModel: string | undefined;
+  answeringModelChecked: boolean;
 }
 
 interface AssistantTextBlockState {
@@ -2475,6 +2484,40 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     });
   });
 
+  /**
+   * ThroughLine: the picker cannot lie.
+   *
+   * `message.model` on an assistant snapshot is the authoritative API model
+   * that answered. The selected model is what the picker labelled. These are
+   * two separate facts and they have twice disagreed in front of the
+   * operator, silently, because nothing compared them. Compare once per turn
+   * and report a divergence as a warning the client can surface.
+   */
+  const checkAnsweringModel = Effect.fn("checkAnsweringModel")(function* (
+    context: ClaudeSessionContext,
+    answeringModel: string | undefined,
+  ) {
+    const turnState = context.turnState;
+    if (!turnState || turnState.answeringModelChecked || !answeringModel) {
+      return;
+    }
+    const selected = context.currentApiModelId ?? context.session.model ?? undefined;
+    const verdict = compareSelectedAndAnsweringModel(selected, answeringModel);
+    if (verdict === "unknown") {
+      return;
+    }
+    turnState.answeringModelChecked = true;
+    turnState.answeringModel = answeringModel;
+    if (verdict === "match") {
+      return;
+    }
+    yield* emitRuntimeWarning(
+      context,
+      `Model mismatch: this turn is labelled '${selected}' but '${answeringModel}' answered.`,
+      { selectedModel: selected, answeringModel },
+    );
+  });
+
   const emitThreadTokenUsage = Effect.fn("emitThreadTokenUsage")(function* (
     context: ClaudeSessionContext,
     usage: ThreadTokenUsageSnapshot | undefined,
@@ -3344,6 +3387,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         authenticationFailureMessage: undefined,
         rejectedRateLimitTypes: new Set(),
         latestAssistantRateLimited: false,
+        answeringModel: undefined,
+        answeringModelChecked: false,
       };
       context.session = {
         ...context.session,
@@ -3371,6 +3416,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         },
       });
     }
+
+    // ThroughLine: compare what answered against what the picker labelled,
+    // on the main thread's own snapshot (subagents return above).
+    yield* checkAnsweringModel(context, trimmedString(message.message.model));
 
     const content = message.message?.content;
     if (Array.isArray(content)) {
@@ -5214,6 +5263,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         authenticationFailureMessage: undefined,
         rejectedRateLimitTypes: new Set(),
         latestAssistantRateLimited: false,
+        answeringModel: undefined,
+        answeringModelChecked: false,
       };
 
       const updatedAt = yield* nowIso;

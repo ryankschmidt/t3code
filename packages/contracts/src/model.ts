@@ -166,6 +166,136 @@ export function isAllowedProviderModel(model: string, driver: string): boolean {
 }
 
 /**
+ * ThroughLine: one catalogue across providers.
+ *
+ * Drivers whose own reported catalogs DEFINE what is on offer. These two are
+ * the only places a model enters the product, and each reports its own list
+ * from its own runtime — nothing here is a written list.
+ */
+export const CATALOGUE_SOURCE_DRIVER_KINDS: ReadonlyArray<string> = ["claudeAgent", "codex"];
+
+/**
+ * Drivers that MIRROR the source drivers instead of offering their own
+ * catalog. Pi proxies other vendors and reports hundreds of models it was
+ * never meant to serve here, so its offer is derived: exactly the models the
+ * Claude and Codex providers already offer, no more and no less. A model is
+ * added or removed in exactly one place — the source provider's own runtime.
+ */
+export const CATALOGUE_MIRROR_DRIVER_KINDS: ReadonlyArray<string> = ["pi"];
+
+/**
+ * Identity of a model across providers. The same model reaches the product
+ * under several slugs (`claude-opus-5`, `anthropic/claude-opus-5`), so the
+ * last path segment, lowercased, is what parity compares.
+ */
+export function modelIdentity(model: string): string {
+  const parts = model.split("/");
+  return (parts.at(-1) ?? model).trim().toLowerCase();
+}
+
+export function isCatalogueSourceDriver(driver: string): boolean {
+  return CATALOGUE_SOURCE_DRIVER_KINDS.includes(driver);
+}
+
+export function isCatalogueMirrorDriver(driver: string): boolean {
+  return CATALOGUE_MIRROR_DRIVER_KINDS.includes(driver);
+}
+
+/** A provider and the models it reports, as both web and mobile hold them. */
+export type CatalogueProviderLike = {
+  readonly driver: string;
+  readonly models: ReadonlyArray<{ readonly slug: string; readonly isCustom?: boolean }>;
+};
+
+/**
+ * The parity set: every model identity the source drivers actually offer
+ * right now. Custom (user-authored) models are excluded — an authored slug is
+ * one user's explicit request on one provider, not a catalogue entry.
+ */
+export function buildCatalogueParity(
+  providers: ReadonlyArray<CatalogueProviderLike>,
+): ReadonlySet<string> {
+  const parity = new Set<string>();
+  for (const provider of providers) {
+    if (!isCatalogueSourceDriver(provider.driver)) continue;
+    for (const model of provider.models) {
+      if (model.isCustom === true) continue;
+      if (!isAllowedProviderModel(model.slug, provider.driver)) continue;
+      parity.add(modelIdentity(model.slug));
+    }
+  }
+  return parity;
+}
+
+/**
+ * Whether a model is offered for a driver: the allowlist for every driver,
+ * plus catalogue parity for mirror drivers. An empty parity set means the
+ * source providers have not reported yet, and a mirror is left unfiltered
+ * rather than emptied. Custom models are never filtered.
+ */
+export function isOfferedProviderModel(
+  model: string,
+  driver: string,
+  context?: {
+    readonly parity?: ReadonlySet<string> | undefined;
+    readonly isCustom?: boolean | undefined;
+  },
+): boolean {
+  // The allowlist applies to authored models too: a retired model stays
+  // retired however it was entered. Only parity is waived for custom slugs.
+  if (!isAllowedProviderModel(model, driver)) return false;
+  if (context?.isCustom === true) return true;
+  const parity = context?.parity;
+  if (parity === undefined || parity.size === 0) return true;
+  if (!isCatalogueMirrorDriver(driver)) return true;
+  return parity.has(modelIdentity(model));
+}
+
+/**
+ * ThroughLine: the picker cannot lie.
+ *
+ * The model NAMED in the picker and the model that ANSWERS a turn are two
+ * separate facts that have twice disagreed in front of the operator. This
+ * compares them so the disagreement is a reported event rather than
+ * something only a transcript reader finds later.
+ *
+ * `unknown` means the runtime reported no model for the turn, which is not
+ * evidence of agreement and must never be reported as a match.
+ */
+export type ModelAnswerVerdict = "match" | "mismatch" | "unknown";
+
+/**
+ * Comparable form of a model id: provider prefix dropped, lowercased, a
+ * trailing API date stamp (`-20260214`) removed, and a context-window suffix
+ * (`[1m]`) removed. Vendors stamp their own dates and windows onto the id of
+ * the SAME model, and those are not a different model.
+ */
+export function normalizeModelIdentityForComparison(model: string): string {
+  return modelIdentity(model)
+    .replace(/\[[^\]]*\]$/, "")
+    .replace(/-\d{8}$/, "")
+    .replace(/-latest$/, "")
+    .trim();
+}
+
+export function compareSelectedAndAnsweringModel(
+  selected: string | null | undefined,
+  answering: string | null | undefined,
+): ModelAnswerVerdict {
+  const selectedId = selected ? normalizeModelIdentityForComparison(selected) : "";
+  const answeringId = answering ? normalizeModelIdentityForComparison(answering) : "";
+  if (selectedId.length === 0 || answeringId.length === 0) return "unknown";
+  if (selectedId === answeringId) return "match";
+  // One side may carry a finer variant of the same model (`claude-opus-5`
+  // answered by `claude-opus-5-1`). A prefix is the same model only when it
+  // ends at a segment boundary, so `claude-opus-5` never absorbs
+  // `claude-opus-50` and never absorbs a different family.
+  const [shorter, longer] =
+    selectedId.length <= answeringId.length ? [selectedId, answeringId] : [answeringId, selectedId];
+  return longer.startsWith(`${shorter}-`) ? "match" : "mismatch";
+}
+
+/**
  * Codex default-model preference, most preferred first. The provider snapshot
  * marks the first of these present in the live `model/list` response as
  * default; when none are available, Codex's own `isDefault` flag wins.

@@ -3,7 +3,12 @@ import type {
   ModelSelection,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
-import { isAllowedProviderModel, isCurrentCodexModel } from "@t3tools/contracts";
+import {
+  buildCatalogueParity,
+  isAllowedProviderModel,
+  isCurrentCodexModel,
+  isOfferedProviderModel,
+} from "@t3tools/contracts";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
@@ -161,6 +166,15 @@ export function buildModelOptions(
   fallbackModelSelection: ModelSelection | null,
 ): ReadonlyArray<ModelOption> {
   const options = new Map<string, ModelOption>();
+  // ThroughLine: one catalogue. The phone derives a mirror driver's offer from
+  // the same Claude and Codex snapshots the desktop picker uses, so the two
+  // surfaces cannot show different lists.
+  const parity = buildCatalogueParity(
+    (config?.providers ?? []).map((provider) => ({
+      driver: provider.driver,
+      models: provider.models,
+    })),
+  );
 
   for (const provider of config?.providers ?? []) {
     if (
@@ -174,7 +188,14 @@ export function buildModelOptions(
 
     const providerLabel = providerDisplayLabel(provider);
     for (const model of provider.models) {
-      if (!isAllowedProviderModel(model.slug, provider.driver)) continue;
+      if (
+        !isOfferedProviderModel(model.slug, provider.driver, {
+          parity,
+          isCustom: model.isCustom,
+        })
+      ) {
+        continue;
+      }
       const key = `${provider.instanceId}:${model.slug}`;
       options.set(key, {
         key,

@@ -40,6 +40,32 @@ if (isIosPersonalTeamBuild && (!personalTeamId || !IOS_TEAM_ID_PATTERN.test(pers
   );
 }
 
+// ThroughLine fork: signing under the fork's own company is a first-class configured path.
+// Upstream offers exactly two lanes — its own pinned team, or the Personal Team lane — so a
+// fork shipping under a paid company team had no lane at all, and the only signable build was
+// an individual one that also drops paid-team capabilities. These values are read from build
+// variables rather than written into this file, so an upstream merge never fights a literal.
+// When they are unset every upstream default below is unchanged.
+const companyBundleIdentifier = repoEnv.THROUGHLINE_IOS_BUNDLE_ID?.trim();
+const companyTeamId = repoEnv.THROUGHLINE_IOS_TEAM_ID?.trim();
+const companyAssociatedDomain = repoEnv.THROUGHLINE_IOS_ASSOCIATED_DOMAIN?.trim();
+
+if (companyBundleIdentifier && !IOS_BUNDLE_IDENTIFIER_PATTERN.test(companyBundleIdentifier)) {
+  throw new Error(
+    "THROUGHLINE_IOS_BUNDLE_ID must be a reverse-DNS identifier such as us.wccert.throughline.",
+  );
+}
+
+if (companyTeamId && !IOS_TEAM_ID_PATTERN.test(companyTeamId)) {
+  throw new Error("THROUGHLINE_IOS_TEAM_ID must be the 10-character Apple team id.");
+}
+
+if (companyBundleIdentifier && isIosPersonalTeamBuild) {
+  throw new Error(
+    "THROUGHLINE_IOS_BUNDLE_ID and T3CODE_IOS_PERSONAL_TEAM=1 are different signing lanes; set only one.",
+  );
+}
+
 const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
@@ -85,7 +111,7 @@ const VARIANT_CONFIG = {
     appName: "ThroughLine Dev",
     scheme: "t3code-dev",
     iosBundleIdentifier: "com.t3tools.t3code.dev",
-    androidPackage: "com.t3tools.t3code.dev",
+    androidPackage: "us.wccert.throughline.dev",
     relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
@@ -93,7 +119,7 @@ const VARIANT_CONFIG = {
     appName: "ThroughLine Preview",
     scheme: "t3code-preview",
     iosBundleIdentifier: "com.t3tools.t3code.preview",
-    androidPackage: "com.t3tools.t3code.preview",
+    androidPackage: "us.wccert.throughline.preview",
     relyingParty: "clerk.t3.codes",
     assets: PREVIEW_ASSETS,
   },
@@ -101,7 +127,7 @@ const VARIANT_CONFIG = {
     appName: "ThroughLine",
     scheme: "t3code",
     iosBundleIdentifier: "com.t3tools.t3code",
-    androidPackage: "com.t3tools.t3code",
+    androidPackage: "us.wccert.throughline",
     relyingParty: "clerk.t3.codes",
     assets: RELEASE_ASSETS,
   },
@@ -119,9 +145,10 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
-const iosBundleIdentifier = isIosPersonalTeamBuild
-  ? personalTeamBundleIdentifier!
-  : variant.iosBundleIdentifier;
+// ThroughLine fork: company identifier first, then the Personal Team lane, then upstream's own.
+const iosBundleIdentifier =
+  companyBundleIdentifier ??
+  (isIosPersonalTeamBuild ? personalTeamBundleIdentifier! : variant.iosBundleIdentifier);
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -202,7 +229,12 @@ const config: ExpoConfig = {
     fallbackToCacheTimeout: 0,
   },
   ios: {
-    icon: "./assets/throughline-icon.icon",
+    // ThroughLine fork: read the Icon Composer project the variant already names, which is
+    // tracked in the repository. This line used to point at ./assets/throughline-icon.icon,
+    // a path nothing in the repository creates and nothing else references — it existed only
+    // as an untracked leftover in one checkout. Any other checkout handed Apple's asset tool
+    // a missing input, which it reports as a crash rather than a missing file.
+    icon: variant.assets.iosIcon,
     supportsTablet: true,
     // Multitasking-capable iPad apps cannot rotate programmatically, so the
     // showcase capture build requires full screen (see infoPlist below).
@@ -214,20 +246,31 @@ const config: ExpoConfig = {
     // ThroughLine fork: a Personal Team build must sign with the operator own team.
     // Upstream pinned this to T3 Tools, which makes the T3CODE_IOS_PERSONAL_TEAM lane
     // unsignable on any other account. Default is unchanged when the flag is off.
-    appleTeamId: isIosPersonalTeamBuild && personalTeamId ? personalTeamId : "ARK85ZXQ4Z",
+    // ThroughLine fork: the company team when one is configured, then the operator's own team
+    // on the Personal Team lane, then upstream's pinned team unchanged.
+    appleTeamId:
+      companyTeamId ?? (isIosPersonalTeamBuild && personalTeamId ? personalTeamId : "ARK85ZXQ4Z"),
     // ThroughLine fork: Associated Domains is a paid-team capability; omit it on a Personal Team build.
     ...(isIosPersonalTeamBuild
       ? {}
       : {
           associatedDomains: [
-            `applinks:${variant.relyingParty}`,
-            `webcredentials:${variant.relyingParty}`,
+            `applinks:${companyAssociatedDomain ?? variant.relyingParty}`,
+            `webcredentials:${companyAssociatedDomain ?? variant.relyingParty}`,
           ],
         }),
     entitlements: {
-      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
+      // ThroughLine fork: derive the keychain group from the identifier the build actually
+      // ships under. Upstream read the variant literal, so a renamed build kept a keychain
+      // group naming the vendor — the group the app's own credential storage uses.
+      "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`],
     },
     infoPlist: {
+      // ThroughLine fork: Live Activities is a paid-team feature and is declared here rather
+      // than as an entitlement — Apple has no Live Activities capability to register. The
+      // widget target already asks for push updates and frequent updates; this key is what
+      // lets the app start one. Off on the Personal Team lane, which cannot sign the widget.
+      ...(isIosPersonalTeamBuild ? {} : { NSSupportsLiveActivities: true }),
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },
@@ -404,6 +447,7 @@ const config: ExpoConfig = {
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withIosSceneLifecycle.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
+    "./plugins/withAndroidReleaseSigning.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
     "./plugins/withAndroidModernPopupMenu.cjs",
     "./plugins/withAndroidModernAlertDialog.cjs",
