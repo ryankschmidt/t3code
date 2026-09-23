@@ -2,6 +2,7 @@ import {
   BUILT_IN_THEMES,
   getThemeColorsForAppearance,
   MOBILE_DEFAULT_THEME_ID,
+  MOBILE_DEFAULT_THEME_LABEL,
   MOBILE_THEME_IDS as SHARED_MOBILE_THEME_IDS,
   type BuiltInThemeId,
   type MobileThemeId as SharedMobileThemeId,
@@ -24,7 +25,7 @@ export const MOBILE_THEME_OPTIONS: ReadonlyArray<{
   readonly id: MobileThemeId;
   readonly label: string;
 }> = [
-  { id: DEFAULT_MOBILE_THEME_ID, label: "T3 Code" },
+  { id: DEFAULT_MOBILE_THEME_ID, label: MOBILE_DEFAULT_THEME_LABEL },
   { id: "material-you", label: "Material You" },
   ...BUILT_IN_THEMES.map((theme) => ({ id: theme.id as MobileThemeId, label: theme.label })),
 ];

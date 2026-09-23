@@ -480,7 +480,7 @@ describe("mobile cloud link environment client", () => {
       const environmentTokenBody = new URLSearchParams(
         requestBodyText(environmentTokenRequest?.body),
       );
-      expect(environmentTokenBody.get("client_label")).toBe("T3 Code Mobile");
+      expect(environmentTokenBody.get("client_label")).toBe("ThroughLine Mobile");
       expect(environmentTokenBody.get("client_device_type")).toBe("mobile");
       expect(environmentTokenBody.get("client_os")).toBe("iOS");
     }),

@@ -125,7 +125,15 @@ const PREVIEW_ASSETS = {
 
 const RELEASE_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
+  // ThroughLine: the iOS icon is the ThroughLine mark PNG, not an Icon Composer project.
+  //
+  // The production Icon Composer project at assets/prod/app-icon.icon draws a literal "T3"
+  // glyph, and ios.icon overrides the generic icon, so every build through build 5 put a
+  // black T3 square on Ryan's home screen and on the TestFlight page. Its macOS and Linux
+  // siblings were rebranded to the ThroughLine mark long ago; only iOS was left behind.
+  // The mark is a finished raster with its own background, so feeding it to Icon Composer
+  // as a glyph layer would double the background — the PNG is the right input.
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidAdaptiveForeground,
   androidAdaptiveBackgroundColor: "#000000",

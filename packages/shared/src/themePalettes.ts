@@ -4,6 +4,17 @@ export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"]
 export const MOBILE_DEFAULT_THEME_ID = "t3-code";
 
 /**
+ * The label shown for the default palette, on every surface.
+ *
+ * This lives here rather than in each app because it is the one theme name that was
+ * hardcoded separately in mobile and web, which is how the phone came to offer "T3 Code"
+ * while the other five names already came from this file. Rename it here and both
+ * surfaces follow with no second edit. The id stays "t3-code" so stored preferences
+ * keep resolving.
+ */
+export const MOBILE_DEFAULT_THEME_LABEL = "ThroughLine";
+
+/**
  * Every palette the mobile app can render. Declared here so host-side tooling
  * (the app-store screenshot harness) can validate a requested theme without
  * importing React Native application code.
@@ -123,7 +134,11 @@ export type ThemeDefinition = Readonly<{
 
 export const T3_CHAT_THEME: ThemeDefinition = {
   id: "t3-chat",
-  label: "T3 Chat",
+  // Renamed from "T3 Chat": this app does not present another company's product name as
+  // one of its own themes. "Rose" follows the palette's own hue and the naming family the
+  // other built-ins already use (Grove, Ocean, Ember, Iris). The id is unchanged so stored
+  // preferences keep resolving.
+  label: "Rose",
   appearance: "light",
   colors: {
     canvas: "oklch(0.982446 0.010114 325.653)",

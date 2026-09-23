@@ -4,6 +4,7 @@ import {
   STANDARD_THEME_PREVIEW_COLORS as SHARED_STANDARD_THEME_PREVIEW_COLORS,
   THEME_PREVIEW_RENDER_SPECS,
 } from "@t3tools/shared/themePreview";
+import { MOBILE_DEFAULT_THEME_LABEL } from "@t3tools/shared/themePalettes";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -58,7 +59,10 @@ const STANDARD_THEME_PREVIEW_COLORS: Record<
 export const STANDARD_THEME_CARDS: ReadonlyArray<ThemeCardDefinition> = [
   {
     id: "default",
-    label: "T3 Code",
+    // The default theme's name comes from the shared palette source so desktop and mobile
+    // cannot drift. It was hardcoded separately in both, which is how the phone showed
+    // "T3 Code" in Settings -> Appearance.
+    label: MOBILE_DEFAULT_THEME_LABEL,
     previews: (["light", "dark"] as const).map((mode) => ({
       mode,
       colors: STANDARD_THEME_PREVIEW_COLORS[mode],
