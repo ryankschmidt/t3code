@@ -6,7 +6,12 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type { SidebarProjectGroupingMode } from "@t3tools/contracts";
-import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
+import {
+  DEFAULT_MOBILE_THEME_ID,
+  normalizeMobileThemeId,
+  type MobileThemeId,
+  type MobileThemeMode,
+} from "../lib/mobileTheme";
 
 import * as MobileDatabase from "./mobile-database";
 import * as MobileSecureStorage from "./mobile-secure-storage";
@@ -110,23 +115,29 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;
   }
-  if (
-    typeof parsed.themeId === "string" &&
-    (MOBILE_THEME_IDS as readonly string[]).includes(parsed.themeId)
-  ) {
-    preferences.themeId = parsed.themeId as MobileThemeId;
+  if (typeof parsed.themeId === "string") {
+    // ThroughLine: a published theme id is not in this build’s list, so the
+    // membership test used to erase the selection on every reload.
+    const themeId = normalizeMobileThemeId(parsed.themeId);
+    if (themeId !== DEFAULT_MOBILE_THEME_ID || parsed.themeId === DEFAULT_MOBILE_THEME_ID) {
+      preferences.themeId = themeId;
+    }
   }
-  if (
-    typeof parsed.lightThemeId === "string" &&
-    (MOBILE_THEME_IDS as readonly string[]).includes(parsed.lightThemeId)
-  ) {
-    preferences.lightThemeId = parsed.lightThemeId as MobileThemeId;
+  if (typeof parsed.lightThemeId === "string") {
+    // ThroughLine: a published theme id is not in this build’s list, so the
+    // membership test used to erase the selection on every reload.
+    const lightThemeId = normalizeMobileThemeId(parsed.lightThemeId);
+    if (lightThemeId !== DEFAULT_MOBILE_THEME_ID || parsed.lightThemeId === DEFAULT_MOBILE_THEME_ID) {
+      preferences.lightThemeId = lightThemeId;
+    }
   }
-  if (
-    typeof parsed.darkThemeId === "string" &&
-    (MOBILE_THEME_IDS as readonly string[]).includes(parsed.darkThemeId)
-  ) {
-    preferences.darkThemeId = parsed.darkThemeId as MobileThemeId;
+  if (typeof parsed.darkThemeId === "string") {
+    // ThroughLine: a published theme id is not in this build’s list, so the
+    // membership test used to erase the selection on every reload.
+    const darkThemeId = normalizeMobileThemeId(parsed.darkThemeId);
+    if (darkThemeId !== DEFAULT_MOBILE_THEME_ID || parsed.darkThemeId === DEFAULT_MOBILE_THEME_ID) {
+      preferences.darkThemeId = darkThemeId;
+    }
   }
   if (
     parsed.themeMode === "system" ||

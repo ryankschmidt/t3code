@@ -2,10 +2,13 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   DEFAULT_MOBILE_THEME_ID,
   getMobileThemeVariables,
+  isBundledMobileThemeId,
   MOBILE_THEME_IDS,
   type MobileThemeAppearance,
   type MobileThemeId,
 } from "../../lib/mobileTheme";
+import type { BuiltInThemeId } from "@t3tools/shared/themePalettes";
+
 import { readDefaultMobileThemeVariables } from "../../lib/mobileTheme.test-support";
 
 import {
@@ -66,9 +69,14 @@ function filesPatch(paths: ReadonlyArray<string>) {
 }
 
 function appTheme(themeId: MobileThemeId, appearance: MobileThemeAppearance) {
+  // ThroughLine: the id arm now also admits ids the environment publishes, so
+  // this helper defers to the production resolver instead of repeating a
+  // narrower copy of its branches.
   return themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you"
     ? readDefaultMobileThemeVariables(appearance)
-    : getMobileThemeVariables(themeId, appearance);
+    : isBundledMobileThemeId(themeId)
+      ? getMobileThemeVariables(themeId as BuiltInThemeId, appearance)
+      : readDefaultMobileThemeVariables(appearance);
 }
 
 describe("getCachedNativeReviewDiffData", () => {

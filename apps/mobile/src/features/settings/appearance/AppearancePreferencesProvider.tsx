@@ -12,6 +12,8 @@ import {
 } from "react";
 import { AppState, Appearance, Platform, useColorScheme } from "react-native";
 
+import type { EnvironmentTheme } from "@t3tools/contracts";
+
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
 
@@ -23,6 +25,11 @@ import {
   type ResolvedAppearance,
 } from "../../../lib/appearancePreferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../../state/preferences";
+import { environmentPublishedThemesAtom } from "../../../state/server";
+import {
+  environmentThemeMobileVariables,
+  findEnvironmentTheme,
+} from "../../../lib/environmentThemePalette";
 import type { Preferences } from "../../../persistence/mobile-preferences";
 import { isSystemColorsAvailable, readSystemColorPalettes } from "../../../lib/materialYouPalette";
 import { materialYouPaletteToMobileThemeVariables } from "../../../lib/materialYouTheme";
@@ -31,6 +38,7 @@ import type { MobileThemeVariables } from "../../../lib/mobileTheme";
 import {
   createMobileThemePairPatch,
   createMobileThemeSelectionPatch,
+  isBundledMobileThemeId,
   normalizeMobileThemeMode,
   resolveMobileThemeIds,
   type MobileThemeAppearance,
@@ -61,6 +69,8 @@ interface AppearancePreferencesContextValue {
     Record<MobileThemeAppearance, MobileThemeVariables>
   >;
   readonly systemColorPalettes: ReturnType<typeof readSystemColorPalettes>;
+  /** ThroughLine: palettes the connected machines publish, for the theme picker. */
+  readonly publishedThemes: ReadonlyArray<EnvironmentTheme>;
   readonly isReady: boolean;
   readonly setThemeIdForAppearance: (
     appearance: MobileThemeAppearance,
@@ -100,6 +110,11 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   const materialYouStyleLayoutEnabled = storedPreferences?.materialYouStyleLayoutEnabled ?? false;
   const materialYouStyleLayoutActive = Platform.OS === "android" && materialYouStyleLayoutEnabled;
   const systemColorsActive = themeId === "material-you" && isSystemColorsAvailable;
+  // ThroughLine: the palettes the connected machines publish, so a theme chosen
+  // on the desktop can be chosen here too and renders from the same definition.
+  const publishedThemes: ReadonlyArray<EnvironmentTheme> = useAtomValue(
+    environmentPublishedThemesAtom,
+  );
   const [systemColorPalettes, setSystemColorPalettes] = useState(readSystemColorPalettes);
   useEffect(() => {
     if (!isSystemColorsAvailable) return;
@@ -120,17 +135,28 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   }, []);
   const themeVariablesByAppearance = useMemo(() => {
     const resolve = (appearance: MobileThemeAppearance) => {
-      const base = getMobileThemeRuntimeVariables(themeIds[appearance], appearance);
-      return themeIds[appearance] === "material-you" && systemColorPalettes
-        ? materialYouPaletteToMobileThemeVariables(
-            systemColorPalettes[appearance],
-            appearance,
-            base,
-          )
-        : base;
+      const selectedId = themeIds[appearance];
+      const base = getMobileThemeRuntimeVariables(selectedId, appearance);
+      if (selectedId === "material-you" && systemColorPalettes) {
+        return materialYouPaletteToMobileThemeVariables(
+          systemColorPalettes[appearance],
+          appearance,
+          base,
+        );
+      }
+      // ThroughLine: an id this build does not ship belongs to a theme the
+      // environment published. Its role colours go through the same converter
+      // every bundled palette uses, so there is one palette source and no
+      // colour value is written on this side. A theme that is no longer
+      // published simply leaves the stock palette in place.
+      if (!isBundledMobileThemeId(selectedId)) {
+        const published = findEnvironmentTheme(publishedThemes, selectedId);
+        if (published !== null) return environmentThemeMobileVariables(published, appearance);
+      }
+      return base;
     };
     return { light: resolve("light"), dark: resolve("dark") };
-  }, [themeIds, systemColorPalettes]);
+  }, [themeIds, systemColorPalettes, publishedThemes]);
   const themeVariables = themeVariablesByAppearance[themeAppearance];
   const activeThemeName = getMobileUniwindThemeName(themeId, themeAppearance);
   const { baseFontSize, codeFontSize, codeWordBreak, terminalFontSize } = preferences;
@@ -299,6 +325,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeVariables,
       themeVariablesByAppearance,
       systemColorPalettes,
+      publishedThemes,
       isReady,
       setThemeIdForAppearance,
       setThemeIdForBothAppearances,
@@ -321,6 +348,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeVariables,
       themeVariablesByAppearance,
       systemColorPalettes,
+      publishedThemes,
       isReady,
       setThemeIdForAppearance,
       setThemeIdForBothAppearances,

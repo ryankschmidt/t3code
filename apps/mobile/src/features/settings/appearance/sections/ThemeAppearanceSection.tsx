@@ -16,6 +16,11 @@ import {
   type MobileThemeMode,
 } from "../../../../lib/mobileTheme";
 import { getMobileUniwindThemeName } from "../../../../lib/mobileThemeRuntime";
+import {
+  environmentThemeColors,
+  findEnvironmentTheme,
+} from "../../../../lib/environmentThemePalette";
+import { themeColorToNativeColor } from "../../../../lib/mobileTheme";
 import { cn } from "../../../../lib/cn";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
 
@@ -41,12 +46,26 @@ const PreviewOrb = memo(function PreviewOrb(props: {
   const idPrefix = useId().replaceAll(":", "");
   const accentGradientId = `${idPrefix}-accent-glow`;
   const actionGradientId = `${idPrefix}-action-glow`;
-  const { systemColorPalettes } = useAppearancePreferences();
+  const { systemColorPalettes, publishedThemes } = useAppearancePreferences();
   const palette = systemColorPalettes?.[props.appearance];
+  // ThroughLine: a published theme has no bundled preview, so its orb reads the
+  // same role colours the screen will render.
+  const published = findEnvironmentTheme(publishedThemes, props.themeId);
+  const publishedPreview =
+    published === null
+      ? null
+      : (() => {
+          const roles = environmentThemeColors(published, props.appearance);
+          return {
+            canvas: themeColorToNativeColor(roles.canvas),
+            accent: themeColorToNativeColor(roles.accent),
+            messageAction: themeColorToNativeColor(roles.messageAction),
+          };
+        })();
   const colors =
     props.themeId === "material-you" && palette
       ? { canvas: palette.surface, accent: palette.primary, messageAction: palette.tertiary }
-      : getMobileThemePreviewColors(props.themeId, props.appearance);
+      : (publishedPreview ?? getMobileThemePreviewColors(props.themeId, props.appearance));
   const spec = THEME_PREVIEW_RENDER_SPECS[props.appearance];
   const accentRadius = Math.hypot(
     Math.max(spec.accent.center[0], 1 - spec.accent.center[0]),
@@ -296,7 +315,15 @@ export function ThemeAppearanceSection() {
     materialYouStyleLayoutEnabled,
     setMaterialYouStyleLayoutEnabled,
     systemColorsAvailable,
+    publishedThemes,
   } = useAppearancePreferences();
+
+  // ThroughLine: the machine’s own palettes sit after the bundled ones, so a
+  // theme chosen on the desktop is selectable here under the same name.
+  const themeOptions = [
+    ...MOBILE_THEME_OPTIONS.filter((theme) => theme.id !== "material-you" || systemColorsAvailable),
+    ...publishedThemes.map((theme) => ({ id: theme.id as MobileThemeId, label: theme.name })),
+  ];
 
   return (
     <View className="gap-6">
@@ -332,9 +359,7 @@ export function ThemeAppearanceSection() {
       <View className="gap-3">
         <SectionLabel>Themes</SectionLabel>
         <View className="flex-row flex-wrap gap-3">
-          {MOBILE_THEME_OPTIONS.filter(
-            (theme) => theme.id !== "material-you" || systemColorsAvailable,
-          ).map((theme) => (
+          {themeOptions.map((theme) => (
             <ThemeCard
               disabled={!isReady}
               key={theme.id}

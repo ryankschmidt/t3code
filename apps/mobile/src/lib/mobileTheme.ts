@@ -16,7 +16,15 @@ import {
 
 export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;
 export const MOBILE_THEME_IDS = [...SHARED_MOBILE_THEME_IDS, "material-you"] as const;
-export type MobileThemeId = SharedMobileThemeId | "material-you";
+// ThroughLine: the open arm carries the id of a theme the environment
+// publishes. It is deliberately `string & {}` rather than plain `string` so the
+// built-in literals keep completing and narrowing; without it a published id
+// could not be stored as a selection at all.
+export type MobileThemeId = SharedMobileThemeId | "material-you" | (string & {});
+/** Ids this build ships itself, as opposed to one an environment published. */
+export function isBundledMobileThemeId(value: string): boolean {
+  return (MOBILE_THEME_IDS as readonly string[]).includes(value);
+}
 export type MobileThemeAppearance = ThemeAppearance;
 export type MobileThemeMode = MobileThemeAppearance | "system";
 export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeId>>;
@@ -33,10 +41,17 @@ export const MOBILE_THEME_OPTIONS: ReadonlyArray<{
 export type MobileThemeVariable = `--color-${string}`;
 export type MobileThemeVariables = Readonly<Record<MobileThemeVariable, string>>;
 
+// ThroughLine: a published id has to survive a preferences round-trip. The
+// stored selection is read before any environment connects, so membership of
+// the published set cannot be checked here; the shape check below is what keeps
+// a malformed value out, and an id whose theme is no longer published falls
+// back to the default at render time instead.
+const PUBLISHED_THEME_ID_SHAPE = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
 export function normalizeMobileThemeId(value: unknown): MobileThemeId {
-  return typeof value === "string" && (MOBILE_THEME_IDS as readonly string[]).includes(value)
-    ? (value as MobileThemeId)
-    : DEFAULT_MOBILE_THEME_ID;
+  if (typeof value !== "string") return DEFAULT_MOBILE_THEME_ID;
+  if (isBundledMobileThemeId(value)) return value as MobileThemeId;
+  return PUBLISHED_THEME_ID_SHAPE.test(value) ? (value as MobileThemeId) : DEFAULT_MOBILE_THEME_ID;
 }
 
 export function normalizeMobileThemeMode(value: unknown): MobileThemeMode {

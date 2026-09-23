@@ -42,9 +42,16 @@ export function getMobileUniwindThemeName(
   themeId: MobileThemeId,
   appearance: MobileThemeAppearance,
 ): MobileUniwindThemeName {
-  return themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you"
+  // ThroughLine: only the five built-ins have a generated Uniwind variant. The
+  // default, Material You, and any theme the environment published all render
+  // on the bare appearance variant and take their colours from the variable
+  // overlay instead — naming a variant that was never generated would leave the
+  // screen on whatever the previous theme had set.
+  return themeId === DEFAULT_MOBILE_THEME_ID ||
+    themeId === "material-you" ||
+    !BUILT_IN_THEME_IDS.includes(themeId as BuiltInThemeId)
     ? appearance
-    : `${themeId}-${appearance}`;
+    : `${themeId as BuiltInThemeId}-${appearance}`;
 }
 
 /**

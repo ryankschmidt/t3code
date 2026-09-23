@@ -1,4 +1,10 @@
-import { BUILT_IN_THEMES, getThemeColorsForAppearance } from "@t3tools/shared/themePalettes";
+import {
+  BUILT_IN_THEMES,
+  BUILT_IN_THEME_IDS,
+  getThemeColorsForAppearance,
+  type BuiltInThemeId,
+} from "@t3tools/shared/themePalettes";
+
 
 import {
   getMobileThemeVariables,
@@ -78,12 +84,21 @@ function getPierreTerminalTheme(scheme: TerminalAppearanceScheme): TerminalTheme
   return scheme === "light" ? PIERRE_LIGHT_THEME : PIERRE_DARK_THEME;
 }
 
+function isBuiltInThemeId(value: string): value is BuiltInThemeId {
+  return (BUILT_IN_THEME_IDS as readonly string[]).includes(value);
+}
+
 export function getMobileTerminalTheme(
   themeId: MobileThemeId,
   scheme: TerminalAppearanceScheme,
 ): TerminalTheme {
   const base = getPierreTerminalTheme(scheme);
-  if (themeId === "t3-code" || themeId === "material-you") return base;
+  // ThroughLine: a theme the environment published has no bundled terminal
+  // palette, so the terminal keeps its stock scheme rather than borrowing a
+  // built-in that shares none of its colours.
+  if (themeId === "t3-code" || themeId === "material-you" || !isBuiltInThemeId(themeId)) {
+    return base;
+  }
 
   const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? BUILT_IN_THEMES[0];
   const palette = getThemeColorsForAppearance(theme, scheme) ?? theme.colors;
