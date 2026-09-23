@@ -175,6 +175,30 @@ SERVICE=$SERVICE
 export T3CODE_HOME=$BASEDIR
 export T3CODE_DESKTOP_LAN_HOST=$LAN_HOST
 
+# THE DURABLE QUEUE ADDRESS IS LOAD-BEARING, and the window does not inherit it. Do not remove.
+#
+# Measured on the tower 2026-09-17: the window became the server with no variable beginning
+# ABSURD in its environment, so the queue library fell back to a connection string carrying no
+# user, connected as the operating-system account, and Postgres answered
+# 'role "twr" does not exist'. The turn rail's readiness probe therefore failed and the window
+# refused every send with a queue-reachability banner while the headless service answered fine.
+# The service never had the problem because its unit file has always carried the address.
+#
+# Repaired by hand on the tower that night, and the repair was ERASED by the next install on
+# 2026-09-20, because this installer rewrites the launcher from scratch every run. That is why
+# the block lives here rather than on the host: a launcher edit is not durable, an installer
+# edit is.
+#
+# Values are READ FROM THE SERVICE UNIT rather than duplicated, so the host keeps one source of
+# truth and no value can drift between the window and the service. Only the queue and provider
+# addresses are taken; nothing else in the unit's environment is copied.
+UNIT_ENV=\$(systemctl --user show -p Environment --value "\$SERVICE" 2>/dev/null)
+for kv in \$UNIT_ENV; do
+  case "\$kv" in
+    ABSURD_*=*|ANTHROPIC_*=*) export "\$kv" ;;
+  esac
+done
+
 # ONE SERVER PER DEVICE, and it is not a tidiness preference — it is a correctness requirement.
 # Measured 2026-09-05, four runs, one variable:
 #   service stopped, app alone   -> app loads with the operator's real threads  (twice)
