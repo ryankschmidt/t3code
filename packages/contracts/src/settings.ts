@@ -19,6 +19,7 @@ import {
   ProviderOptionSelections,
 } from "./model.ts";
 import { ModelSelection, ProjectScript } from "./orchestration.ts";
+import { DEFAULT_MODEL_OFFERING, ModelOffering } from "./modelOffering.ts";
 import { BrowserProfile, BrowserProfileId, DEFAULT_BROWSER_PROFILE_ID } from "./browserProfile.ts";
 import {
   DEFAULT_PREVIEW_APPEARANCE,
@@ -1054,6 +1055,16 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   /**
+   * ThroughLine: the one model list every client shows. The server applies it
+   * to every provider snapshot it publishes, so the Mac, the Linux tower and
+   * the iPhone all read the same list and nothing is hidden on a client. See
+   * `modelOffering.ts`. The compiled default is Ryan's list; a value written
+   * here overrides it.
+   */
+  modelOffering: ModelOffering.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MODEL_OFFERING)),
+  ),
+  /**
    * Per-project overrides of the keys in `PROJECT_SCOPED_SERVER_SETTING_KEYS`.
    * The source of truth for project settings; `projectAgentBrowserAccessOverrides`,
    * `projectAutoPullOverrides` and `projectScriptOverrides` are derived views
@@ -1354,6 +1365,7 @@ const OpenCodeSettingsPatch = Schema.Struct({
 
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
+  modelOffering: Schema.optionalKey(ModelOffering),
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),

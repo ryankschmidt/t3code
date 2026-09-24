@@ -1298,7 +1298,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         icon: "play",
         runOnWorktreeCreate: false,
       };
-      const model = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.5");
+      // Not a retired model: retired defaults are resolved on load, which is not what this folds.
+      const model = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.6-sol");
       const modelJson = yield* Schema.encodeEffect(Schema.fromJsonString(ModelSelection))(model);
       const scriptsJson = yield* Schema.encodeEffect(
         Schema.fromJsonString(Schema.Array(ProjectScript)),

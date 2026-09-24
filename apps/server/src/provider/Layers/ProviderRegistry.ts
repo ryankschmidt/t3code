@@ -23,6 +23,8 @@
  * @module ProviderRegistryLive
  */
 import {
+  applyModelOffering,
+  DEFAULT_MODEL_OFFERING,
   defaultInstanceIdForDriver,
   ProviderDriverKind,
   type ProviderInstanceId,
@@ -41,6 +43,7 @@ import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 
 import { ServerConfig } from "../../config.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
 import {
@@ -281,6 +284,20 @@ export const ProviderRegistryLive = Layer.effect(
     const config = yield* ServerConfig;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    // ThroughLine: the server-owned model list (`modelOffering` in server
+    // settings) is applied to everything this registry hands out, so every
+    // client of this server — desktop, Linux, iPhone — reads one list and
+    // nothing is hidden client-side. Internal state keeps the full snapshots,
+    // so a thread already on a retired model still resolves its provider.
+    // A hard requirement on purpose: an optional lookup that found nothing would
+    // silently serve the compiled list and ignore the written one.
+    const settingsService = yield* ServerSettingsService;
+    const currentOffering = settingsService.getSettings.pipe(
+      Effect.map((settings) => settings.modelOffering),
+      Effect.orElseSucceed(() => DEFAULT_MODEL_OFFERING),
+    );
+    const offerProviders = (providers: ReadonlyArray<ServerProvider>) =>
+      currentOffering.pipe(Effect.map((offering) => applyModelOffering(providers, offering)));
 
     // Aggregator PubSub — consumers (WS gateway, etc.) subscribe here for
     // coalesced updates across every instance.
@@ -866,17 +883,33 @@ export const ProviderRegistryLive = Layer.effect(
     });
 
     return {
-      getProviders: Ref.get(providersRef),
+      getProviders: Ref.get(providersRef).pipe(Effect.flatMap(offerProviders)),
       refresh: (provider?: ProviderDriverKind) =>
-        refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
+        refresh(provider).pipe(
+          Effect.catchCause(recoverRefreshFailure),
+          Effect.flatMap(offerProviders),
+        ),
       refreshInstance: (instanceId: ProviderInstanceId) =>
-        refreshInstance(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
+        refreshInstance(instanceId).pipe(
+          Effect.catchCause(recoverRefreshFailure),
+          Effect.flatMap(offerProviders),
+        ),
       refreshWorkspaceSnapshot: (input) =>
-        refreshWorkspaceSnapshot(input).pipe(Effect.catchCause(recoverRefreshFailure)),
+        refreshWorkspaceSnapshot(input).pipe(
+          Effect.catchCause(recoverRefreshFailure),
+          Effect.flatMap(offerProviders),
+        ),
       getProviderMaintenanceCapabilitiesForInstance,
       setProviderMaintenanceActionState,
       get streamChanges() {
-        return Stream.fromPubSub(changesPubSub);
+        // A change to the model list republishes the current snapshots, so
+        // a written `modelOffering` reaches every client without a restart.
+        const offeringChanges = settingsService.streamChanges.pipe(
+          Stream.mapEffect(() => Ref.get(providersRef)),
+        );
+        return Stream.merge(Stream.fromPubSub(changesPubSub), offeringChanges).pipe(
+          Stream.mapEffect(offerProviders),
+        );
       },
     } satisfies ProviderRegistryShape;
   }),

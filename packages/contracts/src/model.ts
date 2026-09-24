@@ -327,7 +327,8 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   // ThroughLine new-thread composer: Codex is the bounded-work default and Opus is the
   // Claude seat default. Fable is never a default; it requires an explicitly authorized launch.
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
-  [CLAUDE_DRIVER_KIND]: "claude-opus-5",
+  // Opus 5 is retired (modelOffering.ts); a missing setting must never fall back to it.
+  [CLAUDE_DRIVER_KIND]: "claude-opus-5-5",
   [CURSOR_DRIVER_KIND]: "auto",
   // Product slug, not an ACP model id. The Grok adapter treats it as "the session's current model".
   [GROK_DRIVER_KIND]: "grok-build",
@@ -410,10 +411,14 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "fable-5": "claude-fable-5",
     "claude-fable": "claude-fable-5",
     "claude-sonnet-5": "claude-sonnet-5",
-    opus: "claude-opus-5",
-    "opus-5": "claude-opus-5",
-    "claude-opus-5.0": "claude-opus-5",
-    "claude-opus-5-0": "claude-opus-5",
+    // ThroughLine: Opus 5 is retired, so every name that meant it resolves to its successor
+    // rather than to a model no picker offers.
+    opus: "claude-opus-5-5",
+    "opus-5.5": "claude-opus-5-5",
+    "claude-opus-5.5": "claude-opus-5-5",
+    "opus-5": "claude-opus-5-5",
+    "claude-opus-5.0": "claude-opus-5-5",
+    "claude-opus-5-0": "claude-opus-5-5",
     "opus-4.8": "claude-opus-4-8",
     "claude-opus-4.8": "claude-opus-4-8",
     "opus-4.7": "claude-opus-4-7",

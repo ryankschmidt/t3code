@@ -27,6 +27,7 @@ import {
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
+  retireModelSelection,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -426,6 +427,35 @@ interface LegacyProjectSettingsRow {
  * aggregate. Keys already present in the generic record win. Marked with
  * `projectSettingsFolded` so a later reset in the UI survives restarts.
  */
+/**
+ * ThroughLine: a stored new-thread default naming a retired model resolves to
+ * the Claude default (Opus 5.5, 1M window) when settings load, so no client
+ * starts a thread on a model the server no longer offers. Read-side only: the
+ * file is not rewritten here.
+ */
+function retireModelDefaults(settings: ServerSettings): ServerSettings {
+  const offering = settings.modelOffering;
+  const defaultModelSelection = retireModelSelection(settings.defaultModelSelection, offering);
+  let overridesChanged = false;
+  const projectSettingsOverrides = Object.fromEntries(
+    Object.entries(settings.projectSettingsOverrides).map(([projectId, overrides]) => {
+      if (overrides.defaultModelSelection === undefined) return [projectId, overrides];
+      const retired = retireModelSelection(overrides.defaultModelSelection, offering);
+      if (retired === overrides.defaultModelSelection) return [projectId, overrides];
+      overridesChanged = true;
+      return [projectId, { ...overrides, defaultModelSelection: retired }];
+    }),
+  ) as ServerSettings["projectSettingsOverrides"];
+  if (defaultModelSelection === settings.defaultModelSelection && !overridesChanged) {
+    return settings;
+  }
+  return {
+    ...settings,
+    defaultModelSelection,
+    ...(overridesChanged ? { projectSettingsOverrides } : {}),
+  };
+}
+
 function foldLegacyProjectSettings(
   settings: ServerSettings,
   rows: ReadonlyArray<LegacyProjectSettingsRow>,
@@ -642,7 +672,7 @@ const make = Effect.gen(function* () {
     if (folded !== loaded) {
       yield* writeSettingsAtomically(folded);
     }
-    return folded;
+    return retireModelDefaults(folded);
   });
 
   const settingsCache = yield* Cache.make<typeof cacheKey, ServerSettings, ServerSettingsError>({
