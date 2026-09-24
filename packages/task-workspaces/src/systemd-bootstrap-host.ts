@@ -1,6 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, lstat } from "node:fs/promises";
+import { readFile, lstat, readlink } from "node:fs/promises";
 import { assertProtectedPath } from "./protected-files.ts";
 import {
   SystemdExecutionDriver,
@@ -25,13 +25,19 @@ export class SystemdBootstrapHost implements SupervisorHost {
     binding: ExecutionBinding;
     expiresAt: number;
     executable: BootstrapExecutable;
+    inference?: NonNullable<WorkerEntryConfig["inference"]>;
   };
   private channel?: BootstrapChannel;
   private child?: ChildProcessWithoutNullStreams;
   private launchedProfile?: string;
   constructor(
     private readonly controlRoot: string,
-    pin: { binding: ExecutionBinding; expiresAt: number; executable: BootstrapExecutable },
+    pin: {
+      binding: ExecutionBinding;
+      expiresAt: number;
+      executable: BootstrapExecutable;
+      inference?: NonNullable<WorkerEntryConfig["inference"]>;
+    },
   ) {
     this.pin = structuredClone(pin);
     bootstrapDigest(this.pin.binding, this.pin.expiresAt);
@@ -45,6 +51,8 @@ export class SystemdBootstrapHost implements SupervisorHost {
   }
   effectiveProfile(binding: ExecutionBinding, profile: ExecutionProfile): ExecutionProfile {
     this.check(binding);
+    if (this.pin.inference && profile.networkIsolation !== "private")
+      throw Error("INFERENCE_REQUIRES_PRIVATE_NETWORK");
     const plan = systemdExecutionPlan(binding, profile);
     const config: WorkerEntryConfig = {
       binding: { agentId: binding.agentId, taskId: binding.taskId, runId: binding.runId },
@@ -54,6 +62,7 @@ export class SystemdBootstrapHost implements SupervisorHost {
       executable: profile.executable,
       executableSha256: profile.executableSha256,
       args: [...profile.args],
+      ...(this.pin.inference ? { inference: structuredClone(this.pin.inference) } : {}),
     };
     return {
       ...structuredClone(profile),
@@ -67,6 +76,11 @@ export class SystemdBootstrapHost implements SupervisorHost {
   }
   async prepare(binding: ExecutionBinding, profile: ExecutionProfile) {
     this.check(binding);
+    if (
+      this.pin.inference &&
+      (await readlink("/proc/self/ns/net")) !== this.pin.inference.hostNetworkNamespace
+    )
+      throw Error("INFERENCE_HOST_NETWORK_CHANGED");
     // Both the waiting program and eventual provider are pinned before any root launch.
     for (const [path, sha] of [
       [this.pin.executable.entry, this.pin.executable.entrySha256],

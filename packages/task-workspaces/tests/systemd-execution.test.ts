@@ -19,6 +19,17 @@ const profile = {
   tasksMax: 32,
 };
 
+test("inference placement pins private networking and refuses a unit without it", () => {
+  const isolated = { ...profile, networkIsolation: "private" as const };
+  const plan = systemdExecutionPlan(binding, isolated);
+  assert.ok(plan.args.includes("--property=PrivateNetwork=yes"));
+  assert.notEqual(plan.description, systemdExecutionPlan(binding, profile).description);
+  const state = `Id=${plan.unit}\nDescription=${plan.description}\nLoadState=loaded\nActiveState=active\nMainPID=123\nControlGroup=/system.slice/${plan.unit}\nInvocationID=${"b".repeat(32)}\n`;
+  assert.throws(() => parseOwnedUnit(state, plan));
+  assert.throws(() => parseOwnedUnit(state + "PrivateNetwork=no\n", plan));
+  assert.equal(parseOwnedUnit(state + "PrivateNetwork=yes\n", plan).pid, 123);
+});
+
 test("private task storage and persistent agent home have different lifetimes", () => {
   const a = systemdExecutionPlan(binding, profile);
   const b = systemdExecutionPlan({ ...binding, taskId: "task-b", runId: "run-b" }, profile);

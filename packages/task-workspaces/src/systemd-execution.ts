@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile, lstat } from "node:fs/promises";
+import { readFile, lstat, readlink } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
 import { assertProtectedPath } from "./protected-files.ts";
 import { withPublicationLock } from "./publication-lock.ts";
@@ -17,6 +17,8 @@ export type ExecutionProfile = {
   cpuPercent: number;
   maxSeconds: number;
   tasksMax: number;
+  /** Required by worker-local inference HTTP adapters; omitted preserves legacy host networking. */
+  networkIsolation?: "private";
 };
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function id(value: string) {
@@ -43,11 +45,14 @@ export function systemdExecutionPlan(binding: ExecutionBinding, profile: Executi
     "cpuPercent",
     "maxSeconds",
     "tasksMax",
+    "networkIsolation",
   ]);
   id(binding.agentId);
   id(binding.taskId);
   id(binding.runId);
   id(profile.id);
+  if (profile.networkIsolation !== undefined && profile.networkIsolation !== "private")
+    throw Error("INVALID_NETWORK_ISOLATION");
   if (
     typeof profile.executable !== "string" ||
     !isAbsolute(profile.executable) ||
@@ -78,6 +83,7 @@ export function systemdExecutionPlan(binding: ExecutionBinding, profile: Executi
       cpuPercent: profile.cpuPercent,
       maxSeconds: profile.maxSeconds,
       tasksMax: profile.tasksMax,
+      ...(profile.networkIsolation ? { networkIsolation: profile.networkIsolation } : {}),
     },
   })}`;
   const home = `/var/lib/throughline-agents/${agentKey}`,
@@ -95,6 +101,7 @@ export function systemdExecutionPlan(binding: ExecutionBinding, profile: Executi
     "TimeoutStopSec=10",
     "NoNewPrivileges=yes",
     "PrivateTmp=yes",
+    ...(profile.networkIsolation ? ["PrivateNetwork=yes"] : []),
     "ProtectHome=yes",
     "ProtectSystem=strict",
     "ProtectKernelTunables=yes",
@@ -114,6 +121,7 @@ export function systemdExecutionPlan(binding: ExecutionBinding, profile: Executi
     home,
     workspaceRoot,
     workspace,
+    privateNetwork: profile.networkIsolation === "private",
     args: [
       "--system",
       "--no-ask-password",
@@ -156,7 +164,8 @@ export function parseOwnedUnit(output: string, plan: ReturnType<typeof systemdEx
     pid <= 0 ||
     !/^[a-f0-9]{32}$/.test(invocationId) ||
     cgroup !== `/system.slice/${plan.unit}` ||
-    fields.get("ActiveState") !== "active"
+    fields.get("ActiveState") !== "active" ||
+    (plan.privateNetwork && fields.get("PrivateNetwork") !== "yes")
   )
     throw Error("EXECUTION_UNIT_NOT_OWNED_OR_ACTIVE");
   return { unit: plan.unit, invocationId, pid, cgroup, active: "active" as const };
@@ -207,7 +216,7 @@ export class SystemdExecutionDriver {
       [
         "show",
         unit,
-        "--property=Id,Description,LoadState,ActiveState,MainPID,ControlGroup,InvocationID",
+        "--property=Id,Description,LoadState,ActiveState,MainPID,ControlGroup,InvocationID,PrivateNetwork",
       ],
       { env: cleanEnv, timeout: 10000, maxBuffer: 16384 },
     );
@@ -219,7 +228,16 @@ export class SystemdExecutionDriver {
     const unit = parseOwnedUnit(await this.show(plan.unit), plan);
     const identity = await attestExecution(unit.pid);
     if (identity.cgroup !== unit.cgroup) throw Error("EXECUTION_CGROUP_MISMATCH");
-    return { ...unit, identity, home: plan.home, workspace: plan.workspace };
+    let network: { networkNamespace?: string } = {};
+    if (plan.privateNetwork) {
+      const [host, worker] = await Promise.all([
+        readlink("/proc/self/ns/net"),
+        readlink(`/proc/${unit.pid}/ns/net`),
+      ]);
+      if (host === worker) throw Error("EXECUTION_NETWORK_NOT_ISOLATED");
+      network = { networkNamespace: worker };
+    }
+    return { ...unit, identity, home: plan.home, workspace: plan.workspace, ...network };
   }
   async lookup(binding: ExecutionBinding) {
     binding = structuredClone(binding);

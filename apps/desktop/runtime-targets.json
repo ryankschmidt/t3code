@@ -40,6 +40,8 @@
         "install_path": "/srv/throughline/ThroughLine-{version}-x86_64.AppImage",
         "install_path_note": "{version} is substituted from version_source at install time. It was hard-coded to 0.0.37 until 2026-09-05, which silently went stale on every release; the installer refuses rather than guessing if substitution yields a path that does not match the built artifact.",
         "current_link": "/srv/throughline/ThroughLine.AppImage",
+        "launcher": "/srv/throughline/throughline-desktop-launch.sh",
+        "launcher_note": "The desktop icon runs this script, not the AppImage, and it is the only place three host-level facts are handed to the window: the shared data directory so the app and the background service use ONE database, the stop-and-restart handoff of the background service so two servers never hit that database at once, and the durable queue address plus the provider address read out of the service unit. Added to this contract 2026-09-21 because the lockstep publish step launched current_link DIRECTLY, bypassing all three. Measured that day on the tower: the process actually serving port 3773 carries the queue address only when it is started through this launcher.",
         "desktop_entry": "/home/twr/.local/share/applications/throughline-tower.desktop",
         "desktop_shortcut": "/home/twr/Desktop/ThroughLine.desktop",
         "run_as": "twr",

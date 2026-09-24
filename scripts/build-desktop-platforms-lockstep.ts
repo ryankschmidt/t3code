@@ -15,6 +15,7 @@ type PlatformTarget = {
   artifact: string;
   install_path?: string;
   current_link?: string;
+  launcher?: string;
   backup_root?: string;
   display?: string;
 };
@@ -147,6 +148,9 @@ const installPath =
   linuxTarget.install_path?.replace("{version}", version) ??
   refuse("linux target missing install_path");
 const currentLink = linuxTarget.current_link ?? refuse("linux target missing current_link");
+// Refuse rather than fall back to the symlink: a silent fallback here is exactly the bypass that
+// left the tower's window unable to serve a turn, and it looked like a successful install.
+const linuxLauncher = linuxTarget.launcher ?? refuse("linux target missing launcher");
 const publishLinux = [
   "set -e",
   `cp ${shellQuote(remoteLinuxArtifact)} ${shellQuote(installPath)}`,
@@ -155,10 +159,26 @@ const publishLinux = [
   `test \"$(readlink ${shellQuote(currentLink)})\" = ${shellQuote(installPath)}`,
   `for pid in $(pgrep -f '^/srv/throughline/ThroughLine(-[^ ]+)?\\.AppImage( |$)' || true); do kill -TERM \"$pid\"; done`,
   "sleep 2",
-  `nohup env DISPLAY=${shellQuote(linuxTarget.display ?? ":2")} ${shellQuote(currentLink)} >/srv/throughline/ThroughLine.log 2>&1 </dev/null &`,
-  "pid=$!",
+  // LAUNCH THROUGH THE LAUNCHER, NEVER THE SYMLINK DIRECTLY.
+  //
+  // Until 2026-09-21 this line started `current_link` itself. That skipped the launcher, and the
+  // launcher is the only place three host facts reach the window: the shared data directory, the
+  // stop-and-restart handoff of the background service, and the durable queue address read out of
+  // the service unit. A window started without the queue address refuses every turn with a
+  // queue-reachability error while the background service answers normally — measured on the tower
+  // 2026-09-17, repaired by hand, and the hand repair was erased by the next install. So the
+  // durable fix is two-sided: the installer writes the block, and this step stops bypassing it.
+  //
+  // Measured 2026-09-21 on the tower: started through the launcher, the process actually bound to
+  // the port carries ABSURD_DATABASE_URL and ANTHROPIC_BASE_URL. The outer AppImage shim does not,
+  // which is why the check below resolves the real child rather than reading the launcher's own pid.
+  `nohup env DISPLAY=${shellQuote(linuxTarget.display ?? ":2")} ${shellQuote(linuxLauncher)} >/srv/throughline/ThroughLine.log 2>&1 </dev/null &`,
   "attempt=0",
-  'while ! kill -0 "$pid" 2>/dev/null; do attempt=$((attempt + 1)); test "$attempt" -lt 20 || { printf \'LOCKSTEP_REFUSED: linux app did not remain running\\n\' >&2; exit 13; }; sleep 1; done',
+  // The launcher stops the service, waits for the port, then execs the AppImage as its child, so
+  // $! is the launcher and not the app. Resolve the app by its own argv, which the launcher pins
+  // with --password-store=basic. Identification by pattern is safe; KILLING by pattern is not, and
+  // nothing here kills by pattern.
+  `while :; do pid=$(pgrep -f '^/srv/throughline/ThroughLine(-[^ ]+)?\\.AppImage --password-store' | head -1); test -n \"$pid\" && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 45 || { printf 'LOCKSTEP_REFUSED: linux app did not appear under the launcher\\n' >&2; exit 13; }; sleep 1; done`,
   `actual=$(tr '\\0' '\\n' </proc/\"$pid\"/cmdline | sed -n '1p')`,
   `test \"$actual\" = ${shellQuote(currentLink)} || { printf 'LOCKSTEP_REFUSED: linux running path expected %s got %s\\n' ${shellQuote(currentLink)} \"$actual\" >&2; exit 14; }`,
   `printf 'LINUX_RUNNING_PATH=%s LINUX_RUNNING_VERSION=%s\\n' \"$actual\" ${shellQuote(version)}`,

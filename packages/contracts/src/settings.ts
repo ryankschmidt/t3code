@@ -1075,7 +1075,11 @@ export const ServerSettings = Schema.Struct({
    * when the provider session is prepared. The user's own Device panel is
    * unaffected.
    */
-  enableAgentDeviceAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // ThroughLine: fork-owned default. Upstream ships this false. Ryan runs agents that drive the
+  // iOS simulator through the cursor-free agent-device CLI, and a default of false means every fresh
+  // install starts with that capability silently off. Flipped to true so the capability ships with
+  // every build on every machine unless deliberately turned off in settings.
+  enableAgentDeviceAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
    * Whether this server may install and run T3's device helper processes.
    * Kept separate from agent access so enabling the user's Device panel does

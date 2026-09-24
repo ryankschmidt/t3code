@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { assertProtectedPath } from "./protected-files.ts";
 import { runWorkerBootstrap, bootstrapDigest } from "./worker-bootstrap.ts";
 import type { ExecutionBinding } from "./systemd-execution.ts";
+import { startWorkerInferenceAdapter } from "./worker-inference-adapter.ts";
 
 export type WorkerEntryConfig = {
   binding: ExecutionBinding;
@@ -14,6 +15,12 @@ export type WorkerEntryConfig = {
   executable: string;
   executableSha256: string;
   args: string[];
+  inference?: {
+    gatewaySocket: string;
+    gatewayUid: number;
+    hostNetworkNamespace: string;
+    requestTimeoutMs: number;
+  };
 };
 /** Static installed entry; its JSON argument is built only by the trusted host adapter. */
 export async function executeWorkerEntry(config: WorkerEntryConfig): Promise<number> {
@@ -29,6 +36,7 @@ export async function executeWorkerEntry(config: WorkerEntryConfig): Promise<num
           "executable",
           "executableSha256",
           "args",
+          "inference",
         ].includes(k),
     )
   )
@@ -62,7 +70,27 @@ export async function executeWorkerEntry(config: WorkerEntryConfig): Promise<num
     input: process.stdin,
     output: process.stdout,
     launch: async (input, output) => {
-      const child = spawn(frozen.executable, frozen.args, {
+      const inference = frozen.inference
+        ? await startWorkerInferenceAdapter(frozen.inference)
+        : undefined;
+      const args = inference
+        ? [
+            "-c",
+            'model_provider="throughline_task"',
+            "-c",
+            'model_providers.throughline_task.name="ThroughLine task capability"',
+            "-c",
+            `model_providers.throughline_task.base_url="${inference.baseUrl}/v1"`,
+            "-c",
+            'model_providers.throughline_task.wire_api="responses"',
+            "-c",
+            "model_providers.throughline_task.requires_openai_auth=false",
+            "-c",
+            'model_reasoning_effort="low"',
+            ...frozen.args,
+          ]
+        : frozen.args;
+      const child = spawn(frozen.executable, args, {
         cwd: frozen.workspace,
         env: { PATH: "/usr/bin:/bin", HOME: frozen.home, LANG: "C" },
         stdio: ["pipe", "pipe", "pipe"],
@@ -75,13 +103,17 @@ export async function executeWorkerEntry(config: WorkerEntryConfig): Promise<num
       });
       const controllerGone = () => child.kill("SIGTERM");
       output.once("error", controllerGone);
-      return new Promise<number>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("close", (code) => {
-          output.off("error", controllerGone);
-          resolve(code ?? 1);
+      try {
+        return await new Promise<number>((resolve, reject) => {
+          child.once("error", reject);
+          child.once("close", (code) => {
+            output.off("error", controllerGone);
+            resolve(code ?? 1);
+          });
         });
-      });
+      } finally {
+        await inference?.close();
+      }
     },
   });
 }

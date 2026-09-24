@@ -17,6 +17,13 @@ test("real host adapter embeds fixed run/deadline and aligns actual private allo
     },
   };
   const host = new SystemdBootstrapHost("/run", pin);
+  const inference = {
+    gatewaySocket: "/run/throughline/inference.sock",
+    gatewayUid: 998,
+    hostNetworkNamespace: "net:[123]",
+    requestTimeoutMs: 5000,
+  };
+  const inferenceHost = new SystemdBootstrapHost("/run", { ...pin, inference });
   pin.expiresAt = 1;
   pin.binding.taskId = "changed-after-construction";
   const original = { agentId: "agent-a", taskId: "task-a", runId: "run-a" };
@@ -38,6 +45,18 @@ test("real host adapter embeds fixed run/deadline and aligns actual private allo
   assert.equal(config.workspace, systemdExecutionPlan(original, profile).workspace);
   assert.equal(config.workspace, `${systemdExecutionPlan(original, profile).workspaceRoot}/task-a`);
   assert.equal(config.executable, profile.executable);
+  assert.throws(
+    () => inferenceHost.effectiveProfile(original, profile),
+    /INFERENCE_REQUIRES_PRIVATE_NETWORK/,
+  );
+  const privateProfile = inferenceHost.effectiveProfile(original, {
+    ...profile,
+    networkIsolation: "private",
+  });
+  assert.ok(
+    systemdExecutionPlan(original, privateProfile).args.includes("--property=PrivateNetwork=yes"),
+  );
+  assert.deepEqual(JSON.parse(privateProfile.args[1]!).inference, inference);
   await assert.rejects(host.ready(original), /EXECUTION_CHANNEL_UNAVAILABLE/);
   await assert.rejects(
     host.release(original, { grantId: "grant-a", expiresAt }),
