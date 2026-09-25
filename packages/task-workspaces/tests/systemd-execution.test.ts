@@ -30,6 +30,23 @@ test("inference placement pins private networking and refuses a unit without it"
   assert.equal(parseOwnedUnit(state + "PrivateNetwork=yes\n", plan).pid, 123);
 });
 
+test("a profile with no networkIsolation still runs with PrivateNetwork=yes", () => {
+  const plan = systemdExecutionPlan(binding, profile);
+  assert.equal(plan.privateNetwork, true);
+  assert.ok(plan.args.includes("--property=PrivateNetwork=yes"));
+  const state = `Id=${plan.unit}\nDescription=${plan.description}\nLoadState=loaded\nActiveState=active\nMainPID=123\nControlGroup=/system.slice/${plan.unit}\nInvocationID=${"b".repeat(32)}\n`;
+  assert.throws(() => parseOwnedUnit(state, plan));
+  assert.throws(() => parseOwnedUnit(state + "PrivateNetwork=no\n", plan));
+  assert.throws(
+    () =>
+      systemdExecutionPlan(binding, {
+        ...profile,
+        networkIsolation: "host" as unknown as "private",
+      }),
+    /INVALID_NETWORK_ISOLATION/,
+  );
+});
+
 test("private task storage and persistent agent home have different lifetimes", () => {
   const a = systemdExecutionPlan(binding, profile);
   const b = systemdExecutionPlan({ ...binding, taskId: "task-b", runId: "run-b" }, profile);
@@ -63,7 +80,7 @@ test("unit names and policy cannot be injected through task identity or profile"
 });
 test("existing unit must match the full execution binding, not just its name", () => {
   const plan = systemdExecutionPlan(binding, profile);
-  const output = `Id=${plan.unit}\nDescription=${plan.description}\nLoadState=loaded\nActiveState=active\nMainPID=123\nControlGroup=/system.slice/${plan.unit}\nInvocationID=${"b".repeat(32)}\n`;
+  const output = `Id=${plan.unit}\nDescription=${plan.description}\nLoadState=loaded\nActiveState=active\nMainPID=123\nControlGroup=/system.slice/${plan.unit}\nInvocationID=${"b".repeat(32)}\nPrivateNetwork=yes\n`;
   assert.equal(parseOwnedUnit(output, plan).pid, 123);
   assert.throws(() => parseOwnedUnit(output.replace(plan.description, "another task"), plan));
   assert.throws(() => parseOwnedUnit(output.replace("MainPID=123", "MainPID=0"), plan));

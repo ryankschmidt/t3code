@@ -17,7 +17,7 @@ export type ExecutionProfile = {
   cpuPercent: number;
   maxSeconds: number;
   tasksMax: number;
-  /** Required by worker-local inference HTTP adapters; omitted preserves legacy host networking. */
+  /** Accepted for compatibility only: every task runs with PrivateNetwork=yes regardless. */
   networkIsolation?: "private";
 };
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -101,7 +101,7 @@ export function systemdExecutionPlan(binding: ExecutionBinding, profile: Executi
     "TimeoutStopSec=10",
     "NoNewPrivileges=yes",
     "PrivateTmp=yes",
-    ...(profile.networkIsolation ? ["PrivateNetwork=yes"] : []),
+    "PrivateNetwork=yes", // mandatory for every task; never profile-selected
     "ProtectHome=yes",
     "ProtectSystem=strict",
     "ProtectKernelTunables=yes",
@@ -121,7 +121,7 @@ export function systemdExecutionPlan(binding: ExecutionBinding, profile: Executi
     home,
     workspaceRoot,
     workspace,
-    privateNetwork: profile.networkIsolation === "private",
+    privateNetwork: true as const,
     args: [
       "--system",
       "--no-ask-password",
@@ -165,7 +165,7 @@ export function parseOwnedUnit(output: string, plan: ReturnType<typeof systemdEx
     !/^[a-f0-9]{32}$/.test(invocationId) ||
     cgroup !== `/system.slice/${plan.unit}` ||
     fields.get("ActiveState") !== "active" ||
-    (plan.privateNetwork && fields.get("PrivateNetwork") !== "yes")
+    fields.get("PrivateNetwork") !== "yes"
   )
     throw Error("EXECUTION_UNIT_NOT_OWNED_OR_ACTIVE");
   return { unit: plan.unit, invocationId, pid, cgroup, active: "active" as const };

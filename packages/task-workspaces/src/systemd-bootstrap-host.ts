@@ -51,9 +51,12 @@ export class SystemdBootstrapHost implements SupervisorHost {
   }
   effectiveProfile(binding: ExecutionBinding, profile: ExecutionProfile): ExecutionProfile {
     this.check(binding);
-    if (this.pin.inference && profile.networkIsolation !== "private")
-      throw Error("INFERENCE_REQUIRES_PRIVATE_NETWORK");
+    // Private networking is required for every launch, with or without inference configured.
+    if (profile.networkIsolation !== undefined && profile.networkIsolation !== "private")
+      throw Error("PRIVATE_NETWORK_REQUIRED");
     const plan = systemdExecutionPlan(binding, profile);
+    if (plan.privateNetwork !== true || !plan.args.includes("--property=PrivateNetwork=yes"))
+      throw Error("PRIVATE_NETWORK_REQUIRED");
     const config: WorkerEntryConfig = {
       binding: { agentId: binding.agentId, taskId: binding.taskId, runId: binding.runId },
       expiresAt: this.pin.expiresAt,
@@ -76,6 +79,7 @@ export class SystemdBootstrapHost implements SupervisorHost {
   }
   async prepare(binding: ExecutionBinding, profile: ExecutionProfile) {
     this.check(binding);
+    this.effectiveProfile(binding, profile); // refuse a non-private plan before any launch step
     if (
       this.pin.inference &&
       (await readlink("/proc/self/ns/net")) !== this.pin.inference.hostNetworkNamespace

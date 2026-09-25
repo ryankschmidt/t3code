@@ -45,9 +45,14 @@ test("real host adapter embeds fixed run/deadline and aligns actual private allo
   assert.equal(config.workspace, systemdExecutionPlan(original, profile).workspace);
   assert.equal(config.workspace, `${systemdExecutionPlan(original, profile).workspaceRoot}/task-a`);
   assert.equal(config.executable, profile.executable);
-  assert.throws(
-    () => inferenceHost.effectiveProfile(original, profile),
-    /INFERENCE_REQUIRES_PRIVATE_NETWORK/,
+  // Private networking is mandatory: an omitted field still yields a private plan.
+  assert.ok(
+    systemdExecutionPlan(original, inferenceHost.effectiveProfile(original, profile)).args.includes(
+      "--property=PrivateNetwork=yes",
+    ),
+  );
+  assert.ok(
+    systemdExecutionPlan(original, effective).args.includes("--property=PrivateNetwork=yes"),
   );
   const privateProfile = inferenceHost.effectiveProfile(original, {
     ...profile,
@@ -74,4 +79,32 @@ test("real host adapter embeds fixed run/deadline and aligns actual private allo
       host.effectiveProfile({ runId: "run-a", taskId: "task-a", agentId: "agent-a" }, reordered),
     ).description,
   );
+});
+
+test("host refuses a plan without private networking even with no inference", async () => {
+  const binding = { agentId: "agent-a", taskId: "task-a", runId: "run-a" };
+  const host = new SystemdBootstrapHost("/run", {
+    binding,
+    expiresAt: Date.now() + 5000,
+    executable: {
+      node: "/opt/throughline/node",
+      nodeSha256: "a".repeat(64),
+      entry: "/opt/throughline/worker-entry.js",
+      entrySha256: "b".repeat(64),
+    },
+  });
+  const hostNetworked = {
+    id: "profile-a",
+    executable: "/usr/bin/cat",
+    executableSha256: "c".repeat(64),
+    args: [],
+    memoryBytes: 64 * 1024 * 1024,
+    cpuPercent: 100,
+    maxSeconds: 5,
+    tasksMax: 32,
+    networkIsolation: "host" as unknown as "private",
+  };
+  assert.throws(() => host.effectiveProfile(binding, hostNetworked), /PRIVATE_NETWORK_REQUIRED/);
+  await assert.rejects(host.prepare(binding, hostNetworked), /PRIVATE_NETWORK_REQUIRED/);
+  await assert.rejects(host.launch(binding, hostNetworked), /PRIVATE_NETWORK_REQUIRED/);
 });

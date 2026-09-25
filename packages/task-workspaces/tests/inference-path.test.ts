@@ -8,6 +8,7 @@ import { join } from "node:path";
 import {
   serveInferenceConnection,
   createLoopbackBrokerForwarder,
+  type InferenceSettlement,
 } from "../src/inference-gateway.ts";
 import { forwardWorkerInference } from "../src/worker-inference-adapter.ts";
 
@@ -20,11 +21,13 @@ test(
     const hostNetworkNamespace = await readlink("/proc/self/ns/net");
     let forwarded = 0,
       reserved = 0,
+      remaining = 1000,
+      upstreamBody = "",
       upstreamHeaders: http.IncomingHttpHeaders | undefined;
     const broker = http.createServer((req, res) => {
       forwarded++;
       upstreamHeaders = req.headers;
-      req.resume();
+      req.on("data", (x) => (upstreamBody += x));
       req.on("end", () => {
         res.writeHead(200, {
           "content-type": "text/event-stream",
@@ -37,6 +40,7 @@ test(
     await new Promise<void>((r) => broker.listen(0, "127.0.0.1", r));
     const brokerAddress = broker.address();
     assert.ok(brokerAddress && typeof brokerAddress !== "string");
+    const settlements: InferenceSettlement[] = [];
     const peers = new Set<net.Socket>(),
       serving = new Set<Promise<void>>();
     const gateway = net.createServer((peer) => {
@@ -54,6 +58,9 @@ test(
             timeoutMs: 2000,
             revalidateEveryMs: 20,
             hostNetworkNamespace,
+            maxOutputTokensPerCall: 4000,
+            inputOverheadTokens: 100,
+            settlementJournalPath: join(root, "settlements.ndjson"),
           },
           dependencies: {
             authorize: async () => ({
@@ -67,8 +74,13 @@ test(
             reserve: async () => {
               if (reserved >= 1) throw Error("BUDGET_EXHAUSTED");
               reserved++;
+              return true;
             },
             forward: createLoopbackBrokerForwarder({ port: brokerAddress.port }),
+            remainingTokens: async () => remaining,
+            settle: async (_permit, settlement) => {
+              settlements.push(settlement);
+            },
           },
         },
       );
@@ -94,7 +106,8 @@ test(
     });
     const address = front.address();
     assert.ok(address && typeof address !== "string");
-    const request = () =>
+    const plain = '{"model":"gpt-6-astra","reasoning":{"effort":"low"}}';
+    const request = (payload = plain) =>
       new Promise<{ status: number | undefined; headers: http.IncomingHttpHeaders; body: string }>(
         (resolve, reject) => {
           const req = http.request(
@@ -120,7 +133,7 @@ test(
             },
           );
           req.on("error", reject);
-          req.end('{"model":"gpt-6-astra","reasoning":{"effort":"low"}}');
+          req.end(payload);
         },
       );
     const first = await request();
@@ -133,6 +146,32 @@ test(
     assert.equal(first.headers["set-cookie"], undefined);
     const second = await request();
     assert.notEqual(second.status, 200);
+    assert.equal(forwarded, 1);
+    assert.equal(reserved, 1);
+    // Output is capped at the remaining budget minus the body bytes and the input overhead; with
+    // no final usage record nothing is settled.
+    const wide = Buffer.byteLength(
+      JSON.stringify({ ...JSON.parse(plain), max_output_tokens: 1000, store: false }),
+    );
+    assert.equal(JSON.parse(upstreamBody).max_output_tokens, 1000 - wide - 100);
+    await Promise.allSettled([...serving]);
+    assert.equal(settlements.length, 0);
+    // Budget exhausted, unknown fields and background mode are refused through the worker path.
+    remaining = 0;
+    const exhausted = await request();
+    assert.equal(exhausted.status, 429);
+    assert.match(exhausted.body, /BUDGET_EXHAUSTED/);
+    remaining = 1000;
+    const unknown = await request(
+      '{"model":"gpt-6-astra","reasoning":{"effort":"low"},"service_tier":"priority"}',
+    );
+    assert.equal(unknown.status, 400);
+    assert.match(unknown.body, /FIELD_NOT_ALLOWED/);
+    const background = await request(
+      '{"model":"gpt-6-astra","reasoning":{"effort":"low"},"background":true}',
+    );
+    assert.equal(background.status, 400);
+    assert.match(background.body, /FIELD_NOT_ALLOWED/);
     assert.equal(forwarded, 1);
     assert.equal(reserved, 1);
   },

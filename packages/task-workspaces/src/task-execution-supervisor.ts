@@ -171,9 +171,7 @@ export class TaskExecutionSupervisor {
       cpuPercent: input.profile.cpuPercent,
       maxSeconds: input.profile.maxSeconds,
       tasksMax: input.profile.tasksMax,
-      ...(input.profile.networkIsolation
-        ? { networkIsolation: input.profile.networkIsolation }
-        : {}),
+      networkIsolation: "private", // mandatory; systemdExecutionPlan above rejects other values
     };
     Object.freeze(input.profile.args);
     Object.freeze(input.profile);
