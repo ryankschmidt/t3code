@@ -18,31 +18,28 @@ const provider = (driver: string, slugs: ReadonlyArray<string>) => ({
   models: slugs.map((slug) => ({ slug, isCustom: false })),
 });
 
-// What the Mac server reported on Sep 23, 2026 before this change, trimmed to
-// the entries that matter (from ~/.t3/caches/{claudeAgent,codex,pi}.json).
+// Synthetic discovery fixture: every configured current model plus historical retired and unrelated IDs.
 const reported = [
   provider("claudeAgent", [
-    "claude-opus-5-5",
-    "claude-fable-5-1",
+    ...DEFAULT_MODEL_OFFERING.offeredModels.claudeAgent!,
     "claude-fable-5",
     "claude-opus-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-opus-4-6",
     "claude-opus-4-5",
-    "claude-sonnet-5",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
   ]),
   provider("codex", [
-    "gpt-6-astra",
+    ...DEFAULT_MODEL_OFFERING.offeredModels.codex!,
     "gpt-5.6-sol",
-    "gpt-5.6-terra",
     "gpt-5.6-luna",
-    "gpt-5.3-codex-spark",
     "gpt-5.5",
   ]),
   provider("pi", [
+    ...DEFAULT_MODEL_OFFERING.offeredModels.claudeAgent!.map((id) => `anthropic/${id}`),
+    ...DEFAULT_MODEL_OFFERING.offeredModels.codex!.map((id) => `openai-codex/${id}`),
     "anthropic/claude-opus-5",
     "anthropic/claude-opus-4-5-20251101",
     "anthropic/claude-sonnet-5",
@@ -81,33 +78,19 @@ describe("applyModelOffering", () => {
   });
 
   it("offers Claude exactly Ryan's list, Opus 5.5 first", () => {
-    expect(slugsOf(offered, "claudeAgent")).toEqual([
-      "claude-opus-5-5",
-      "claude-fable-5-1",
-      "claude-sonnet-5",
-    ]);
+    expect(slugsOf(offered, "claudeAgent")).toEqual(
+      DEFAULT_MODEL_OFFERING.offeredModels.claudeAgent,
+    );
   });
 
   it("offers Codex exactly today's list, gpt-6-astra first", () => {
-    expect(slugsOf(offered, "codex")).toEqual([
-      "gpt-6-astra",
-      "gpt-5.3-codex-spark",
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
-    ]);
+    expect(slugsOf(offered, "codex")).toEqual(DEFAULT_MODEL_OFFERING.offeredModels.codex);
   });
 
   it("offers Pi exactly the union of Claude and Codex, one route per model", () => {
     expect(slugsOf(offered, "pi")).toEqual([
-      "anthropic/claude-opus-5-5",
-      "anthropic/claude-fable-5-1",
-      "anthropic/claude-sonnet-5",
-      "openai-codex/gpt-6-astra",
-      "openai-codex/gpt-5.3-codex-spark",
-      "openai-codex/gpt-5.6-sol",
-      "openai-codex/gpt-5.6-terra",
-      "openai-codex/gpt-5.6-luna",
+      ...DEFAULT_MODEL_OFFERING.offeredModels.claudeAgent!.map((id) => `anthropic/${id}`),
+      ...DEFAULT_MODEL_OFFERING.offeredModels.codex!.map((id) => `openai-codex/${id}`),
     ]);
   });
 
@@ -181,7 +164,7 @@ describe("the Claude new-thread default", () => {
   it("leaves an allowed default and an unset default alone", () => {
     const sol = Schema.decodeUnknownSync(ModelSelection)({
       instanceId: "codex",
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
     });
     expect(retireModelSelection(sol, DEFAULT_MODEL_OFFERING)).toBe(sol);
     expect(retireModelSelection(null, DEFAULT_MODEL_OFFERING)).toBeNull();

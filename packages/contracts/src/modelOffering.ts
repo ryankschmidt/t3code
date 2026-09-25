@@ -30,7 +30,7 @@ export type ModelOffering = typeof ModelOffering.Type;
 export const DEFAULT_MODEL_OFFERING: ModelOffering = {
   offeredModels: {
     claudeAgent: ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5"],
-    codex: ["gpt-6-astra", "gpt-5.3-codex-spark", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    codex: ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.3-codex-spark", "gpt-5.6-terra"],
   },
   retiredModels: [
     "claude-opus-5",
@@ -38,6 +38,8 @@ export const DEFAULT_MODEL_OFFERING: ModelOffering = {
     "claude-opus-4-6",
     "claude-opus-4-7",
     "gpt-5.5",
+    "gpt-5.6-sol",
+    "gpt-5.6-luna",
   ],
 };
 

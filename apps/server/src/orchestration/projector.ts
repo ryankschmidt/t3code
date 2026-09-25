@@ -14,6 +14,7 @@ import {
   OrchestrationMessage,
   OrchestrationSession,
   OrchestrationThread,
+  WORKTREE_SETUP_ACTIVITY_KIND,
 } from "@t3tools/contracts";
 import {
   legacyLinkedPullRequestOf,
@@ -42,6 +43,7 @@ import {
   ThreadSettledPayload,
   ThreadPinnedPayload,
   ThreadPinReorderedPayload,
+  ThreadAutoSettleSetPayload,
   ThreadPullRequestLinkedPayload,
   ThreadPullRequestSyncedPayload,
   ThreadPullRequestUnlinkedPayload,
@@ -77,7 +79,13 @@ function retainThreadActivities(activities: OrchestrationThread["activities"]) {
   }
   const pendingActivities = new Set(pending.values());
   return activities.filter(
-    (activity, index) => index >= recentStart || pendingActivities.has(activity),
+    (activity, index) =>
+      index >= recentStart ||
+      pendingActivities.has(activity) ||
+      // The worktree setup record is upserted under one id for the thread's
+      // whole life and is the only durable copy of a running setup; an async
+      // setup script can outlast a chatty first turn.
+      activity.kind === WORKTREE_SETUP_ACTIVITY_KIND,
   );
 }
 
@@ -434,6 +442,7 @@ export function projectEvent(
             settledAt: null,
             unsettledAt: null,
             activeOrderKey: null,
+            autoSettleDisabledAt: null,
             snoozedUntil: null,
             snoozedAt: null,
             deletedAt: null,
@@ -574,6 +583,17 @@ export function projectEvent(
         })),
       );
 
+    case "thread.auto-settle-set":
+      return decodeForEvent(ThreadAutoSettleSetPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            autoSettleDisabledAt: payload.autoSettleDisabledAt,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
     case "thread.pin-reordered":
       return decodeForEvent(ThreadPinReorderedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => ({
@@ -608,6 +628,7 @@ export function projectEvent(
             ...nextBase,
             threads: updateThread(nextBase.threads, payload.threadId, {
               ...(payload.title !== undefined ? { title: payload.title } : {}),
+              ...(payload.titleState !== undefined ? { titleState: payload.titleState } : {}),
               ...(payload.titleRegeneration !== undefined
                 ? { titleRegeneration: payload.titleRegeneration }
                 : {}),
@@ -759,6 +780,7 @@ export function projectEvent(
             role: payload.role,
             text: payload.text,
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
+            ...(payload.context !== undefined ? { context: payload.context } : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
             createdAt: payload.createdAt,
@@ -785,6 +807,7 @@ export function projectEvent(
                     ...(message.attachments !== undefined
                       ? { attachments: message.attachments }
                       : {}),
+                    ...(message.context !== undefined ? { context: message.context } : {}),
                   }
                 : entry,
             )

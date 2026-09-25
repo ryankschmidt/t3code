@@ -68,7 +68,7 @@ const LegacyProviderOptionSelectionsObject = Schema.Record(Schema.String, Schema
 const ProviderOptionSelectionsFromLegacyObject = LegacyProviderOptionSelectionsObject.pipe(
   Schema.decodeTo(
     Schema.Array(ProviderOptionSelection),
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (record) => Effect.succeed(coerceLegacyOptionsObjectToArray(record)),
       encode: (selections) => Effect.succeed(canonicalSelectionsToLegacyObject(selections)),
     }),
@@ -315,10 +315,11 @@ export function compareSelectedAndAnsweringModel(
  */
 export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
   "gpt-6-astra",
-  "gpt-5.6-sol",
+
+  "gpt-6-sol",
   "gpt-5.6-terra",
 ];
-export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-5.6-luna";
+export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-6-luna";
 /** Keep the official Antigravity session's current model. Never send this ID to ACP. */
 export const ANTIGRAVITY_DEFAULT_MODEL = "antigravity-default";
 export const DEFAULT_TEXT_GENERATION_REASONING_EFFORT = "low";
@@ -329,6 +330,7 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
   // Opus 5 is retired (modelOffering.ts); a missing setting must never fall back to it.
   [CLAUDE_DRIVER_KIND]: "claude-opus-5-5",
+
   [CURSOR_DRIVER_KIND]: "auto",
   // Product slug, not an ACP model id. The Grok adapter treats it as "the session's current model".
   [GROK_DRIVER_KIND]: "grok-build",
@@ -397,12 +399,12 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "gpt-5.3": "gpt-5.3-codex",
     "5.3-spark": "gpt-5.3-codex-spark",
     "gpt-5.3-spark": "gpt-5.3-codex-spark",
-    "5.6": "gpt-5.6-sol",
-    sol: "gpt-5.6-sol",
-    "5.6-sol": "gpt-5.6-sol",
-    "gpt-5.6": "gpt-5.6-sol",
-    luna: "gpt-5.6-luna",
-    "5.6-luna": "gpt-5.6-luna",
+    "5.6": "gpt-6-sol",
+    sol: "gpt-6-sol",
+    "5.6-sol": "gpt-6-sol",
+    "gpt-5.6": "gpt-6-sol",
+    luna: "gpt-6-luna",
+    "5.6-luna": "gpt-6-luna",
     terra: "gpt-5.6-terra",
     "5.6-terra": "gpt-5.6-terra",
   },

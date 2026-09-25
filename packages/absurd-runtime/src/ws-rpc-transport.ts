@@ -87,8 +87,8 @@ export async function makeWsRpcTransport(
   // Bearer rides the upgrade request. Node's global WebSocket (undici) takes an
   // options bag with a `headers` extension as the 2nd arg; the browser
   // signature (protocols) is unused here. The service contract is a plain
-  // (url, protocols?) => WebSocket function.
-  const webSocketConstructor = (url: string, _protocols?: string | Array<string>) =>
+  // (url, options?) => WebSocket function; Effect also accepts a client-options object.
+  const webSocketConstructor = (url: string, _options?: Socket.WebSocketConstructorOptions) =>
     new (
       globalThis as unknown as {
         WebSocket: new (u: string, o?: unknown) => globalThis.WebSocket;

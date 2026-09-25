@@ -85,7 +85,7 @@ const SYMPHONY_SPAWN_ALLOWED_KEYS = new Set(Object.keys(SymphonySpawnThreadRunFi
  */
 export const SymphonySpawnThreadRunInput = Schema.Unknown.pipe(
   Schema.decodeTo(SymphonySpawnThreadRunFields, {
-    decode: SchemaGetter.transformOrFail((input: unknown) => {
+    decode: SchemaGetter.transformEffect((input: unknown) => {
       // Cast target: the inner struct's own decode (run automatically as the
       // second pass of `decodeTo`) does the REAL field-by-field validation
       // (trims, non-empty, non-negative-int checks). This getter's only job
