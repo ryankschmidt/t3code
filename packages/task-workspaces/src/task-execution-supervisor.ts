@@ -8,6 +8,8 @@ import {
 import type { PublicationStore, Task, WorkspaceAllocation } from "./index.ts";
 import type { ExecutionGrantAuthority, GrantState } from "./execution-grant-authority.ts";
 import type { ExecutionIdentity } from "./execution-grants.ts";
+import type { LaunchClearanceStore } from "./launch-clearance.ts";
+import type { BudgetLedger } from "./budget-ledger.ts";
 
 /** Caller atomically deduplicates a shared key and persists its serializable result. */
 export type DurableExecutionStep = <T>(key: string, effect: () => Promise<T>) => Promise<T>;
@@ -40,10 +42,16 @@ export type TaskExecutionInput = ExecutionBinding & {
   grantId: string;
   issueRequestId: string;
   revokeRequestId: string;
+  /** The launch request whose "serves" ruling clears this task to start. */
+  clearanceId: string;
 };
 type Options = {
   store: Pick<PublicationStore, "getTask" | "materializeTask">;
   authority: Pick<ExecutionGrantAuthority, "issue" | "read" | "revoke">;
+  /** Launch judge: nothing is prepared or launched without a verified clearance. */
+  clearances: Pick<LaunchClearanceStore, "verifyClearance" | "bindGrant">;
+  /** The grant's token ceiling is set here, from its clearance, and nowhere else. */
+  ledger: Pick<BudgetLedger, "setCeiling">;
   host: SupervisorHost;
   step: DurableExecutionStep;
   now?: () => number;
@@ -147,6 +155,7 @@ export class TaskExecutionSupervisor {
       "grantId",
       "issueRequestId",
       "revokeRequestId",
+      "clearanceId",
     ];
     if (Object.keys(input).some((k) => !fields.includes(k))) refuse("UNKNOWN_SUPERVISOR_FIELD");
     for (const key of [
@@ -156,6 +165,7 @@ export class TaskExecutionSupervisor {
       "grantId",
       "issueRequestId",
       "revokeRequestId",
+      "clearanceId",
     ] as const)
       identifier(input[key]);
     if (input.issueRequestId === input.revokeRequestId) refuse("GRANT_REQUEST_IDS_MUST_DIFFER");
@@ -188,6 +198,7 @@ export class TaskExecutionSupervisor {
       grantId: input.grantId,
       issueRequestId: input.issueRequestId,
       revokeRequestId: input.revokeRequestId,
+      clearanceId: input.clearanceId,
       baseline: task.baseline,
     });
     const key = `execution:${hash({ runId: input.runId })}`;
@@ -308,6 +319,12 @@ export class TaskExecutionSupervisor {
     | Recovery
   > {
     const a = await this.admit(value);
+    // Launch judge, before any workspace is prepared or unit launched: TARGET_NOT_ADMITTED,
+    // FINISH_LINE_MISSING, RULING_MISSING, SELF_RULING, RULING_NOT_SERVES, CLEARANCE_DIGEST_MISMATCH.
+    const clearance = await this.options.clearances.verifyClearance(a.input.clearanceId, {
+      taskId: a.input.taskId,
+      agentId: a.input.agentId,
+    });
     let launched = false;
     let execution: ExecutionInspection | null = null;
     let phase = "prepare";
@@ -383,6 +400,18 @@ export class TaskExecutionSupervisor {
       );
       if (!sameExecution(execution, actual)) refuse("EXECUTION_INVOCATION_CHANGED");
       phase = "grant";
+      // Recorded before the grant exists, so an issued grant always has its clearance and ceiling.
+      await this.options.step(`${a.key}:budget`, async () => {
+        await this.options.clearances.bindGrant({
+          grantId: a.input.grantId,
+          clearanceId: a.input.clearanceId,
+        });
+        await this.options.ledger.setCeiling({
+          grantId: a.input.grantId,
+          ceiling: clearance.request.tokenCeiling,
+        });
+        return { clearanceId: a.input.clearanceId, ceiling: clearance.request.tokenCeiling };
+      });
       await this.options.step(`${a.key}:grant`, () =>
         this.options.authority.issue({
           requestId: a.input.issueRequestId,

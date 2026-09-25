@@ -2,7 +2,7 @@ import nodeTest from "node:test";
 import assert from "node:assert/strict";
 import * as http from "node:http";
 import * as net from "node:net";
-import { mkdtemp, rm, readlink, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, open, rm, readlink, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -12,6 +12,7 @@ import {
   type InferencePermit,
   type InferenceGatewayDependencies,
   type InferenceSettlement,
+  type JournalOpener,
 } from "../src/inference-gateway.ts";
 
 const body = JSON.stringify({ model: "gpt-test", reasoning: { effort: "low" }, input: "hello" });
@@ -95,12 +96,17 @@ async function fixture(t: nodeTest.TestContext) {
       remaining += maxCost - settlement.totalTokens;
     },
   };
+  const options: {
+    config: typeof config;
+    dependencies: typeof dependencies;
+    openJournal?: JournalOpener;
+  } = { config, dependencies };
   const pending = new Set<Promise<void>>();
   const server = net.createServer({ pauseOnConnect: true, allowHalfOpen: true }, (socket) => {
     const served = serveInferenceConnection(
       { uid: process.getuid?.() ?? 1002, gid: process.getgid?.() ?? 1002, pid: process.pid },
       socket,
-      { config, dependencies },
+      options,
     );
     pending.add(served);
     void served.finally(() => pending.delete(served));
@@ -191,6 +197,7 @@ async function fixture(t: nodeTest.TestContext) {
     socketPath,
     config,
     dependencies,
+    options,
     permit,
     received,
     reservationIds,
@@ -728,6 +735,75 @@ test("a final usage record produces exactly one refund with the exact numbers", 
     attempt,
     { reservationId, grantId: "grant1", settled: true },
   ]);
+});
+
+test("settle starts only after the attempt line's sync has completed", async (t) => {
+  const f = await fixture(t);
+  const calls: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let started!: () => void;
+  const syncStarted = new Promise<boolean>((resolve) => (started = () => resolve(true)));
+  let syncs = 0;
+  // The real append-mode open, wrapped so write and sync on the journal file are observed. The
+  // first sync (the attempt line) does not complete until the test releases it.
+  f.options.openJournal = async (path) => {
+    const file = await open(path, "a+", 0o600);
+    return new Proxy(file, {
+      get(target, property) {
+        const value = Reflect.get(target, property) as unknown;
+        if (typeof value !== "function") return value;
+        const call = (...args: unknown[]) =>
+          (value as (...a: unknown[]) => unknown).apply(target, args);
+        if (property === "write")
+          return (...args: unknown[]) => {
+            calls.push("write");
+            return call(...args);
+          };
+        if (property !== "sync") return call;
+        return async () => {
+          const first = syncs++ === 0;
+          calls.push("sync-start");
+          if (first) started();
+          await call();
+          if (first) await held;
+          calls.push("sync-done");
+        };
+      },
+    });
+  };
+  const settle = f.dependencies.settle;
+  f.dependencies.settle = async (permit, settlement) => {
+    calls.push("settle");
+    await settle(permit, settlement);
+  };
+  f.respond(jsonUsage(usage18));
+  f.setRemaining(1000);
+  const response = f.request();
+  // A connection that finishes without syncing the journal wins this race and fails the test.
+  const finished = response
+    .then(() => f.idle())
+    .then(
+      () => false,
+      () => false,
+    );
+  assert.equal(await Promise.race([syncStarted, finished]), true);
+  // While the attempt line's sync is pending, settle must not have started.
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.deepEqual(calls, ["write", "sync-start"]);
+  release();
+  assert.equal((await response).status, 200);
+  await f.idle();
+  assert.deepEqual(calls, [
+    "write",
+    "sync-start",
+    "sync-done",
+    "settle",
+    "write",
+    "sync-start",
+    "sync-done",
+  ]);
+  assert.equal((await f.journal()).length, 2);
 });
 
 test("actual usage above maxCost debits the excess and journals BOUND_EXCEEDED", async (t) => {

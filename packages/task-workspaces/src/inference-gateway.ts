@@ -144,18 +144,25 @@ function inputAllowed(input: unknown): boolean {
     return true;
   });
 }
+/** Opens the settlement journal for append; injectable so a test can observe write and sync. */
+export type JournalOpener = (path: string) => Promise<FileHandle>;
+const openJournal: JournalOpener = (path) => open(path, "a+", 0o600);
 let journalTail: Promise<unknown> = Promise.resolve();
 /** Journal appends run one at a time in this process, so each tail check sees the last record. */
-function appendJournal(path: string, record: object): Promise<boolean> {
-  const appended = journalTail.then(() => writeJournalRecord(path, record));
+function appendJournal(path: string, record: object, openFile: JournalOpener): Promise<boolean> {
+  const appended = journalTail.then(() => writeJournalRecord(path, record, openFile));
   journalTail = appended;
   return appended;
 }
 /** Appends one record on its own line in one write, then syncs; false if any step fails. */
-async function writeJournalRecord(path: string, record: object): Promise<boolean> {
+async function writeJournalRecord(
+  path: string,
+  record: object,
+  openFile: JournalOpener,
+): Promise<boolean> {
   let file: FileHandle | undefined;
   try {
-    file = await open(path, "a+", 0o600);
+    file = await openFile(path);
     const { size } = await file.stat();
     const last = Buffer.alloc(1);
     if (size > 0) await file.read(last, 0, 1, size - 1);
@@ -476,7 +483,11 @@ export function createLoopbackBrokerForwarder(options: {
 export async function serveInferenceConnection(
   peer: PeerCredentials,
   socket: Socket,
-  options: { config: InferenceGatewayConfig; dependencies: InferenceGatewayDependencies },
+  options: {
+    config: InferenceGatewayConfig;
+    dependencies: InferenceGatewayDependencies;
+    openJournal?: JournalOpener;
+  },
 ): Promise<void> {
   const started = Date.now();
   socket.pause();
@@ -484,7 +495,8 @@ export async function serveInferenceConnection(
   socket.on("error", guard);
   socket.once("close", () => socket.off("error", guard));
   const c = { ...options.config },
-    source = options.dependencies;
+    source = options.dependencies,
+    openFile = options.openJournal ?? openJournal;
   try {
     configCheck(c, source);
     if (
@@ -895,7 +907,7 @@ export async function serveInferenceConnection(
                 boundExceeded = actual.totalTokens > maxCost,
                 at = () => new Date().toISOString();
               const record = async (line: object) => {
-                if (!(await appendJournal(c.settlementJournalPath, line)))
+                if (!(await appendJournal(c.settlementJournalPath, line, openFile)))
                   process.stderr.write(
                     `inference-gateway: journal append failed for reservation ${reservationId}\n`,
                   );

@@ -18,6 +18,7 @@ import {
   type SupervisorHost,
   type DurableExecutionStep,
 } from "../src/task-execution-supervisor.ts";
+import { LEAD_SEAT, launchJudge } from "./launch-fixture.ts";
 const linux = { skip: process.platform !== "linux" || process.getuid?.() === 0 };
 async function fixture(t: test.TestContext) {
   const root = await mkdtemp(join(homedir(), ".task-supervisor-"));
@@ -32,6 +33,12 @@ async function fixture(t: test.TestContext) {
     authorityUid: process.getuid!(),
   });
   t.after(() => authority.close());
+  const judge = await launchJudge(t, root, store, async (peer) => ({
+    id: peer.uid === LEAD_SEAT.uid ? "lead1" : "judge1",
+    kind: "reviewer",
+    taskIds: ["task1"],
+  }));
+  const clearanceId = await judge.admit({ uid: 3301, gid: 3301, pid: 501 });
   const identity = await authority.attest(process.pid),
     workspaceRoot = join(root, "private"),
     workspacePath = join(workspaceRoot, "task1");
@@ -54,6 +61,7 @@ async function fixture(t: test.TestContext) {
     grantId: "grant1",
     issueRequestId: "issue1",
     revokeRequestId: "revoke1",
+    clearanceId,
   };
   let running: ExecutionInspection | null = null;
   const events: string[] = [];
@@ -106,7 +114,15 @@ async function fixture(t: test.TestContext) {
       inflight.delete(key);
     }
   };
-  const make = () => new TaskExecutionSupervisor({ store, authority, host, step });
+  const make = () =>
+    new TaskExecutionSupervisor({
+      store,
+      authority,
+      clearances: judge.clearances,
+      ledger: judge.ledger,
+      host,
+      step,
+    });
   return {
     root,
     store,

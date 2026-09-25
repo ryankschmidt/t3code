@@ -9,7 +9,7 @@ import {
   attestExecution,
   type ExecutionGrant,
   type ExecutionIdentity,
-  type ExecutionGrantReader,
+  type SnapshotGrantReader,
 } from "./execution-grants.ts";
 import type { Principal } from "./review-authority.ts";
 
@@ -451,7 +451,7 @@ export class ExecutionGrantAuthority {
 /** Explicit composition choice. Missing/corrupt database never opens legacy JSON grants. */
 export async function openExecutionGrantReader(
   options: Pick<GrantAuthorityOptions, "root" | "authorityUid">,
-): Promise<ExecutionGrantReader & { close(): void }> {
+): Promise<SnapshotGrantReader & { close(): void }> {
   const bound = { ...options };
   const path = await protectedDatabase(bound);
   const identity = await lstat(path);
@@ -470,15 +470,43 @@ export async function openExecutionGrantReader(
       throw Error("AUTHORITY_DATABASE_REPLACED");
     await initialized(bound, db);
   };
+  // One statement: the active grants as of one read. list() and snapshot() both use it.
+  const active = () =>
+    db
+      .prepare(
+        "SELECT state FROM grants WHERE json_extract(state,'$.status')='active' ORDER BY grant_id LIMIT 1025",
+      )
+      .all()
+      .map((row) => (JSON.parse(row.state as string) as GrantState).grant);
   return {
     async list() {
       await check();
-      return db
-        .prepare(
-          "SELECT state FROM grants WHERE json_extract(state,'$.status')='active' ORDER BY grant_id LIMIT 1025",
-        )
-        .all()
-        .map((row) => (JSON.parse(row.state as string) as GrantState).grant);
+      return active();
+    },
+    verify: check,
+    /**
+     * Runs decide on the active grants inside one read transaction and ends it with ROLLBACK
+     * (the connection is read-only; there is nothing to commit). In rollback-journal mode the
+     * read holds a SHARED lock, so no other connection can commit a change until decide returns.
+     */
+    snapshot<T>(decide: (grants: ExecutionGrant[]) => T): T {
+      db.exec("BEGIN");
+      try {
+        const grants = active();
+        // Checked after the read: a connection sees another connection's switch to WAL only once
+        // it has read, and in WAL mode a reader does not hold writers off.
+        if (db.prepare("PRAGMA journal_mode").get()?.journal_mode !== "delete")
+          throw Error("JOURNAL_MODE_REFUSED");
+        const result = decide(grants);
+        const then = (result as { then?: unknown } | null)?.then;
+        if (typeof then === "function") {
+          (result as PromiseLike<unknown>).then(undefined, () => undefined);
+          throw Error("SNAPSHOT_MUST_BE_SYNCHRONOUS");
+        }
+        return result;
+      } finally {
+        db.exec("ROLLBACK");
+      }
     },
     async get(grantId) {
       id(grantId);

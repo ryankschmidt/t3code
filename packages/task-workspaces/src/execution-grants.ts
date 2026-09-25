@@ -1,5 +1,6 @@
 import type { KernelPeer } from "./publisher-ipc.ts";
 import type { Principal } from "./review-authority.ts";
+import { readFileSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { join, isAbsolute } from "node:path";
 import { assertProtectedPath, readProtectedJson } from "./protected-files.ts";
@@ -28,6 +29,20 @@ export type ExecutionGrantReader = {
   list(): Promise<ExecutionGrant[]>;
   get(grantId: string): Promise<ExecutionGrant | null>;
 };
+/** A matched grant with the /proc evidence it was matched on: boot id, peer and leader. */
+export type MatchedExecution = {
+  grant: ExecutionGrant;
+  evidence: { bootId: string; peer: ProcessSnapshot; leader: ProcessSnapshot };
+};
+/**
+ * A registry reader with a consistent snapshot: verify() is the reader's asynchronous integrity
+ * check, and snapshot(decide) runs decide synchronously on the active grants inside one read
+ * transaction that no other connection can commit through.
+ */
+export type SnapshotGrantReader = ExecutionGrantReader & {
+  verify(): Promise<void>;
+  snapshot<T>(decide: (grants: ExecutionGrant[]) => T): T;
+};
 export type ExecutionIdentity = Pick<
   ExecutionGrant,
   "uid" | "gid" | "bootId" | "cgroup" | "leaderPid" | "leaderStartTicks"
@@ -40,7 +55,7 @@ const uint = (value: unknown): value is number =>
 const refuse = (): never => {
   throw Error("EXECUTION_GRANT_REFUSED");
 };
-type ProcessSnapshot = {
+export type ProcessSnapshot = {
   pid: number;
   startTicks: string;
   uid: number;
@@ -61,10 +76,11 @@ function parseStat(text: string, pid: number) {
   return startTicks;
 }
 
-async function processSnapshot(procRoot: string, pid: number): Promise<ProcessSnapshot> {
+/** Synchronous reads of /proc: start ticks read before and after status and cgroup must agree. */
+function processSnapshot(procRoot: string, pid: number): ProcessSnapshot {
   const dir = join(procRoot, String(pid));
-  const before = parseStat(await readFile(join(dir, "stat"), "utf8"), pid);
-  const status = await readFile(join(dir, "status"), "utf8");
+  const before = parseStat(readFileSync(join(dir, "stat"), "utf8"), pid);
+  const status = readFileSync(join(dir, "status"), "utf8");
   const ids = (name: string) => {
     const row = status.match(
       new RegExp(`^${name}:\\s+(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+(\\d+)\\s*$`, "m"),
@@ -74,7 +90,7 @@ async function processSnapshot(procRoot: string, pid: number): Promise<ProcessSn
     if (values.some((value) => !uint(value) || value !== values[0])) return refuse();
     return values[0]!;
   };
-  const cgroups = (await readFile(join(dir, "cgroup"), "utf8")).trim().split("\n");
+  const cgroups = readFileSync(join(dir, "cgroup"), "utf8").trim().split("\n");
   if (cgroups.length !== 1 || !cgroups[0]!.startsWith("0::/")) return refuse();
   const cgroup = cgroups[0]!.slice(3);
   if (
@@ -85,7 +101,7 @@ async function processSnapshot(procRoot: string, pid: number): Promise<ProcessSn
       .some((p) => !p || p === "." || p === "..")
   )
     return refuse();
-  const after = parseStat(await readFile(join(dir, "stat"), "utf8"), pid);
+  const after = parseStat(readFileSync(join(dir, "stat"), "utf8"), pid);
   if (before !== after) return refuse();
   return { pid, startTicks: before, uid: ids("Uid"), gid: ids("Gid"), cgroup };
 }
@@ -99,7 +115,7 @@ export async function attestExecution(
   const bootPath = join(procRoot, "sys/kernel/random/boot_id");
   const bootId = (await readFile(bootPath, "utf8")).trim();
   if (!/^[a-f0-9-]{36}$/.test(bootId)) refuse();
-  const snapshot = await processSnapshot(procRoot, leaderPid);
+  const snapshot = processSnapshot(procRoot, leaderPid);
   if (!snapshot.uid || (await readFile(bootPath, "utf8")).trim() !== bootId) refuse();
   return {
     uid: snapshot.uid,
@@ -158,8 +174,11 @@ function parseGrant(value: unknown, file: string): ExecutionGrant {
   return g;
 }
 
-/** Reads a controller-owned registry; worker text and UID alone are never authorization. */
-export function createExecutionGrantResolver(options: GrantResolverOptions) {
+/**
+ * Reads a controller-owned registry; worker text and UID alone are never authorization. Resolves
+ * the one current grant whose execution identity matches the kernel peer, or throws.
+ */
+export function createExecutionGrantMatcher(options: GrantResolverOptions) {
   const useStore = Object.hasOwn(options, "store");
   const store = options.store;
   if (
@@ -187,25 +206,46 @@ export function createExecutionGrantResolver(options: GrantResolverOptions) {
     maxLeaseMs > 86_400_000
   )
     refuse();
-  return async (peer: KernelPeer): Promise<Principal> => {
-    if (!peer || !uint(peer.uid) || !uint(peer.gid) || !uint(peer.pid) || !peer.pid) refuse();
+  /** The grant as the registry holds it now; throws when it is absent, revoked or malformed. */
+  const reread = async (grantId: string): Promise<ExecutionGrant> =>
+    parseGrant(
+      useStore
+        ? await getFromStore!(grantId)
+        : await readProtectedJson(join(grantRoot, `${grantId}.json`), authorityUid),
+      `${grantId}.json`,
+    );
+  /** The registry's active grants as they are now. Dot files are the controller's scratch files. */
+  const listCurrent = async (): Promise<ExecutionGrant[]> => {
     await assertProtectedPath(grantRoot, authorityUid);
-    const grants = useStore ? await listFromStore!() : null;
-    if (useStore && !Array.isArray(grants)) refuse();
-    const files = useStore ? grants!.map((g) => `${g.grantId}.json`) : await readdir(grantRoot);
+    const listed = useStore ? await listFromStore!() : null;
+    if (useStore && !Array.isArray(listed)) refuse();
+    const files = useStore ? listed!.map((g) => `${g.grantId}.json`) : await readdir(grantRoot);
     if (files.length > 1024) refuse();
+    const grants: ExecutionGrant[] = [];
+    for (const [index, file] of files.entries()) {
+      if (file.startsWith(".")) continue;
+      grants.push(
+        parseGrant(
+          useStore ? listed![index] : await readProtectedJson(join(grantRoot, file), authorityUid),
+          file,
+        ),
+      );
+    }
+    return grants;
+  };
+  /**
+   * Synchronous: the one grant in grants whose execution identity is the peer's as /proc shows it
+   * now, with the evidence read for it. Throws unless exactly one active, unexpired grant matches.
+   */
+  const matchNow = (peer: KernelPeer, grants: ExecutionGrant[]): MatchedExecution => {
+    if (!peer || !uint(peer.uid) || !uint(peer.gid) || !uint(peer.pid) || !peer.pid) refuse();
     const instant = now();
     if (!Number.isSafeInteger(instant)) refuse();
-    const bootId = (await readFile(join(procRoot, "sys/kernel/random/boot_id"), "utf8")).trim();
-    const connector = await processSnapshot(procRoot, peer.pid);
+    const bootId = readFileSync(join(procRoot, "sys/kernel/random/boot_id"), "utf8").trim();
+    const connector = processSnapshot(procRoot, peer.pid);
     if (connector.uid !== peer.uid || connector.gid !== peer.gid) refuse();
-    const matching: ExecutionGrant[] = [];
-    for (const [index, file] of files.entries()) {
-      if (file.startsWith(".")) continue; // Controller's atomic-write scratch files confer no grants.
-      const grant = parseGrant(
-        useStore ? grants![index] : await readProtectedJson(join(grantRoot, file), authorityUid),
-        file,
-      );
+    const matching: MatchedExecution[] = [];
+    for (const grant of grants) {
       if (
         grant.uid !== peer.uid ||
         grant.gid !== peer.gid ||
@@ -215,7 +255,7 @@ export function createExecutionGrantResolver(options: GrantResolverOptions) {
         grant.expiresAt - instant > maxLeaseMs
       )
         continue;
-      const leader = await processSnapshot(procRoot, grant.leaderPid);
+      const leader = processSnapshot(procRoot, grant.leaderPid);
       if (
         leader.uid !== grant.uid ||
         leader.gid !== grant.gid ||
@@ -223,24 +263,37 @@ export function createExecutionGrantResolver(options: GrantResolverOptions) {
         leader.startTicks !== grant.leaderStartTicks
       )
         refuse();
-      matching.push(grant);
+      matching.push({ grant, evidence: { bootId, peer: connector, leader } });
     }
     if (matching.length !== 1) refuse();
-    const after = await processSnapshot(procRoot, peer.pid);
+    const after = processSnapshot(procRoot, peer.pid);
     if (JSON.stringify(after) !== JSON.stringify(connector)) refuse();
-    const selected = matching[0]!;
-    const current = parseGrant(
-      useStore
-        ? await getFromStore!(selected.grantId)
-        : await readProtectedJson(join(grantRoot, `${selected.grantId}.json`), authorityUid),
-      `${selected.grantId}.json`,
-    );
-    if (JSON.stringify(current) !== JSON.stringify(selected) || now() >= selected.expiresAt)
+    return structuredClone(matching[0]!);
+  };
+  /** The full attestation: list the registry, match, then confirm the grant itself is unchanged. */
+  const attest = async (peer: KernelPeer): Promise<MatchedExecution> => {
+    const matched = matchNow(peer, await listCurrent());
+    const current = await reread(matched.grant.grantId);
+    if (
+      JSON.stringify(current) !== JSON.stringify(matched.grant) ||
+      now() >= matched.grant.expiresAt
+    )
       refuse();
+    return matched;
+  };
+  const match = async (peer: KernelPeer): Promise<ExecutionGrant> => (await attest(peer)).grant;
+  return Object.assign(match, { attest, listCurrent, matchNow, reread });
+}
+
+/** The matched grant's principal, for transports that authorize by principal. */
+export function createExecutionGrantResolver(options: GrantResolverOptions) {
+  const match = createExecutionGrantMatcher(options);
+  return async (peer: KernelPeer): Promise<Principal> => {
+    const grant = await match(peer);
     return {
-      id: selected.principal.id,
-      kind: selected.principal.kind,
-      taskIds: [...selected.principal.taskIds],
+      id: grant.principal.id,
+      kind: grant.principal.kind,
+      taskIds: [...grant.principal.taskIds],
     };
   };
 }

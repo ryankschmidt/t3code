@@ -16,6 +16,7 @@ import {
   type SupervisorHost,
   type TaskExecutionInput,
 } from "../src/task-execution-supervisor.ts";
+import { LEAD_SEAT, launchJudge } from "./launch-fixture.ts";
 
 test(
   "registered private task reaches real gated process only with its current grant, then revokes and stops",
@@ -33,6 +34,12 @@ test(
       authorityUid: process.getuid!(),
     });
     t.after(() => authority.close());
+    const judge = await launchJudge(t, root, store, async (peer) => ({
+      id: peer.uid === LEAD_SEAT.uid ? "lead1" : "judge-a",
+      kind: "reviewer",
+      taskIds: ["task-a"],
+    }));
+    const clearanceId = await judge.admit({ uid: 3301, gid: 3301, pid: 501 }, { taskId: "task-a" });
     const request: TaskExecutionInput = {
       agentId: "agent-a",
       taskId: "task-a",
@@ -42,6 +49,7 @@ test(
       grantId: "grant-a",
       issueRequestId: "issue-a",
       revokeRequestId: "revoke-a",
+      clearanceId,
       profile: {
         id: "cat-fixture",
         executable: "/usr/bin/cat",
@@ -140,7 +148,14 @@ test(
       if (!cache.has(key)) cache.set(key, work());
       return (await cache.get(key)) as T;
     };
-    const supervisor = new TaskExecutionSupervisor({ store, authority, host, step });
+    const supervisor = new TaskExecutionSupervisor({
+      store,
+      authority,
+      clearances: judge.clearances,
+      ledger: judge.ledger,
+      host,
+      step,
+    });
     const released = await supervisor.start(request);
     assert.equal(released.status, "provider-released");
     assert.equal(launchCount, 1);
