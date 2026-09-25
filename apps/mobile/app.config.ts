@@ -36,11 +36,12 @@ const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 
 // ThroughLine: the phone must report the SAME version the desktop and server report.
 //
-// apps/mobile has its own marketing version (`version` below, 1.1.1), which is what the App
-// Store shows and what Settings used to display. It is not the ThroughLine version, so the
-// Settings screen read "Version 1.1.1" on a 0.0.44 build and Ryan had no way to tell what was
-// installed. Read the real one from the same package the desktop and server are versioned from,
-// rather than writing it here as a literal that goes stale the next time the version moves.
+// `version` below is the App Store version, and it is not the ThroughLine version. TestFlight
+// orders builds by it: 0.0.47 sorted below the older 1.1.1, so the phone never offered it. The ship
+// tool therefore stamps it as (major+1).(minor+1).patch of the ThroughLine version, so 0.0.48 ships
+// as 1.1.48 and every release sorts above 1.1.1 (checked against App Store Connect before the build;
+// scheme approved Sep 25, 2026). Settings shows the ThroughLine version, read here from the same
+// package the desktop and server are versioned from, so it never reads the App Store number.
 const throughlineVersion = (() => {
   try {
     const pkg = JSON.parse(
