@@ -3660,7 +3660,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     private: true,
     packageManager: rootPackageJson.packageManager,
     description: "T3 Code desktop build",
-    author: "T3 Tools",
+    author: "ThroughLine",
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
       options.platform,
