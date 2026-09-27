@@ -779,6 +779,55 @@ const make = Effect.gen(function* () {
       return;
     }
 
+    if (event.payload.messageId !== undefined) {
+      const index = thread.messages.findIndex((message) => message.id === event.payload.messageId);
+      const message = thread.messages[index];
+      if (
+        event.payload.restoreFiles !== false ||
+        !message ||
+        message.role !== "user" ||
+        thread.session?.status === "running" ||
+        thread.session?.status === "starting"
+      ) {
+        yield* appendRevertFailureActivity({
+          threadId: thread.id,
+          turnCount: 0,
+          detail:
+            "Exact-message rewind requires an idle conversation and an existing user message. Files are never restored by this command.",
+          createdAt: now,
+        });
+        return;
+      }
+      const retained = thread.messages.slice(0, index);
+      const retainedTurnIds = [
+        ...new Set(retained.flatMap((row) => (row.turnId ? [row.turnId] : []))),
+      ];
+      // Only a turn's first user message may use its turn UUID as a fallback.
+      const firstInTurn =
+        message.turnId !== null &&
+        !retained.some((row) => row.role === "user" && row.turnId === message.turnId);
+      yield* providerService.rollbackConversation({
+        threadId: thread.id,
+        numTurns: 0,
+        beforeMessageId: message.id,
+        ...(firstInTurn && message.turnId ? { fallbackTurnId: message.turnId } : {}),
+      });
+      yield* orchestrationEngine.dispatch({
+        type: "thread.revert.complete",
+        commandId: yield* serverCommandId("conversation-revert-complete"),
+        threadId: thread.id,
+        turnCount: 0,
+        createdAt: now,
+        conversationBoundary: {
+          messageId: message.id,
+          beforeCreatedAt: message.createdAt,
+          retainedMessageIds: retained.map((row) => row.id),
+          retainedTurnIds,
+        },
+      });
+      return;
+    }
+
     const checkpointCwd = yield* resolveCheckpointCwd({
       threadId: event.payload.threadId,
       thread,

@@ -50,7 +50,14 @@ import {
 } from "@t3tools/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+import {
+  createModelSelection,
+  getProviderOptionDescriptors,
+  normalizeModelSlug,
+} from "@t3tools/shared/model";
+import { parseClaudeComposerMenu } from "@t3tools/shared/claudeComposerMenus";
+import { getProviderModelCapabilities } from "../../providerModels";
+import { ClaudeConfigMenu } from "./ClaudeConfigMenu";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
   memo,
@@ -1445,6 +1452,7 @@ export interface ChatComposerProps {
 
   // Callbacks
   onCompactContext: () => void;
+  onRewindMenu: () => void;
   onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -1561,6 +1569,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPageScrollKeyUp,
     onPageScrollRelease,
     onCompactContext,
+    onRewindMenu,
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
@@ -2125,6 +2134,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isDragOverComposer, setIsDragOverComposer] = useState(false);
   const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
+  const [isClaudeConfigOpen, setIsClaudeConfigOpen] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const isMobileViewport = useMediaQuery("max-sm");
   const {
@@ -2418,9 +2428,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           skill.description ??
           (skill.scope ? `${skill.scope} skill` : ""),
       }));
-      const visibleProviderSlashCommandItems = providerSlashCommandItems.filter(
-        (item) => item.command.name !== "compact" || compactSlashCommandAvailable,
-      );
+      const localMenus =
+        selectedProvider === "claudeAgent" && routeKind === "server"
+          ? ["rewind", "config"].map((name) => ({
+              id: `provider-slash-command:${selectedProvider}:${name}`,
+              type: "provider-slash-command" as const,
+              provider: selectedProvider,
+              command: { name },
+              label: `/${name}`,
+              description:
+                name === "rewind"
+                  ? "Choose a message to restore the conversation"
+                  : "Claude Code session settings",
+            }))
+          : [];
+      const visibleProviderSlashCommandItems = [
+        ...providerSlashCommandItems.filter(
+          (item) =>
+            (item.command.name !== "compact" || compactSlashCommandAvailable) &&
+            !localMenus.some((local) => local.command.name === item.command.name),
+        ),
+        ...localMenus,
+      ];
       const slashCommandItems = slashCommandItemsForPromptPosition(
         [...builtInSlashCommandItems, ...visibleProviderSlashCommandItems, ...skillItems],
         composerTrigger.rangeStart === 0,
@@ -2494,6 +2523,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return [];
   }, [
     compactSlashCommandAvailable,
+    routeKind,
     composerTrigger,
     exactPullRequestLookup.data,
     planModeUiEnabled,
@@ -3637,6 +3667,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       if (item.type === "provider-slash-command") {
+        const localMenu =
+          selectedProvider === "claudeAgent" && routeKind === "server"
+            ? parseClaudeComposerMenu(`/${item.command.name}`)
+            : null;
+        if (localMenu) {
+          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+            focusEditorAfterReplace: false,
+          });
+          if (applied) {
+            setComposerHighlightedItemId(null);
+            if (localMenu === "rewind") onRewindMenu();
+            else setIsClaudeConfigOpen(true);
+          }
+          return;
+        }
         if (item.command.name === USAGE_LIMITS_COMMAND.name && onUsageLimitsCommand) {
           const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
             expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
@@ -3721,6 +3767,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       handleInteractionModeChange,
       planModeUiEnabled,
       onUsageLimitsCommand,
+      onRewindMenu,
+      selectedProvider,
+      routeKind,
       resolveActiveComposerTrigger,
     ],
   );
@@ -3795,6 +3844,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }, intent: ComposerSubmissionIntent = "foreground") => {
+      const localMenu =
+        selectedProvider === "claudeAgent" && routeKind === "server" && !activePendingProgress
+          ? parseClaudeComposerMenu(promptRef.current)
+          : null;
+      if (localMenu) {
+        event?.preventDefault();
+        setPromptFromTraits("");
+        if (localMenu === "rewind") onRewindMenu();
+        else setIsClaudeConfigOpen(true);
+        return;
+      }
       if (noProviderAvailable || isSendDisabled) {
         event?.preventDefault();
         return;
@@ -3854,6 +3914,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onSend,
       promptRef,
       shouldBlurMobileComposerOnSubmit,
+      selectedProvider,
+      routeKind,
+      setPromptFromTraits,
+      onRewindMenu,
     ],
   );
   const submitCitationAndSend = useCallback(() => {
@@ -6445,6 +6509,42 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 isComposerResting && "py-2 sm:py-2",
               )}
             >
+              <ClaudeConfigMenu
+                open={isClaudeConfigOpen && selectedProvider === "claudeAgent"}
+                onOpenChange={setIsClaudeConfigOpen}
+                model={selectedModel}
+                models={selectedProviderModels}
+                getModelDisabledReason={(model) =>
+                  getModelDisabledReason(selectedInstanceId, model)
+                }
+                descriptors={getProviderOptionDescriptors({
+                  caps: getProviderModelCapabilities(
+                    selectedProviderModels,
+                    selectedModel,
+                    selectedProvider,
+                    settings.planModeEnabled,
+                  ),
+                  selections: composerModelOptions?.[selectedInstanceId],
+                })}
+                onModelChange={(model) =>
+                  onProviderModelSelect(selectedInstanceId, model, { focusComposer: false })
+                }
+                onOptionChange={(id, value) =>
+                  useComposerDraftStore
+                    .getState()
+                    .setProviderModelOptions(
+                      routeThreadRef,
+                      selectedProvider,
+                      [
+                        ...(composerModelOptions?.[selectedInstanceId] ?? []).filter(
+                          (option) => option.id !== id,
+                        ),
+                        { id, value },
+                      ],
+                      { instanceId: selectedInstanceId, model: selectedModel, persistSticky: true },
+                    )
+                }
+              />
               {isStashMenuOpen && !composerMenuOpen && !isComposerApprovalState && (
                 <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
                   <ComposerStashMenu

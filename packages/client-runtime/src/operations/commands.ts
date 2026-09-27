@@ -1,5 +1,6 @@
 import {
   CommandId,
+  type MessageId,
   ORCHESTRATION_WS_METHODS,
   type ClientOrchestrationCommand,
 } from "@t3tools/contracts";
@@ -56,6 +57,7 @@ export type RespondToThreadUserInputInput = CommandInput<"thread.user-input.resp
 export type DismissThreadUserInputInput = CommandInput<"thread.user-input.dismiss">;
 export type RevertThreadCheckpointInput = CommandInput<"thread.checkpoint.revert"> & {
   readonly restoreFiles?: boolean;
+  readonly beforeMessageId?: MessageId;
 };
 export type StopThreadSessionInput = CommandInput<"thread.session.stop">;
 
@@ -368,7 +370,16 @@ export const dismissThreadUserInput: (input: DismissThreadUserInputInput) => Com
 export const revertThreadCheckpoint: (input: RevertThreadCheckpointInput) => CommandEffect =
   Effect.fn("EnvironmentCommands.revertThreadCheckpoint")(function* (input) {
     const metadata = yield* timestampedCommandMetadata(input);
-    const { restoreFiles, ...command } = input;
+    const { restoreFiles, beforeMessageId, ...command } = input;
+    if (beforeMessageId !== undefined) {
+      return yield* dispatch({
+        type: "thread.conversation.revert-to-message",
+        threadId: input.threadId,
+        messageId: beforeMessageId,
+        commandId: metadata.commandId,
+        createdAt: metadata.createdAt,
+      });
+    }
     return yield* dispatch({
       ...command,
       type: restoreFiles === false ? "thread.conversation.revert" : "thread.checkpoint.revert",

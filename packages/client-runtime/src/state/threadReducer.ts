@@ -624,6 +624,29 @@ export function applyThreadDetailEvent(
 
     // ── Revert ──────────────────────────────────────────────────────
     case "thread.reverted": {
+      if (event.payload.conversationBoundary) {
+        const boundary = event.payload.conversationBoundary;
+        const messages = new Set(boundary.retainedMessageIds);
+        const turns = new Set(boundary.retainedTurnIds);
+        // Provider-started turns carry no message, so anything recorded before
+        // the boundary is kept by time, not only by a retained message's turn.
+        return {
+          kind: "updated",
+          thread: {
+            ...thread,
+            messages: thread.messages.filter((row) => messages.has(row.id)),
+            checkpoints: thread.checkpoints.filter(
+              (row) => turns.has(row.turnId) || row.completedAt < boundary.beforeCreatedAt,
+            ),
+            proposedPlans: thread.proposedPlans.filter(
+              (row) => row.createdAt < boundary.beforeCreatedAt,
+            ),
+            activities: thread.activities.filter((row) => row.createdAt < boundary.beforeCreatedAt),
+            latestTurn: null,
+            updatedAt: event.occurredAt,
+          },
+        };
+      }
       const checkpoints = pipe(
         thread.checkpoints,
         Arr.filter(

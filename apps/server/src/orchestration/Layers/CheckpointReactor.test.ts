@@ -519,6 +519,129 @@ describe("CheckpointReactor", () => {
     };
   }
 
+  effectIt.effect("conversation rewind preserves earlier history with zero checkpoint counts", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          providerName: ProviderDriverKind.make("claudeAgent"),
+          threadWorktreePath: null,
+        }),
+      );
+      const threadId = ThreadId.make("thread-1");
+      const messages = Array.from({ length: 26 }, (_, index) => ({
+        messageId: MessageId.make(`native-user-${index}`),
+        role: "user" as const,
+        text: `prompt ${index}`,
+        createdAt: `2026-01-01T01:${String(index).padStart(2, "0")}:00.000Z`,
+      }));
+      yield* harness.engine.dispatch({
+        type: "thread.history.import",
+        commandId: CommandId.make("import-zero-checkpoints"),
+        threadId,
+        messages,
+      });
+      const before = yield* Effect.promise(harness.readModel);
+      expect(before.threads.find((thread) => thread.id === threadId)?.checkpoints).toEqual([]);
+      const bytesBefore = NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"), "utf8");
+      yield* harness.engine.dispatch({
+        type: "thread.conversation.revert-to-message",
+        commandId: CommandId.make("exact-message-rewind"),
+        threadId,
+        messageId: MessageId.make("native-user-24"),
+        createdAt: "2026-01-01T02:00:00.000Z",
+      });
+      yield* Effect.promise(harness.drain);
+      expect(harness.provider.rollbackConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ threadId, numTurns: 0, beforeMessageId: "native-user-24" }),
+      );
+      const after = (yield* Effect.promise(harness.readModel)).threads.find(
+        (thread) => thread.id === threadId,
+      );
+      expect(after?.messages.map((message) => message.id)).toEqual(
+        messages.slice(0, 24).map((message) => message.messageId),
+      );
+      expect(after?.checkpoints).toEqual([]);
+      expect(
+        after?.activities.some((activity) => activity.kind === "checkpoint.revert.failed"),
+      ).toBe(false);
+      expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"), "utf8")).toBe(
+        bytesBefore,
+      );
+    }),
+  );
+
+  effectIt.effect("conversation rewind keeps message-less turn work recorded before it", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          providerName: ProviderDriverKind.make("claudeAgent"),
+          threadWorktreePath: null,
+        }),
+      );
+      const threadId = ThreadId.make("thread-1");
+      yield* harness.engine.dispatch({
+        type: "thread.history.import",
+        commandId: CommandId.make("import-with-provider-turn"),
+        threadId,
+        messages: ["kept", "boundary"].map((id, index) => ({
+          messageId: MessageId.make(id),
+          role: "user" as const,
+          text: id,
+          createdAt: `2026-01-01T01:0${index * 2}:00.000Z`,
+        })),
+      });
+      // A provider-started turn between the two prompts: work, but no message.
+      yield* harness.engine.dispatch({
+        type: "thread.turn.diff.complete",
+        commandId: CommandId.make("provider-turn-diff"),
+        threadId,
+        turnId: TurnId.make("provider-turn"),
+        completedAt: "2026-01-01T01:01:00.000Z",
+        checkpointRef: CheckpointRef.make("provider-diff:provider-turn"),
+        status: "missing",
+        files: [],
+        checkpointTurnCount: 1,
+        createdAt: "2026-01-01T01:01:00.000Z",
+      });
+      for (const [id, turnId, createdAt] of [
+        ["provider-work", "provider-turn", "2026-01-01T01:01:00.000Z"],
+        ["rewound-work", "rewound-turn", "2026-01-01T01:03:00.000Z"],
+      ] as const) {
+        yield* harness.engine.dispatch({
+          type: "thread.activity.append",
+          commandId: CommandId.make(`append-${id}`),
+          threadId,
+          activity: {
+            id: EventId.make(id),
+            tone: "tool",
+            kind: "tool.completed",
+            summary: id,
+            payload: {},
+            turnId: TurnId.make(turnId),
+            createdAt,
+          },
+          createdAt,
+        });
+      }
+      yield* Effect.promise(harness.drain);
+      yield* harness.engine.dispatch({
+        type: "thread.conversation.revert-to-message",
+        commandId: CommandId.make("exact-message-rewind-provider-turn"),
+        threadId,
+        messageId: MessageId.make("boundary"),
+        createdAt: "2026-01-01T02:00:00.000Z",
+      });
+      yield* Effect.promise(harness.drain);
+      const after = (yield* Effect.promise(harness.readModel)).threads.find(
+        (thread) => thread.id === threadId,
+      );
+      expect(after?.messages.map((message) => message.id)).toEqual(["kept"]);
+      expect(after?.checkpoints.map((checkpoint) => checkpoint.turnId)).toEqual(["provider-turn"]);
+      expect(after?.activities.map((activity) => activity.id)).toContain("provider-work");
+      expect(after?.activities.map((activity) => activity.id)).not.toContain("rewound-work");
+    }),
+  );
+
   effectIt.effect.each([
     "active",
     "archived",

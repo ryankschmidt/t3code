@@ -1418,6 +1418,23 @@ const ThreadConversationRevertCommand = Schema.Struct({
   type: Schema.Literal("thread.conversation.revert"),
 });
 
+// A new command makes older hosts refuse instead of silently interpreting a
+// missing/ignored message boundary as a checkpoint-zero rewind.
+const ThreadConversationRevertToMessageCommand = Schema.Struct({
+  type: Schema.Literal("thread.conversation.revert-to-message"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  createdAt: IsoDateTime,
+});
+
+const ConversationRevertBoundary = Schema.Struct({
+  messageId: MessageId,
+  beforeCreatedAt: IsoDateTime,
+  retainedMessageIds: Schema.Array(MessageId),
+  retainedTurnIds: Schema.Array(TurnId),
+});
+
 const ThreadSessionStopCommand = Schema.Struct({
   type: Schema.Literal("thread.session.stop"),
   commandId: CommandId,
@@ -1460,6 +1477,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadUserInputDismissCommand,
   ThreadCheckpointRevertCommand,
   ThreadConversationRevertCommand,
+  ThreadConversationRevertToMessageCommand,
   ThreadSessionStopCommand,
 ]);
 export type DispatchableClientOrchestrationCommand =
@@ -1494,6 +1512,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadUserInputDismissCommand,
   ThreadCheckpointRevertCommand,
   ThreadConversationRevertCommand,
+  ThreadConversationRevertToMessageCommand,
   ThreadSessionStopCommand,
 ]);
 export type ClientOrchestrationCommand = typeof ClientOrchestrationCommand.Type;
@@ -1611,6 +1630,7 @@ const ThreadRevertCompleteCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   turnCount: NonNegativeInt,
+  conversationBoundary: Schema.optional(ConversationRevertBoundary),
   createdAt: IsoDateTime,
 });
 
@@ -1979,12 +1999,14 @@ export const ThreadCheckpointRevertRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   turnCount: NonNegativeInt,
   restoreFiles: Schema.optional(Schema.Boolean),
+  messageId: Schema.optional(MessageId),
   createdAt: IsoDateTime,
 });
 
 export const ThreadRevertedPayload = Schema.Struct({
   threadId: ThreadId,
   turnCount: NonNegativeInt,
+  conversationBoundary: Schema.optional(ConversationRevertBoundary),
 });
 
 export const ThreadSessionStopRequestedPayload = Schema.Struct({

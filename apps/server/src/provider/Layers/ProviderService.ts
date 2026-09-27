@@ -333,6 +333,8 @@ type ProviderServiceMethod<Name extends keyof ProviderService.ProviderService["S
 const ProviderRollbackConversationInput = Schema.Struct({
   threadId: ThreadId,
   numTurns: NonNegativeInt,
+  beforeMessageId: Schema.optional(Schema.String),
+  fallbackTurnId: Schema.optional(Schema.String),
 });
 
 function toValidationError(
@@ -2216,7 +2218,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       schema: ProviderRollbackConversationInput,
       payload: rawInput,
     });
-    if (input.numTurns === 0) {
+    if (input.numTurns === 0 && input.beforeMessageId === undefined) {
       return;
     }
     let metricProvider = "unknown";
@@ -2234,7 +2236,22 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "provider.thread_id": input.threadId,
         "provider.rollback_turns": input.numTurns,
       });
-      yield* routed.adapter.rollbackThread(routed.threadId, input.numTurns);
+      if (input.beforeMessageId !== undefined && routed.adapter.provider !== "claudeAgent") {
+        return yield* toValidationError(
+          "ProviderService.rollbackConversation",
+          "Exact-message rewind is currently supported only by Claude Code.",
+        );
+      }
+      yield* routed.adapter.rollbackThread(
+        routed.threadId,
+        input.numTurns,
+        input.beforeMessageId === undefined
+          ? undefined
+          : {
+              beforeMessageId: input.beforeMessageId,
+              ...(input.fallbackTurnId ? { fallbackTurnId: input.fallbackTurnId } : {}),
+            },
+      );
       const session = (yield* routed.adapter.listSessions()).find(
         (session) => session.threadId === routed.threadId,
       );

@@ -1817,6 +1817,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.conversation.revert-to-message":
     case "thread.conversation.revert":
     case "thread.checkpoint.revert": {
       yield* requireThread({
@@ -1834,8 +1835,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.checkpoint-revert-requested",
         payload: {
           threadId: command.threadId,
-          turnCount: command.turnCount,
-          ...(command.type === "thread.conversation.revert" ? { restoreFiles: false } : {}),
+          turnCount:
+            command.type === "thread.conversation.revert-to-message" ? 0 : command.turnCount,
+          ...(command.type !== "thread.checkpoint.revert" ? { restoreFiles: false } : {}),
+          ...(command.type === "thread.conversation.revert-to-message"
+            ? { messageId: command.messageId }
+            : {}),
           createdAt: command.createdAt,
         },
       };
@@ -2156,6 +2161,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           turnCount: command.turnCount,
+          ...(command.conversationBoundary
+            ? { conversationBoundary: command.conversationBoundary }
+            : {}),
         },
       };
     }

@@ -1,5 +1,6 @@
 import {
   CommandId,
+  MessageId,
   EnvironmentId,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
@@ -76,6 +77,26 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
 });
 
 describe("environment commands", () => {
+  it.effect(
+    "sends exact-message rewind through a command older hosts cannot mistake for file restore",
+    () =>
+      Effect.gen(function* () {
+        const dispatched: ClientOrchestrationCommand[] = [];
+        const supervisor = yield* makeSupervisor(dispatched);
+        yield* revertThreadCheckpoint({
+          threadId: ThreadId.make("thread-1"),
+          turnCount: 0,
+          restoreFiles: false,
+          beforeMessageId: MessageId.make("failed"),
+        }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+        expect(dispatched[0]).toMatchObject({
+          type: "thread.conversation.revert-to-message",
+          messageId: "failed",
+        });
+        expect(dispatched[0]).not.toHaveProperty("turnCount");
+        expect(dispatched[0]).not.toHaveProperty("restoreFiles");
+      }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
   it.effect("adds generated command metadata", () =>
     Effect.gen(function* () {
       const dispatched: ClientOrchestrationCommand[] = [];

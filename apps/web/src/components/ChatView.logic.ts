@@ -1159,6 +1159,7 @@ export async function waitForRevertedMessage(
   turnCount: number,
   revert: () => Promise<void>,
   timeoutMs = 120_000,
+  exactMessage = false,
 ): Promise<void> {
   const threadAtom = environmentThreadDetails.detailAtom(threadRef);
   const initial = appAtomRegistry.get(threadAtom);
@@ -1205,8 +1206,9 @@ export async function waitForRevertedMessage(
       } else if (
         accepted &&
         !thread.messages.some((message) => message.id === messageId) &&
-        thread.checkpoints.every((checkpoint) => checkpoint.checkpointTurnCount <= turnCount) &&
-        (turnCount === 0
+        (exactMessage ||
+          thread.checkpoints.every((checkpoint) => checkpoint.checkpointTurnCount <= turnCount)) &&
+        (exactMessage || turnCount === 0
           ? thread.latestTurn === null
           : thread.checkpoints.some(
               (checkpoint) => checkpoint.turnId === thread.latestTurn?.turnId,

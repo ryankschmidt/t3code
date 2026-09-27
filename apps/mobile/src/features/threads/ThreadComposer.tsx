@@ -1,4 +1,6 @@
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
+import { parseClaudeComposerMenu } from "@t3tools/shared/claudeComposerMenus";
+import { ClaudeRewindMenu } from "./ClaudeRewindMenu";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useAtomValue } from "@effect/atom-react";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
@@ -368,6 +370,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     return report !== null;
   }, [currentModelSelection.instanceId, onShowUsageLimits, props.serverConfig]);
 
+  const [rewindOpen, setRewindOpen] = useState(false);
+  const openConfigRef = useRef<() => void>(() => {});
+  const openLocalMenu = useCallback((menu: "rewind" | "config") => {
+    if (menu === "rewind") setRewindOpen(true);
+    else openConfigRef.current();
+  }, []);
   const composerMenu = useComposerCommandMenu({
     draftMessage: props.draftMessage,
     ownerKey: composerOwnerKey,
@@ -386,6 +394,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         ? undefined
         : props.onUpdateInteractionMode,
     offersUsageLimits: usageLimitsOffered,
+    onLocalMenu: openLocalMenu,
     // With attachments aboard the pick just inserts the text, so it sends as a prompt.
     onUsageLimits:
       usageLimitsOffered && props.draftAttachments.length === 0 ? openUsageLimits : undefined,
@@ -474,6 +483,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   }, [onEditorFocusChange, onExpandedChange, settingsSheetPresentation.keepsComposerExpanded]);
   const handleSend = useCallback(async () => {
     if (voiceInput.blocksSubmission || pendingPastedTextAttachmentCountRef.current > 0) return;
+    const localMenu =
+      selectedProviderStatus?.driver === "claudeAgent"
+        ? parseClaudeComposerMenu(props.draftMessage)
+        : null;
+    if (localMenu) {
+      onChangeDraftMessage("");
+      openLocalMenu(localMenu);
+      return;
+    }
     // Typed out in full rather than picked from the menu. Attachments mean the
     // user is sending a prompt, so those go through as usual.
     if (
@@ -517,6 +535,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.selectedThread.id,
     props.selectedThread.title,
     voiceInput.blocksSubmission,
+    selectedProviderStatus?.driver,
+    openLocalMenu,
   ]);
 
   // ── Model menu ───────────────────────────────────────────
@@ -574,6 +594,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     settingsRoutePresentation.present(settingsRouteSession);
     settingsSheetPresentation.open();
   }, [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.open]);
+  useLayoutEffect(() => {
+    openConfigRef.current = openSettings;
+  }, [openSettings]);
 
   useEffect(() => {
     if (settingsSheetPresentation.isActive) {
@@ -623,6 +646,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           Platform.OS === "android" ? themeColorWithAlpha(composerPanel, 1) : undefined,
       }}
     >
+      <ClaudeRewindMenu
+        key={composerOwnerKey}
+        environmentId={props.environmentId}
+        threadId={props.selectedThread.id}
+        ownerKey={composerOwnerKey}
+        open={rewindOpen}
+        onClose={() => setRewindOpen(false)}
+      />
       {/* The backdrop gradient lives on a plain View: Reanimated's Animated.View
           silently drops experimental_backgroundImage on Android, which left this
           strip fully transparent and the feed text legible through the composer. */}

@@ -222,7 +222,10 @@ const remapClaudeForkTurnBoundaries = (
       ? forkMessage.uuid
       : null;
   });
-  return remapped.some((id) => id === null) ? undefined : remapped;
+  // An unknown marker stays unknown; a known marker that cannot be remapped fails.
+  return remapped.some((id, index) => id === null && retainedBoundaries[index] !== null)
+    ? undefined
+    : remapped;
 };
 
 const PROVIDER = ProviderDriverKind.make("claudeAgent");
@@ -5603,9 +5606,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   );
 
   const rollbackThread: ClaudeAdapterShape["rollbackThread"] = Effect.fn("rollbackThread")(
-    function* (threadId, numTurns) {
+    function* (threadId, numTurns, target) {
       const context = yield* requireSession(threadId);
-      if (!Number.isInteger(numTurns) || numTurns < 1) {
+      if (target && context.turnState) {
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "thread/rollback",
+          detail: "Interrupt the active Claude turn before rewinding.",
+        });
+      }
+      if (!target && (!Number.isInteger(numTurns) || numTurns < 1)) {
         return yield* new ProviderAdapterValidationError({
           provider: PROVIDER,
           operation: "rollbackThread",
@@ -5613,6 +5623,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
       }
       if (
+        !target &&
         context.turnStartMessageIds.length > 0 &&
         context.turnStartMessageIds.every((id) => id !== null) &&
         numTurns >= context.turnStartMessageIds.length
@@ -5716,12 +5727,58 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ...turnStarts.map((index) => messages[index]!.uuid),
         );
       }
-      const retainedCount = Math.max(0, boundaries.length - numTurns);
+      let retainedCount = Math.max(0, boundaries.length - numTurns);
+      let exactIndex: number | undefined;
+      if (target) {
+        // Imported messages preserve native UUIDs. A newly submitted first
+        // prompt instead uses its T3 turn UUID as the SDK user-message UUID.
+        // Never match text or guess an index from file-checkpoint counts.
+        const direct = messages.findIndex((message) => message.uuid === target.beforeMessageId);
+        const exact =
+          direct >= 0
+            ? direct
+            : messages.findIndex((message) => message.uuid === target.fallbackTurnId);
+        if (exact < 0 || !isClaudeHumanTurnStart(messages[exact]!)) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "thread/rollback",
+            detail: "The exact native user message is unavailable. No conversation was changed.",
+          });
+        }
+        // Boundaries stay one per T3 turn: provider-started turns count, steers do
+        // not. A later turn-count rollback does arithmetic in T3 turns, so the
+        // resumed cursor must keep that alignment. Unplaceable markers stay null,
+        // which makes such a rollback refuse instead of cutting the wrong message.
+        const positions = boundaries.map((id) =>
+          id === null ? -1 : messages.findIndex((message) => message.uuid === id),
+        );
+        const markerIndex = boundaries.indexOf(messages[exact]!.uuid);
+        const placeable = positions.every(
+          (position, index) => position >= 0 && (index === 0 || position > positions[index - 1]!),
+        );
+        if (markerIndex < 0 && !placeable) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "thread/rollback",
+            detail:
+              "Claude's saved turn markers cannot be lined up with this message. No conversation was changed. Rewind to the first message of a turn instead.",
+          });
+        }
+        retainedCount =
+          markerIndex >= 0 ? markerIndex : positions.filter((position) => position < exact).length;
+        boundaries.splice(
+          0,
+          boundaries.length,
+          ...boundaries.map((id, index) => (positions[index]! >= 0 ? id : null)),
+        );
+        exactIndex = exact;
+      }
       const firstRemovedId = boundaries[retainedCount];
-      const firstRemoved = messages.findIndex((message) => message.uuid === firstRemovedId);
+      const firstRemoved =
+        exactIndex ?? messages.findIndex((message) => message.uuid === firstRemovedId);
       if (
-        boundaries.length === 0 ||
-        boundaries.some((id) => id === null) ||
+        (exactIndex === undefined &&
+          (boundaries.length === 0 || boundaries.some((id) => id === null))) ||
         (retainedCount > 0 && firstRemoved < 1)
       ) {
         return yield* new ProviderAdapterRequestError({
@@ -5731,8 +5788,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             "The exact Claude turn boundary is unavailable, possibly after compaction or recovery of older history. Start a new thread instead.",
         });
       }
-      const rollbackAt = retainedCount > 0 ? messages[firstRemoved - 1]?.uuid : undefined;
-      const retainedTurns = context.turns.slice(0, Math.max(0, context.turns.length - numTurns));
+      // An exact rewind keeps native history before the message even when no T3
+      // turn precedes it, such as imported conversation.
+      const rollbackAt = (exactIndex === undefined ? retainedCount > 0 : firstRemoved > 0)
+        ? messages[firstRemoved - 1]?.uuid
+        : undefined;
+      if (target && context.turnState) {
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "thread/rollback",
+          detail: "A new Claude turn started while reading history. No conversation was changed.",
+        });
+      }
+      const retainedTurns = context.turns.slice(
+        0,
+        Math.max(0, context.turns.length - (target ? boundaries.length - retainedCount : numTurns)),
+      );
       const fork = rollbackAt
         ? yield* Effect.tryPromise({
             try: async () => {
@@ -5766,6 +5837,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           });
         }
         retainedBoundaries.splice(0, retainedBoundaries.length, ...remappedBoundaries);
+      }
+      if (target && context.turnState) {
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "thread/rollback",
+          detail:
+            "A new Claude turn started while preparing the fork. The active session was left unchanged.",
+        });
       }
       yield* stopSessionInternal(context, { emitExitEvent: false });
       yield* startSession({

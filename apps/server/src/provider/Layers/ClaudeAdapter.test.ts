@@ -6559,6 +6559,260 @@ describe("ClaudeAdapterLive", () => {
     },
   );
 
+  it.effect.each([false, true])(
+    "rewinds an exact native message with no checkpoint or saved turn boundaries, fallback=%s",
+    (fallback) => {
+      const oldId = "550e8400-e29b-41d4-a716-446655440010";
+      const newId = "550e8400-e29b-41d4-a716-446655440020";
+      const calls: Array<Parameters<NonNullable<ClaudeAdapterLiveOptions["forkSession"]>>> = [];
+      const history: Awaited<
+        ReturnType<NonNullable<ClaudeAdapterLiveOptions["getSessionMessages"]>>
+      > = [
+        {
+          type: "user",
+          uuid: "first",
+          session_id: oldId,
+          parent_tool_use_id: null,
+          parent_agent_id: null,
+          message: { content: "first" },
+        },
+        {
+          type: "assistant",
+          uuid: "assistant-first",
+          session_id: oldId,
+          parent_tool_use_id: null,
+          parent_agent_id: null,
+          message: { content: [] },
+        },
+        {
+          type: "user",
+          uuid: "failed-message",
+          session_id: oldId,
+          parent_tool_use_id: null,
+          parent_agent_id: null,
+          message: { content: "failed prompt" },
+        },
+        {
+          type: "user",
+          uuid: "retry",
+          session_id: oldId,
+          parent_tool_use_id: null,
+          parent_agent_id: null,
+          message: { content: "retry" },
+        },
+      ];
+      const harness = makeHarness({
+        getSessionMessages: async (id) => (id === newId ? history.slice(0, 2) : history),
+        forkSession: async (...args) => {
+          calls.push(args);
+          return { sessionId: newId };
+        },
+      });
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+          resumeCursor: { resume: oldId, turnCount: 0 },
+        });
+        yield* adapter.rollbackThread(
+          THREAD_ID,
+          0,
+          fallback
+            ? { beforeMessageId: "client-message", fallbackTurnId: "failed-message" }
+            : { beforeMessageId: "failed-message" },
+        );
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0]?.[1]?.upToMessageId, "assistant-first");
+        assert.equal(harness.getLastCreateQueryInput()?.options.resume, newId);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("refuses an unknown native message without forking or restarting", () => {
+    const oldId = "550e8400-e29b-41d4-a716-446655440010";
+    let forks = 0;
+    const harness = makeHarness({
+      getSessionMessages: async () => [
+        {
+          type: "user",
+          uuid: "known",
+          session_id: oldId,
+          parent_tool_use_id: null,
+          parent_agent_id: null,
+          message: { content: "hello" },
+        },
+      ],
+      forkSession: async () => {
+        forks++;
+        return { sessionId: oldId };
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        resumeCursor: { resume: oldId, turnCount: 0 },
+      });
+      const error = yield* adapter
+        .rollbackThread(THREAD_ID, 0, { beforeMessageId: "missing" })
+        .pipe(Effect.flip);
+      assert.match(String(error), /exact native user message/);
+      assert.equal(forks, 0);
+      assert.equal(harness.getLastCreateQueryInput()?.options.resume, oldId);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  describe("exact rewind keeps T3 turn alignment", () => {
+    const oldId = "550e8400-e29b-41d4-a716-446655440010";
+    const entry = (type: "user" | "assistant", uuid: string, content: unknown) => ({
+      type,
+      uuid,
+      session_id: oldId,
+      parent_tool_use_id: null,
+      parent_agent_id: null,
+      message: { content },
+    });
+    // T3 turns: P1 (with a steer), a provider-started reply, P3, P4.
+    const history = [
+      entry("user", "turn-1", "first prompt"),
+      entry("assistant", "reply-1", []),
+      entry("user", "steer-1", "steer inside the first turn"),
+      entry("assistant", "reply-1b", []),
+      entry("assistant", "synthetic-2", []),
+      entry("user", "turn-3", "third prompt"),
+      entry("assistant", "reply-3", []),
+      entry("user", "turn-4", "fourth prompt"),
+      entry("assistant", "reply-4", []),
+    ] as Awaited<ReturnType<NonNullable<ClaudeAdapterLiveOptions["getSessionMessages"]>>>;
+    const makeForkingHarness = (calls: Array<{ upToMessageId: string | undefined }>) => {
+      const forks = new Map<string, number>();
+      return makeHarness({
+        getSessionMessages: async (id) => {
+          const length = forks.get(id);
+          return length === undefined ? history : history.slice(0, length);
+        },
+        forkSession: async (_id, forkOptions) => {
+          calls.push({ upToMessageId: forkOptions?.upToMessageId });
+          const sessionId = `550e8400-e29b-41d4-a716-44665544010${calls.length}`;
+          forks.set(
+            sessionId,
+            history.findIndex((message) => message.uuid === forkOptions?.upToMessageId) + 1,
+          );
+          return { sessionId };
+        },
+      });
+    };
+
+    it.effect("a later turn-count rollback cuts at the right message", () => {
+      const calls: Array<{ upToMessageId: string | undefined }> = [];
+      const harness = makeForkingHarness(calls);
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+          resumeCursor: {
+            resume: oldId,
+            turnCount: 4,
+            turnStartMessageIds: ["turn-1", "synthetic-2", "turn-3", "turn-4"],
+          },
+        });
+        yield* adapter.rollbackThread(THREAD_ID, 0, {
+          beforeMessageId: "client-message-4",
+          fallbackTurnId: "turn-4",
+        });
+        const afterExact = (yield* adapter.listSessions()).find(
+          (session) => session.threadId === THREAD_ID,
+        );
+        assert.equal(calls[0]?.upToMessageId, "reply-3");
+        assert.deepEqual(afterExact?.resumeCursor, {
+          threadId: THREAD_ID,
+          resume: "550e8400-e29b-41d4-a716-446655440101",
+          turnCount: 3,
+          turnStartMessageIds: ["turn-1", "synthetic-2", "turn-3"],
+        });
+        // Back to T3 turn 1: removes the provider-started reply and P3, keeps the steer.
+        yield* adapter.rollbackThread(THREAD_ID, 2);
+        assert.equal(calls[1]?.upToMessageId, "reply-1b");
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    });
+
+    it.effect("unknown markers stay unknown, so a later turn-count rollback refuses", () => {
+      const calls: Array<{ upToMessageId: string | undefined }> = [];
+      const harness = makeForkingHarness(calls);
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+          resumeCursor: {
+            resume: oldId,
+            turnCount: 4,
+            turnStartMessageIds: [null, "synthetic-2", "turn-3", "turn-4"],
+          },
+        });
+        yield* adapter.rollbackThread(THREAD_ID, 0, {
+          beforeMessageId: "client-message-4",
+          fallbackTurnId: "turn-4",
+        });
+        const afterExact = (yield* adapter.listSessions()).find(
+          (session) => session.threadId === THREAD_ID,
+        );
+        assert.equal(calls[0]?.upToMessageId, "reply-3");
+        assert.deepEqual(afterExact?.resumeCursor, {
+          threadId: THREAD_ID,
+          resume: "550e8400-e29b-41d4-a716-446655440101",
+          turnCount: 3,
+          turnStartMessageIds: [null, "synthetic-2", "turn-3"],
+        });
+        const error = yield* adapter.rollbackThread(THREAD_ID, 1).pipe(Effect.flip);
+        assert.match(String(error), /turn boundary is unavailable/);
+        assert.equal(calls.length, 1);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    });
+
+    it.effect("refuses a message it cannot line up with the saved markers", () => {
+      const calls: Array<{ upToMessageId: string | undefined }> = [];
+      const harness = makeForkingHarness(calls);
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+          resumeCursor: { resume: oldId, turnCount: 3 },
+        });
+        const error = yield* adapter
+          .rollbackThread(THREAD_ID, 0, { beforeMessageId: "steer-1" })
+          .pipe(Effect.flip);
+        assert.match(String(error), /cannot be lined up/);
+        assert.equal(calls.length, 0);
+        assert.equal(harness.getLastCreateQueryInput()?.options.resume, oldId);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    });
+  });
+
   it.effect(
     "ThroughLine: rollback forks history at the surviving assistant and persists that session",
     () => {

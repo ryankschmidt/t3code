@@ -24,6 +24,18 @@ import {
 } from "./use-composer-command-menu";
 
 describe("mobile slash commands", () => {
+  it("offers Claude client menus once, only in an existing thread", () => {
+    const input = {
+      query: "rew",
+      atMessageStart: true,
+      hasThread: true,
+      allowInteractionMode: true,
+      selectedProviderStatus: { driver: ProviderDriverKind.make("claudeAgent"), slashCommands: [] },
+    };
+    expect(buildComposerSlashCommandItems(input).map((item) => item.label)).toEqual(["/rewind"]);
+    expect(buildComposerSlashCommandItems({ ...input, hasThread: false })).toEqual([]);
+    expect(buildComposerSlashCommandItems({ ...input, atMessageStart: false })).toEqual([]);
+  });
   const antigravity = {
     driver: ProviderDriverKind.make("antigravity"),
     showInteractionModeToggle: false,

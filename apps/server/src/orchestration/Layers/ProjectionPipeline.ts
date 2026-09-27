@@ -1110,6 +1110,16 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             return;
           }
 
+          if (event.payload.conversationBoundary) {
+            yield* projectionThreadRepository.upsert({
+              ...existingRow.value,
+              latestTurnId: null,
+              updatedAt: event.occurredAt,
+            });
+            yield* refreshThreadShellSummary(event.payload.threadId);
+            return;
+          }
+
           const retainedTurns = yield* projectionTurnRepository.listByThreadId({
             threadId: event.payload.threadId,
           });
@@ -1223,11 +1233,16 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const existingTurns = yield* projectionTurnRepository.listByThreadId({
             threadId: event.payload.threadId,
           });
-          const keptRows = retainProjectionMessagesAfterRevert(
-            existingRows,
-            existingTurns,
-            event.payload.turnCount,
-          );
+          const messageIds = event.payload.conversationBoundary
+            ? new Set(event.payload.conversationBoundary.retainedMessageIds)
+            : null;
+          const keptRows = messageIds
+            ? existingRows.filter((row) => messageIds.has(row.messageId))
+            : retainProjectionMessagesAfterRevert(
+                existingRows,
+                existingTurns,
+                event.payload.turnCount,
+              );
           if (keptRows.length === existingRows.length) {
             return;
           }
@@ -1284,11 +1299,14 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const existingTurns = yield* projectionTurnRepository.listByThreadId({
             threadId: event.payload.threadId,
           });
-          const keptRows = retainProjectionProposedPlansAfterRevert(
-            existingRows,
-            existingTurns,
-            event.payload.turnCount,
-          );
+          const boundary = event.payload.conversationBoundary;
+          const keptRows = boundary
+            ? existingRows.filter((row) => row.createdAt < boundary.beforeCreatedAt)
+            : retainProjectionProposedPlansAfterRevert(
+                existingRows,
+                existingTurns,
+                event.payload.turnCount,
+              );
           if (keptRows.length === existingRows.length) {
             return;
           }
@@ -1343,11 +1361,15 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const existingTurns = yield* projectionTurnRepository.listByThreadId({
             threadId: event.payload.threadId,
           });
-          const keptRows = retainProjectionActivitiesAfterRevert(
-            existingRows,
-            existingTurns,
-            event.payload.turnCount,
-          );
+          const boundary = event.payload.conversationBoundary;
+          // Provider-started turns carry no message; keep what came before the boundary.
+          const keptRows = boundary
+            ? existingRows.filter((row) => row.createdAt < boundary.beforeCreatedAt)
+            : retainProjectionActivitiesAfterRevert(
+                existingRows,
+                existingTurns,
+                event.payload.turnCount,
+              );
           if (keptRows.length === existingRows.length) {
             return;
           }
@@ -1986,11 +2008,16 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const existingTurns = yield* projectionTurnRepository.listByThreadId({
             threadId: event.payload.threadId,
           });
+          const boundary = event.payload.conversationBoundary;
+          const retained = boundary ? new Set(boundary.retainedTurnIds) : null;
+          // Provider-started turns carry no message; keep turns requested before the boundary.
           const keptTurns = existingTurns.filter(
             (turn) =>
               turn.turnId !== null &&
-              turn.checkpointTurnCount !== null &&
-              turn.checkpointTurnCount <= event.payload.turnCount,
+              (boundary && retained
+                ? retained.has(turn.turnId) || turn.requestedAt < boundary.beforeCreatedAt
+                : turn.checkpointTurnCount !== null &&
+                  turn.checkpointTurnCount <= event.payload.turnCount),
           );
           yield* projectionTurnRepository.deleteByThreadId({
             threadId: event.payload.threadId,

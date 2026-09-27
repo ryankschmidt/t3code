@@ -15,6 +15,7 @@ import {
   setComposerDraftContext,
 } from "../../state/use-composer-drafts";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
+import { parseClaudeComposerMenu } from "@t3tools/shared/claudeComposerMenus";
 import {
   detectComposerTrigger,
   replaceTextRange,
@@ -95,7 +96,23 @@ export function buildComposerSlashCommandItems(input: {
   // Providers expand commands only at the start of a message. T3 commands
   // change local state and do not have this restriction.
   if (!input.atMessageStart) return items;
+  const localMenus =
+    input.hasThread && input.selectedProviderStatus?.driver === "claudeAgent"
+      ? ["rewind", "config"]
+      : [];
+  for (const name of localMenus) {
+    if (name.includes(query))
+      items.push({
+        id: `pcmd:${name}`,
+        type: "provider-slash-command",
+        command: { name },
+        label: `/${name}`,
+        description:
+          name === "rewind" ? "Choose a message to restore" : "Claude Code session settings",
+      });
+  }
   for (const command of input.selectedProviderStatus?.slashCommands ?? []) {
+    if (localMenus.includes(command.name)) continue;
     if (!command.name.toLowerCase().includes(query)) continue;
     if (command.name === "compact" && !input.hasCompactableConversation) continue;
     // T3's own limits command is answered by the thread composer; New Task has
@@ -175,6 +192,7 @@ export function useComposerCommandMenu({
   onChangeDraftMessage,
   onUpdateInteractionMode,
   onUsageLimits,
+  onLocalMenu,
 }: {
   readonly draftMessage: string;
   readonly ownerKey: string | null;
@@ -192,6 +210,7 @@ export function useComposerCommandMenu({
   readonly onUpdateInteractionMode?: (mode: ProviderInteractionMode) => void;
   /** Picking /usage-limits is the action itself; the draft keeps nothing of it. */
   readonly onUsageLimits?: () => void;
+  readonly onLocalMenu?: (menu: "rewind" | "config") => void;
 }) {
   const [selection, setSelection] = useState(() => composerSelectionAtEnd(draftMessage));
   const previousOwnerKeyRef = useRef(ownerKey);
@@ -511,6 +530,17 @@ export function useComposerCommandMenu({
         return;
       }
 
+      const localMenu =
+        item.type === "provider-slash-command" && selectedProviderStatus?.driver === "claudeAgent"
+          ? parseClaudeComposerMenu(`/${item.command.name}`)
+          : null;
+      if (localMenu && onLocalMenu) {
+        const cleared = replaceTextRange(draftMessage, trigger.rangeStart, trigger.rangeEnd, "");
+        setSelection({ start: cleared.cursor, end: cleared.cursor });
+        onChangeDraftMessage(cleared.text);
+        onLocalMenu(localMenu);
+        return;
+      }
       if (
         item.type === "provider-slash-command" &&
         item.command.name === USAGE_LIMITS_COMMAND.name &&
@@ -544,6 +574,8 @@ export function useComposerCommandMenu({
       onChangeDraftMessage,
       onUpdateInteractionMode,
       onUsageLimits,
+      onLocalMenu,
+      selectedProviderStatus?.driver,
       selectedProviderStatus?.showInteractionModeToggle,
       trigger,
     ],

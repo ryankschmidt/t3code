@@ -1516,6 +1516,86 @@ describe("applyThreadDetailEvent", () => {
   });
 
   describe("thread.reverted", () => {
+    it("keeps work from message-less turns recorded before the rewind boundary", () => {
+      const activity = (id: string, turnId: string, createdAt: string) => ({
+        id: EventId.make(id),
+        tone: "tool" as const,
+        kind: "tool.completed",
+        summary: id,
+        payload: {},
+        turnId: TurnId.make(turnId),
+        createdAt,
+      });
+      const result = applyThreadDetailEvent(
+        {
+          ...baseThread,
+          activities: [
+            activity("background-before", "provider-turn", "2026-04-01T01:30:00.000Z"),
+            activity("rewound-after", "rewound-turn", "2026-04-01T02:30:00.000Z"),
+          ],
+        },
+        {
+          ...baseEventFields,
+          sequence: 14,
+          occurredAt: "2026-04-01T03:00:00.000Z",
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-1"),
+          type: "thread.reverted",
+          payload: {
+            threadId: ThreadId.make("thread-1"),
+            turnCount: 0,
+            conversationBoundary: {
+              messageId: MessageId.make("boundary"),
+              beforeCreatedAt: "2026-04-01T02:00:00.000Z",
+              retainedMessageIds: [],
+              retainedTurnIds: [],
+            },
+          },
+        },
+      );
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.activities.map((row) => row.id)).toEqual(["background-before"]);
+      }
+    });
+
+    it("retains explicit earlier messages without file checkpoints", () => {
+      const messages = ["older", "failed", "retry"].map((id) => ({
+        id: MessageId.make(id),
+        role: "user" as const,
+        text: id,
+        turnId: null,
+        streaming: false,
+        createdAt: "2026-04-01T01:00:00.000Z",
+        updatedAt: "2026-04-01T01:00:00.000Z",
+      }));
+      const result = applyThreadDetailEvent(
+        { ...baseThread, messages, checkpoints: [] },
+        {
+          ...baseEventFields,
+          sequence: 14,
+          occurredAt: "2026-04-01T02:00:00.000Z",
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-1"),
+          type: "thread.reverted",
+          payload: {
+            threadId: ThreadId.make("thread-1"),
+            turnCount: 0,
+            conversationBoundary: {
+              messageId: MessageId.make("failed"),
+              beforeCreatedAt: "2026-04-01T01:00:00.000Z",
+              retainedMessageIds: [MessageId.make("older")],
+              retainedTurnIds: [],
+            },
+          },
+        },
+      );
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages.map((row) => row.id)).toEqual(["older"]);
+        expect(result.thread.latestTurn).toBeNull();
+      }
+    });
     it("keeps imported history and removes the first live prompt at checkpoint zero", () => {
       const threadWithImportedHistory: OrchestrationThread = {
         ...baseThread,

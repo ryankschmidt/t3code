@@ -1,3 +1,4 @@
+import { CLAUDE_TERMINAL_ONLY_SETTINGS } from "@t3tools/shared/claudeComposerMenus";
 import type {
   EnvironmentId,
   ModelSelection,
@@ -741,6 +742,23 @@ function ThreadSettingsOptionsItem(props: {
         </Animated.View>
       </Animated.View>
 
+      {session.providerGroups.some((group) =>
+        group.models.some(
+          (model) => session.isDisplayed(model) && model.providerDriver === "claudeAgent",
+        ),
+      ) && (
+        <View className="mx-4 py-4">
+          <Text className="text-sm text-foreground-muted">
+            Session options apply on the next turn. Host CLI preferences are not changed here.
+          </Text>
+          {CLAUDE_TERMINAL_ONLY_SETTINGS.map((setting) => (
+            <View key={setting.label} accessibilityState={{ disabled: true }} className="pt-3">
+              <Text className="text-foreground-muted">{setting.label}</Text>
+              <Text className="text-xs text-foreground-muted">{setting.reason}</Text>
+            </View>
+          ))}
+        </View>
+      )}
       {Platform.OS !== "ios" && session.hasLegacyModels ? (
         <>
           <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">

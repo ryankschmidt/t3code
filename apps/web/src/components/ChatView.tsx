@@ -1,3 +1,6 @@
+import { buildRewindEntries } from "@t3tools/shared/claudeComposerMenus";
+import { RewindConfirmation } from "./chat/RewindConfirmation";
+import { RewindMenu } from "./chat/RewindMenu";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
@@ -7037,10 +7040,21 @@ export default function ChatView(props: ChatViewProps) {
     };
   }, [activeThreadId, composerRef]);
 
+  const [rewindMenuThreadKey, setRewindMenuThreadKey] = useState<string | null>(null);
+  const rewindEntries = useMemo(
+    () =>
+      buildRewindEntries({
+        messages: activeThread?.messages ?? [],
+        checkpoints: activeThread?.checkpoints ?? [],
+      }),
+    [activeThread?.messages, activeThread?.checkpoints],
+  );
   const [pendingRevert, setPendingRevert] = useState<{
     turnCount: number;
     messageId: MessageId;
     routeThreadKey: string;
+    exactMessage: boolean;
+    fileRestoreAvailable: boolean;
   } | null>(null);
 
   if (pendingRevert && pendingRevert.routeThreadKey !== routeThreadKey) {
@@ -7048,7 +7062,12 @@ export default function ChatView(props: ChatViewProps) {
   }
 
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number, messageId: MessageId, restoreFiles?: boolean) => {
+    async (
+      turnCount: number,
+      messageId: MessageId,
+      restoreFiles?: boolean,
+      exactMessage = false,
+    ) => {
       const localApi = readLocalApi();
       if (!localApi || !activeThread || isRevertingCheckpoint) return;
       const message = activeThread.messages.find((message) => message.id === messageId);
@@ -7073,7 +7092,15 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
       if (restoreFiles === undefined) {
-        setPendingRevert({ turnCount, messageId, routeThreadKey });
+        setPendingRevert({
+          turnCount,
+          messageId,
+          routeThreadKey,
+          exactMessage,
+          fileRestoreAvailable:
+            !exactMessage ||
+            rewindEntries.some((entry) => entry.id === messageId && entry.turnCount !== null),
+        });
         return;
       }
 
@@ -7103,13 +7130,25 @@ export default function ChatView(props: ChatViewProps) {
             "Make room for this message's attachments in the composer before rewinding.",
           );
         }
-        await waitForRevertedMessage(routeThreadRef, messageId, turnCount, async () => {
-          const result = await revertThreadCheckpoint({
-            environmentId,
-            input: { threadId: activeThread.id, turnCount, restoreFiles },
-          });
-          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        });
+        await waitForRevertedMessage(
+          routeThreadRef,
+          messageId,
+          turnCount,
+          async () => {
+            const result = await revertThreadCheckpoint({
+              environmentId,
+              input: {
+                threadId: activeThread.id,
+                turnCount,
+                restoreFiles,
+                ...(exactMessage && !restoreFiles ? { beforeMessageId: messageId } : {}),
+              },
+            });
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          },
+          120_000,
+          exactMessage && !restoreFiles,
+        );
         const currentPrompt = store.getComposerDraft(composerDraftTarget)?.prompt ?? "";
         const restoredPrompt = recallableComposerPrompt(message.text);
         const nextPrompt =
@@ -7171,6 +7210,7 @@ export default function ChatView(props: ChatViewProps) {
       isSendBusy,
       phase,
       revertThreadCheckpoint,
+      rewindEntries,
       routeThreadKey,
       routeThreadRef,
       setThreadError,
@@ -10243,6 +10283,7 @@ export default function ChatView(props: ChatViewProps) {
                             onPageScrollKeyUp={onComposerPageScrollKeyUp}
                             onPageScrollRelease={onComposerPageScrollRelease}
                             onCompactContext={onCompactContext}
+                            onRewindMenu={() => setRewindMenuThreadKey(routeThreadKey)}
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
@@ -10515,49 +10556,45 @@ export default function ChatView(props: ChatViewProps) {
         </RightPanelSheet>
       ) : null}
 
-      <AlertDialog
-        open={pendingRevert !== null && pendingRevert.routeThreadKey === routeThreadKey}
+      <RewindMenu
+        open={rewindMenuThreadKey === routeThreadKey}
+        entries={rewindEntries}
+        disabledReason={
+          !supportsConversationRollback
+            ? "This provider does not support conversation rewind."
+            : phase === "running" || isSendBusy || isConnecting
+              ? "Interrupt the current turn before rewinding."
+              : isRevertingCheckpoint
+                ? "Rewinding…"
+                : null
+        }
         onOpenChange={(open) => {
-          if (!open) setPendingRevert(null);
+          if (!open) setRewindMenuThreadKey(null);
         }}
-      >
-        <AlertDialogPopup>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Edit from here?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Rewind chat to before this message. Your prompt and attachments return to the
-              composer.
-              {activeWorktreePath === null
-                ? " Files stay as they are because this thread shares the project directory."
-                : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-            {activeWorktreePath !== null ? (
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
-                  setPendingRevert(null);
-                  void onRevertToTurnCount(pendingRevert.turnCount, pendingRevert.messageId, true);
-                }}
-              >
-                Revert files too
-              </Button>
-            ) : null}
-            <Button
-              onClick={() => {
-                if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
-                setPendingRevert(null);
-                void onRevertToTurnCount(pendingRevert.turnCount, pendingRevert.messageId, false);
-              }}
-            >
-              Revert and keep changes
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogPopup>
-      </AlertDialog>
+        onSelect={(entry) => {
+          setRewindMenuThreadKey(null);
+          const message = activeThread?.messages.find((message) => message.id === entry.id);
+          if (message) void onRevertToTurnCount(entry.turnCount ?? 0, message.id, undefined, true);
+        }}
+      />
+      <RewindConfirmation
+        open={pendingRevert !== null && pendingRevert.routeThreadKey === routeThreadKey}
+        canRestoreFiles={
+          activeWorktreePath !== null && (pendingRevert?.fileRestoreAvailable ?? false)
+        }
+        onClose={() => setPendingRevert(null)}
+        onRestore={(restoreFiles) => {
+          if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
+          const pending = pendingRevert;
+          setPendingRevert(null);
+          void onRevertToTurnCount(
+            pending.turnCount,
+            pending.messageId,
+            restoreFiles,
+            pending.exactMessage,
+          );
+        }}
+      />
       <LinkPullRequestDialogHost />
       {expandedImage && (
         <ExpandedImageDialog
