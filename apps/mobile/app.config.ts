@@ -196,7 +196,8 @@ const config: ExpoConfig = {
   icon: "./assets/throughline-icon.png",
   userInterfaceStyle: "automatic",
   updates: {
-    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
+    // ThroughLine: the url below is T3's Expo update channel; off unless explicitly opted in.
+    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED === "1",
     url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
