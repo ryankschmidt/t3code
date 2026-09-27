@@ -128,6 +128,7 @@ function makeSnapshotQueryLayer(input: {
     listActivitiesByKind: () => Effect.die("unused"),
     getDeletedWorktreeThreads: () => Effect.die("unused"),
     getProjectShells: () => Effect.die("unused"),
+    listThreadsWithPullRequests: () => Effect.die("unused"),
   });
 }
 

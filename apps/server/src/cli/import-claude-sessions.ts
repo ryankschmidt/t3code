@@ -373,7 +373,6 @@ const makeConfig = Effect.fn(function* (baseDir: string, profile: "dev" | "deskt
     otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
     otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
     otelEnvironment: OtelEnvironment.none,
-    otlpServiceName: "t3-import-claude-sessions",
     mode: "web",
     port: 0,
     host: undefined,
