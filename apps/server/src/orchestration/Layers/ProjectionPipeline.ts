@@ -2253,13 +2253,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyAttachmentSideEffects = Effect.fn("applyAttachmentSideEffects")(
       function* (event: OrchestrationEvent, sideEffects: AttachmentSideEffects) {
-        if (
-          sideEffects.deletedThreadIds.size === 0 &&
-          sideEffects.prunedThreadRelativePaths.size === 0
-        ) {
-          return;
-        }
-
         const deletedThreadIds = new Set<string>();
         for (const threadId of sideEffects.deletedThreadIds) {
           const recreatedLater = yield* eventStore.hasEventAfter({
@@ -2381,14 +2374,18 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               );
             }),
           );
+          const hasCleanup =
+            attachmentSideEffects.deletedThreadIds.size > 0 ||
+            attachmentSideEffects.prunedThreadRelativePaths.size > 0;
           // Return the cleanup effect so the caller runs it after the outer transaction commits.
+          // Most events have no cleanup, so they skip the call and write no cleanup span.
           // @effect-diagnostics-next-line returnEffectInGen:off
           return Effect.gen(function* () {
             yield* Effect.forEach(attachmentSideEffects.comsNetNotifications, (effect) => effect, {
               concurrency: 1,
               discard: true,
             });
-            yield* applyAttachmentSideEffects(event, attachmentSideEffects);
+            if (hasCleanup) yield* applyAttachmentSideEffects(event, attachmentSideEffects);
           }).pipe(Effect.asVoid);
         },
         Effect.provideService(FileSystem.FileSystem, fileSystem),

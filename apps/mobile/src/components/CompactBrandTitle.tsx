@@ -1,14 +1,12 @@
 import Constants from "expo-constants";
 import { Image } from "expo-image";
-import type {
-  NativeStackHeaderItem,
-  NativeStackNavigationOptions,
-} from "@react-navigation/native-stack";
+import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Platform, View } from "react-native";
 
 import { AppText as Text } from "./AppText";
 import { IPAD_HOME_TITLE_OFFSET } from "../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../lib/mobileBranding";
+import { useAndroidControlSizing } from "./useAndroidControlSizing";
 
 /**
  * Horizontal correction applied to content rendered in the brand title slot,
@@ -29,6 +27,7 @@ export function CompactBrandTitle(
 ) {
   const stageLabel = resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant);
   const titleOffset = brandTitleOffset();
+  const { scale } = useAndroidControlSizing();
 
   return (
     <View
@@ -37,23 +36,32 @@ export function CompactBrandTitle(
       accessible
       role="heading"
       className="flex-row items-center gap-1.5"
-      style={{ marginLeft: titleOffset }}
+      style={[{ marginLeft: titleOffset }, Platform.OS === "android" && { gap: 5.25 * scale }]}
     >
       {/* ThroughLine: use the same product mark as the installed phone icon. */}
       <Image
         source={require("../../assets/throughline-icon.png")}
-        style={{ width: 26, height: 26 }}
+        style={{ width: Math.round(26 * scale), height: Math.round(26 * scale) }}
       />
       <Text
         allowFontScaling={props.allowFontScaling}
-        className="font-t3-medium text-[18px] tracking-[-0.5px] text-foreground-muted"
+        className="font-t3-medium text-foreground-muted"
+        style={{ fontSize: 18 * scale, letterSpacing: -0.5 * scale }}
       >
         ThroughLine
       </Text>
-      <View className="rounded-full bg-subtle px-1.5 py-0.5">
+      <View
+        className="rounded-full bg-subtle px-1.5 py-0.5"
+        style={
+          Platform.OS === "android"
+            ? { paddingHorizontal: 5.25 * scale, paddingVertical: 1.75 * scale }
+            : undefined
+        }
+      >
         <Text
           allowFontScaling={props.allowFontScaling}
-          className="font-t3-bold text-[9px] tracking-[0.9px] text-foreground-muted uppercase"
+          className="font-t3-bold text-foreground-muted uppercase"
+          style={{ fontSize: 9 * scale, letterSpacing: 0.9 * scale }}
         >
           {stageLabel}
         </Text>
