@@ -47,6 +47,8 @@ const mountedLayer = () =>
 
 const unmountedLayer = () => settingsLayer().pipe(Layer.provideMerge(testConfigLayer()));
 
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+
 const fileTurningResumeOff = '{"continueThreadsAfterServerUpdate":false}\n';
 
 const readReceipt = Effect.gen(function* () {
@@ -56,7 +58,7 @@ const readReceipt = Effect.gen(function* () {
   const text = yield* fs.readFileString(
     path.join(config.stateDir, OperatorProfileModule.OPERATOR_PROFILE_RECEIPT_FILE),
   );
-  const parsed = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(text);
+  const parsed = yield* decodeJson(text);
   return parsed as OperatorProfileModule.OperatorProfileReport;
 });
 
