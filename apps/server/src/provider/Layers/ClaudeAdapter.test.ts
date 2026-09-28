@@ -6811,6 +6811,96 @@ describe("ClaudeAdapterLive", () => {
         Effect.provide(harness.layer),
       );
     });
+
+    // A session that went through compaction starts with its summary, and a real fork can drop
+    // the reply after it while rewriting every uuid. Fork history is the kept history minus the
+    // dropped uuids, renamed.
+    const compacted = [
+      entry("user", "summary", "This session is being continued from a previous conversation."),
+      entry("assistant", "after-summary", [{ type: "text", text: "earlier notes" }]),
+      entry("user", "turn-2", "second prompt"),
+      entry("assistant", "reply-2", []),
+      entry("user", "turn-3", "third prompt"),
+      entry("assistant", "reply-3", []),
+      entry("user", "turn-4", "fourth prompt"),
+      entry("assistant", "reply-4", []),
+    ] as Awaited<ReturnType<NonNullable<ClaudeAdapterLiveOptions["getSessionMessages"]>>>;
+    const forkDropping = (dropped: string, calls: Array<string | undefined>) => {
+      const newId = "550e8400-e29b-41d4-a716-446655440201";
+      return makeHarness({
+        getSessionMessages: async (id) => {
+          if (id !== newId) return compacted;
+          const cut = compacted.findIndex((message) => message.uuid === calls[0]) + 1;
+          return compacted
+            .slice(0, cut)
+            .filter((message) => message.uuid !== dropped)
+            .map((message) => ({ ...message, uuid: `fork-${message.uuid}`, session_id: newId }));
+        },
+        forkSession: async (_id, forkOptions) => {
+          calls.push(forkOptions?.upToMessageId);
+          return { sessionId: newId };
+        },
+      });
+    };
+    const startCompacted = Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        resumeCursor: {
+          resume: oldId,
+          turnCount: 4,
+          turnStartMessageIds: [null, "turn-2", "turn-3", "turn-4"],
+        },
+      });
+      return adapter;
+    });
+
+    it.effect("admits a fork that dropped the reply after a compaction summary", () => {
+      const calls: Array<string | undefined> = [];
+      const harness = forkDropping("after-summary", calls);
+      return Effect.gen(function* () {
+        const adapter = yield* startCompacted;
+        yield* adapter.rollbackThread(THREAD_ID, 0, {
+          beforeMessageId: "client-message-4",
+          fallbackTurnId: "turn-4",
+        });
+        const after = (yield* adapter.listSessions()).find(
+          (session) => session.threadId === THREAD_ID,
+        );
+        assert.deepEqual(calls, ["reply-3"]);
+        assert.deepEqual(after?.resumeCursor, {
+          threadId: THREAD_ID,
+          resume: "550e8400-e29b-41d4-a716-446655440201",
+          turnCount: 3,
+          turnStartMessageIds: [null, "fork-turn-2", "fork-turn-3"],
+        });
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    });
+
+    it.effect("still refuses when a kept marker sits outside the matching stretch", () => {
+      const calls: Array<string | undefined> = [];
+      // Dropping the reply after turn-2 leaves turn-2 before the stretch that matches.
+      const harness = forkDropping("reply-2", calls);
+      return Effect.gen(function* () {
+        const adapter = yield* startCompacted;
+        const error = yield* adapter
+          .rollbackThread(THREAD_ID, 0, {
+            beforeMessageId: "client-message-4",
+            fallbackTurnId: "turn-4",
+          })
+          .pipe(Effect.flip);
+        assert.match(String(error), /did not preserve the retained turn boundaries/);
+        assert.equal(harness.getLastCreateQueryInput()?.options.resume, oldId);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    });
   });
 
   it.effect(

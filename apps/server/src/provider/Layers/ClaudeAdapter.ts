@@ -180,8 +180,9 @@ const conversationIndexForUuid = (
 
 // Native forks rewrite every UUID. getSessionMessages then rebuilds the
 // parentUuid chain, so system notices and compact metadata can change the
-// raw length without dropping retained user/assistant turns. Align those
-// conversation messages from the truncated end, then remap T3 turn starts.
+// raw length, and around a compaction summary the rebuilt chain can drop an
+// early retained message. Align conversation messages from the truncated end,
+// then remap T3 turn starts that fall inside the stretch that matches.
 const remapClaudeForkTurnBoundaries = (
   messages: ReadonlyArray<ClaudeHistoryMessage>,
   forkMessages: ReadonlyArray<ClaudeHistoryMessage>,
@@ -196,22 +197,27 @@ const remapClaudeForkTurnBoundaries = (
   const offset = forkConversation.length - retainedConversation.length;
   // Forks preserve message bodies. Matching roles alone can mistake a restored
   // steering message for a retained turn when compaction changes the chain.
-  if (
-    offset < 0 ||
-    retainedConversation.some((message, index) => {
-      const forkMessage = forkConversation[index + offset];
-      return (
-        forkMessage === undefined ||
-        forkMessage.type !== message.type ||
-        !NodeUtil.isDeepStrictEqual(forkMessage.message, message.message)
-      );
-    })
-  ) {
-    return undefined;
+  let matched = 0;
+  while (matched < retainedConversation.length) {
+    const message = retainedConversation[retainedConversation.length - 1 - matched]!;
+    const forkMessage = forkConversation[forkConversation.length - 1 - matched];
+    if (
+      forkMessage === undefined ||
+      forkMessage.type !== message.type ||
+      !NodeUtil.isDeepStrictEqual(forkMessage.message, message.message)
+    ) {
+      break;
+    }
+    matched += 1;
   }
+  // The fork must end where the kept history ends, and a known marker outside the
+  // matching stretch has no proven counterpart in the fork.
+  if (matched === 0) return undefined;
+  const stretchStart = retainedConversation.length - matched;
   const remapped = retainedBoundaries.map((originalId) => {
     if (originalId === null) return null;
     const originalIndex = conversationIndexForUuid(messages, originalId);
+    if (originalIndex < stretchStart || originalIndex >= retainedConversation.length) return null;
     const forkIndex = originalIndex + offset;
     const forkMessage =
       originalIndex >= 0 && forkIndex >= 0 ? forkConversation[forkIndex] : undefined;
