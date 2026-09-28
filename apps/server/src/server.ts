@@ -97,6 +97,8 @@ import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as OperatorProfile from "./throughline/operatorProfile/OperatorProfile.ts"; // ThroughLine: operator profile
+import { operatorProfileRouteLayer } from "./throughline/operatorProfile/http.ts"; // ThroughLine: operator profile diagnostics
 import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
@@ -195,6 +197,7 @@ const ApplicationObservabilityLive = EventLoopMonitor.layer.pipe(
 const PtyAdapterLive = NodePtyAdapter.layer;
 
 const ServerSettingsLayerLive = ServerSettings.layer.pipe(
+  Layer.provideMerge(OperatorProfile.layer), // ThroughLine: operator profile applied at every settings load
   Layer.provide(ServerSecretStore.layer),
   Layer.provideMerge(SqlitePersistenceLayerLive),
 );
@@ -605,6 +608,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     deviceHubProxyRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
+    operatorProfileRouteLayer, // ThroughLine: operator profile diagnostics
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
   // Last, so no route layer can replace the server's one TracerDisabledWhen.
