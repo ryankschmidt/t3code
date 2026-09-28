@@ -1022,8 +1022,12 @@ export const ServerSettings = Schema.Struct({
   ),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Retain the update-era key; recovery now needs an environment-owned opt-in.
+  // ThroughLine: fork-owned default. Upstream ships this false. Ryan runs agents mid-turn across
+  // every install, import and repair restart, and a default of false left nine threads in the error
+  // state after the 0.0.49 install on Sep 27, 2026. Flipped to true so every environment resumes
+  // interrupted threads after an update, crash or machine restart unless deliberately turned off.
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
+    Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   /**
    * Whether agents may drive the in-app preview browser. Turning this off
