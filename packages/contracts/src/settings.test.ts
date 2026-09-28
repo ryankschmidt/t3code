@@ -20,6 +20,20 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+// ThroughLine protected settings: Ryan decides these values, not upstream. The ship pipeline also
+// checks them against /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/contracts/Protected-Settings.json.
+describe("ThroughLine protected setting defaults", () => {
+  it("resumes interrupted threads after restarts unless turned off", () => {
+    expect(decodeServerSettings({}).continueThreadsAfterServerUpdate).toBe(true);
+    expect(DEFAULT_SERVER_SETTINGS.continueThreadsAfterServerUpdate).toBe(true);
+    expect(decodeServerSettings({ continueThreadsAfterServerUpdate: false }).continueThreadsAfterServerUpdate).toBe(false);
+  });
+
+  it("keeps agent device access on unless turned off", () => {
+    expect(decodeServerSettings({}).enableAgentDeviceAccess).toBe(true);
+  });
+});
+
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
