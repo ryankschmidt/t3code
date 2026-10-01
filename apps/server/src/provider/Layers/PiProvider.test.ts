@@ -1,3 +1,9 @@
+// @effect-diagnostics nodeBuiltinImport:off - Writes a throwaway fake `pi` script for the health-check tests.
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -6,6 +12,7 @@ import { PiSettings } from "@t3tools/contracts";
 import {
   PI_VERSION_PROBE_TIMEOUT_MS,
   buildInitialPiProviderSnapshot,
+  checkPiProviderStatus,
   piModelsFromSettings,
   piModelsFromCatalog,
 } from "./PiProvider.ts";
@@ -54,6 +61,39 @@ describe("piModelsFromSettings", () => {
     expect(piModelsFromSettings(undefined)).toHaveLength(0);
     expect(piModelsFromSettings([])).toHaveLength(0);
   });
+});
+
+describe("checkPiProviderStatus under a slow machine", () => {
+  const fakePi = (body: string) => {
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "pi-health-"));
+    const bin = NodePath.join(dir, "pi");
+    NodeFS.writeFileSync(bin, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    return bin;
+  };
+
+  it.live("a check that only times out keeps the last ready result", () =>
+    Effect.gen(function* () {
+      const bin = fakePi("echo 0.99.1");
+      const settings = decodePiSettings({ enabled: true, binaryPath: bin });
+      const first = yield* checkPiProviderStatus(settings, process.env, 5_000);
+      expect(first.status).toBe("ready");
+
+      NodeFS.writeFileSync(bin, "#!/bin/sh\nsleep 5\n", { mode: 0o755 });
+      const second = yield* checkPiProviderStatus(settings, process.env, 200);
+      expect(second.status).toBe("ready");
+      expect(second.version).toBe("0.99.1");
+      expect(second.message).toContain("timed out");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("a timeout with no earlier ready check still reports the timeout", () =>
+    Effect.gen(function* () {
+      const settings = decodePiSettings({ enabled: true, binaryPath: fakePi("sleep 5") });
+      const snapshot = yield* checkPiProviderStatus(settings, process.env, 200);
+      expect(snapshot.status).toBe("error");
+      expect(snapshot.message).toContain("timed out while running `pi --version`");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });
 
 describe("buildInitialPiProviderSnapshot", () => {
