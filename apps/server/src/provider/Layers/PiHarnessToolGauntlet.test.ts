@@ -20,6 +20,8 @@
  *   8. restart replay           → "gauntlet 8: a fresh adapter re-emits a replayed end frame (per-process dedupe pinned)"
  *   9. probe retry (recovers)   → "gauntlet 9: a first-attempt probe timeout recovers on the single retry"
  *  10. probe retry (fail-closed)→ "gauntlet 10: both probe attempts failing still fails closed with the seam-naming error"
+ *  11. probe budget             → "gauntlet 11: the probe budget outlasts Meridian's own auth-check ceiling"
+ *  12. refused connection       → "gauntlet 12: a refused connection fails closed and the error names the refusal"
  *
  * Honest pins:
  *   - Scenario 6: enforcement lives upstream (pi dispatches only registered
@@ -37,6 +39,7 @@
 import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
@@ -68,7 +71,12 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { type ProviderAdapterError } from "../Errors.ts";
 import { type ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import { makePiAdapter } from "./PiAdapter.ts";
-import { makePiMeridianRouteGuard, type PiMeridianRouteGuardOptions } from "./PiMeridianRoute.ts";
+import {
+  MERIDIAN_HEALTH_AUTH_CHECK_CEILING_MS,
+  makePiMeridianRouteGuard,
+  PROBE_TIMEOUT_MS,
+  type PiMeridianRouteGuardOptions,
+} from "./PiMeridianRoute.ts";
 import {
   parsePiModelSlug,
   type PiRuntimeEvent,
@@ -264,8 +272,13 @@ const assistantEnd = (text: string) => ({
 
 const isToolEvent = (
   event: ProviderRuntimeEvent,
-): event is Extract<ProviderRuntimeEvent, { type: "item.started" | "item.updated" | "item.completed" }> =>
-  (event.type === "item.started" || event.type === "item.updated" || event.type === "item.completed") &&
+): event is Extract<
+  ProviderRuntimeEvent,
+  { type: "item.started" | "item.updated" | "item.completed" }
+> =>
+  (event.type === "item.started" ||
+    event.type === "item.updated" ||
+    event.type === "item.completed") &&
   event.payload.itemType === "dynamic_tool_call";
 
 const gauntletFactory = makeRuntimeFactory();
@@ -286,8 +299,18 @@ gauntletLayer("Pi harness tool gauntlet (shapes 1-6, hermetic)", (it) => {
       const fixture =
         "vault/01_Projects/workbench/infra/t3code/_meta/gauntlet/fixtures/Gauntlet-Read-Target.txt";
       yield* scriptTurn(runtime, threadId, asTurnId("turn-g1"), [
-        { type: "tool_execution_start", toolCallId: "call-read-1", toolName: "read", args: { path: fixture } },
-        { type: "tool_execution_update", toolCallId: "call-read-1", toolName: "read", partialResult: "GAUNTLET-READ-" },
+        {
+          type: "tool_execution_start",
+          toolCallId: "call-read-1",
+          toolName: "read",
+          args: { path: fixture },
+        },
+        {
+          type: "tool_execution_update",
+          toolCallId: "call-read-1",
+          toolName: "read",
+          partialResult: "GAUNTLET-READ-",
+        },
         {
           type: "tool_execution_end",
           toolCallId: "call-read-1",
@@ -299,7 +322,14 @@ gauntletLayer("Pi harness tool gauntlet (shapes 1-6, hermetic)", (it) => {
       const events = yield* Fiber.join(collected);
       NodeAssert.deepStrictEqual(
         events.map((event) => event.type),
-        ["turn.started", "item.started", "item.updated", "item.completed", "item.completed", "turn.completed"],
+        [
+          "turn.started",
+          "item.started",
+          "item.updated",
+          "item.completed",
+          "item.completed",
+          "turn.completed",
+        ],
       );
       const toolEvents = events.filter(isToolEvent);
       NodeAssert.equal(toolEvents.length, 3);
@@ -355,8 +385,12 @@ gauntletLayer("Pi harness tool gauntlet (shapes 1-6, hermetic)", (it) => {
       NodeAssert.equal(toolCompleted.itemId, "pi-tool:call-write-1");
       NodeAssert.equal(toolCompleted.payload.status, "completed");
       // Visibility of WHERE the write landed: the result names the test-only path.
-      NodeAssert.ok(String(toolCompleted.payload.detail).includes("_meta/gauntlet/writes/gauntlet-scoped.txt"));
-      const toolCompletions = events.filter(isToolEvent).filter((event) => event.type === "item.completed");
+      NodeAssert.ok(
+        String(toolCompleted.payload.detail).includes("_meta/gauntlet/writes/gauntlet-scoped.txt"),
+      );
+      const toolCompletions = events
+        .filter(isToolEvent)
+        .filter((event) => event.type === "item.completed");
       NodeAssert.equal(toolCompletions.length, 1);
     }),
   );
@@ -428,7 +462,12 @@ gauntletLayer("Pi harness tool gauntlet (shapes 1-6, hermetic)", (it) => {
           args: { command: "long-running gauntlet progress loop" },
         },
         ...updates,
-        { type: "tool_execution_end", toolCallId: "call-long-1", toolName: "bash", result: "progress 25/25 done" },
+        {
+          type: "tool_execution_end",
+          toolCallId: "call-long-1",
+          toolName: "bash",
+          result: "progress 25/25 done",
+        },
         assistantEnd("long-running tool finished after 25 updates"),
       ]);
       const events = yield* Fiber.join(collected);
@@ -440,7 +479,11 @@ gauntletLayer("Pi harness tool gauntlet (shapes 1-6, hermetic)", (it) => {
         types.slice(2, 27),
         Array.from({ length: 25 }, () => "item.updated"),
       );
-      NodeAssert.deepStrictEqual(types.slice(27), ["item.completed", "item.completed", "turn.completed"]);
+      NodeAssert.deepStrictEqual(types.slice(27), [
+        "item.completed",
+        "item.completed",
+        "turn.completed",
+      ]);
       // No state corruption: every tool event belongs to the single call.
       const toolEvents = events.filter(isToolEvent);
       NodeAssert.equal(toolEvents.length, 27);
@@ -496,66 +539,68 @@ gauntletLayer("Pi harness tool gauntlet (shapes 1-6, hermetic)", (it) => {
       NodeAssert.ok(String(toolCompleted.payload.detail).includes("ENOENT"));
       const assistant = events[3] as ProviderRuntimeEvent;
       NodeAssert.ok(assistant.type === "item.completed");
-      NodeAssert.equal(assistant.payload.detail, "the read failed with ENOENT, reporting the error");
+      NodeAssert.equal(
+        assistant.payload.detail,
+        "the read failed with ENOENT, reporting the error",
+      );
       const turnCompleted = events[4] as ProviderRuntimeEvent;
       NodeAssert.ok(turnCompleted.type === "turn.completed");
       NodeAssert.deepStrictEqual(turnCompleted.payload, { state: "completed", stopReason: null });
     }),
   );
 
-  it.effect(
-    "gauntlet 6: a destructive out-of-set tool is refused visibly, never silently",
-    () =>
-      Effect.gen(function* () {
-        // Enforcement story (honest): the destructive tool is never executed
-        // because it is not registered anywhere — pi dispatches only its own
-        // registered tools, and the Meridian route additionally blocks SDK
-        // builtins upstream. What this layer must guarantee is that a refusal
-        // reaching us is VISIBLE (failed dynamic_tool_call item) and that a
-        // turn with no assistant text afterwards fails LOUDLY (#402 guard) —
-        // silent success is unrepresentable.
-        const adapter = yield* PiAdapter;
-        const threadId = asThreadId("pi-gauntlet-g6");
-        yield* drainStartupEvents(adapter, threadId);
-        const runtime = gauntletFactory.lastRuntime;
-        NodeAssert.ok(runtime);
-        const collected = yield* Stream.take(adapter.streamEvents, 5).pipe(
-          Stream.runCollect,
-          Effect.forkChild,
-        );
-        yield* scriptTurn(runtime, threadId, asTurnId("turn-g6"), [
-          {
-            type: "tool_execution_start",
-            toolCallId: "call-forbidden-1",
-            toolName: "delete_everything",
-            args: { path: "/" },
-          },
-          {
-            type: "tool_execution_end",
-            toolCallId: "call-forbidden-1",
-            toolName: "delete_everything",
-            result: "tool delete_everything is not registered in this harness; refused before execution",
-            isError: true,
-          },
-        ]);
-        const events = yield* Fiber.join(collected);
-        NodeAssert.deepStrictEqual(
-          events.map((event) => event.type),
-          ["turn.started", "item.started", "item.completed", "runtime.error", "turn.completed"],
-        );
-        const toolCompleted = events[2] as ProviderRuntimeEvent;
-        NodeAssert.ok(toolCompleted.type === "item.completed");
-        NodeAssert.equal(toolCompleted.itemId, "pi-tool:call-forbidden-1");
-        NodeAssert.equal(toolCompleted.payload.title, "delete_everything");
-        NodeAssert.equal(toolCompleted.payload.status, "failed");
-        NodeAssert.ok(String(toolCompleted.payload.detail).includes("refused before execution"));
-        const loudError = events[3] as ProviderRuntimeEvent;
-        NodeAssert.ok(loudError.type === "runtime.error");
-        NodeAssert.ok(loudError.payload.message.includes("no output"));
-        const turnCompleted = events[4] as ProviderRuntimeEvent;
-        NodeAssert.ok(turnCompleted.type === "turn.completed");
-        NodeAssert.equal(turnCompleted.payload.state, "failed");
-      }),
+  it.effect("gauntlet 6: a destructive out-of-set tool is refused visibly, never silently", () =>
+    Effect.gen(function* () {
+      // Enforcement story (honest): the destructive tool is never executed
+      // because it is not registered anywhere — pi dispatches only its own
+      // registered tools, and the Meridian route additionally blocks SDK
+      // builtins upstream. What this layer must guarantee is that a refusal
+      // reaching us is VISIBLE (failed dynamic_tool_call item) and that a
+      // turn with no assistant text afterwards fails LOUDLY (#402 guard) —
+      // silent success is unrepresentable.
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-gauntlet-g6");
+      yield* drainStartupEvents(adapter, threadId);
+      const runtime = gauntletFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const collected = yield* Stream.take(adapter.streamEvents, 5).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* scriptTurn(runtime, threadId, asTurnId("turn-g6"), [
+        {
+          type: "tool_execution_start",
+          toolCallId: "call-forbidden-1",
+          toolName: "delete_everything",
+          args: { path: "/" },
+        },
+        {
+          type: "tool_execution_end",
+          toolCallId: "call-forbidden-1",
+          toolName: "delete_everything",
+          result:
+            "tool delete_everything is not registered in this harness; refused before execution",
+          isError: true,
+        },
+      ]);
+      const events = yield* Fiber.join(collected);
+      NodeAssert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["turn.started", "item.started", "item.completed", "runtime.error", "turn.completed"],
+      );
+      const toolCompleted = events[2] as ProviderRuntimeEvent;
+      NodeAssert.ok(toolCompleted.type === "item.completed");
+      NodeAssert.equal(toolCompleted.itemId, "pi-tool:call-forbidden-1");
+      NodeAssert.equal(toolCompleted.payload.title, "delete_everything");
+      NodeAssert.equal(toolCompleted.payload.status, "failed");
+      NodeAssert.ok(String(toolCompleted.payload.detail).includes("refused before execution"));
+      const loudError = events[3] as ProviderRuntimeEvent;
+      NodeAssert.ok(loudError.type === "runtime.error");
+      NodeAssert.ok(loudError.payload.message.includes("no output"));
+      const turnCompleted = events[4] as ProviderRuntimeEvent;
+      NodeAssert.ok(turnCompleted.type === "turn.completed");
+      NodeAssert.equal(turnCompleted.payload.state, "failed");
+    }),
   );
 });
 
@@ -585,60 +630,55 @@ interface InstrumentRun {
 }
 
 describe("Pi harness tool gauntlet (shape 7, idempotent-write instrument)", () => {
-  it(
-    "gauntlet 7: duplicate idempotent-write invocations cause one durable effect",
-    () => {
-      // Copy the instrument out of the vault so the test NEVER writes into
-      // the real gauntlet folder, then run it as separate real processes —
-      // the same way the live gauntlet's bash tool invokes it.
-      const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-gauntlet-idem-"));
-      try {
-        const source = NodeFS.readFileSync(INSTRUMENT_SOURCE, "utf8");
-        NodeAssert.ok(!source.includes("Bearer "), "instrument source must not carry credentials");
-        const mtsPath = NodePath.join(dir, "idempotent-write.mts");
-        NodeFS.writeFileSync(mtsPath, source);
-        const mjsPath = NodePath.join(dir, "idempotent-write.mjs");
-        NodeChildProcess.execFileSync(resolveEsbuild(), [
-          mtsPath,
-          "--format=esm",
-          "--platform=node",
-          `--outfile=${mjsPath}`,
-        ]);
-        const invoke = (operationId: string): InstrumentRun =>
-          JSON.parse(
-            NodeChildProcess
-              .execFileSync(process.execPath, [mjsPath, operationId], { cwd: dir })
-              .toString()
-              .trim(),
-          ) as InstrumentRun;
+  it("gauntlet 7: duplicate idempotent-write invocations cause one durable effect", () => {
+    // Copy the instrument out of the vault so the test NEVER writes into
+    // the real gauntlet folder, then run it as separate real processes —
+    // the same way the live gauntlet's bash tool invokes it.
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-gauntlet-idem-"));
+    try {
+      const source = NodeFS.readFileSync(INSTRUMENT_SOURCE, "utf8");
+      NodeAssert.ok(!source.includes("Bearer "), "instrument source must not carry credentials");
+      const mtsPath = NodePath.join(dir, "idempotent-write.mts");
+      NodeFS.writeFileSync(mtsPath, source);
+      const mjsPath = NodePath.join(dir, "idempotent-write.mjs");
+      NodeChildProcess.execFileSync(resolveEsbuild(), [
+        mtsPath,
+        "--format=esm",
+        "--platform=node",
+        `--outfile=${mjsPath}`,
+      ]);
+      const invoke = (operationId: string): InstrumentRun =>
+        JSON.parse(
+          NodeChildProcess.execFileSync(process.execPath, [mjsPath, operationId], { cwd: dir })
+            .toString()
+            .trim(),
+        ) as InstrumentRun;
 
-        // Duplicate / replayed invocation with the SAME operationId.
-        const first = invoke("GAUNT-op-1");
-        const replay = invoke("GAUNT-op-1");
-        expect(first.outcome).toBe("effect-created");
-        expect(replay.outcome).toBe("duplicate-noop");
-        expect(replay.attempts).toBe(2);
-        expect(replay.effects).toBe(1);
+      // Duplicate / replayed invocation with the SAME operationId.
+      const first = invoke("GAUNT-op-1");
+      const replay = invoke("GAUNT-op-1");
+      expect(first.outcome).toBe("effect-created");
+      expect(replay.outcome).toBe("duplicate-noop");
+      expect(replay.attempts).toBe(2);
+      expect(replay.effects).toBe(1);
 
-        // A DIFFERENT operationId still creates its own single effect.
-        const second = invoke("GAUNT-op-2");
-        expect(second.outcome).toBe("effect-created");
-        expect(second.effects).toBe(1);
+      // A DIFFERENT operationId still creates its own single effect.
+      const second = invoke("GAUNT-op-2");
+      expect(second.outcome).toBe("effect-created");
+      expect(second.effects).toBe(1);
 
-        // Durable truth on disk: 3 attempts ledgered, exactly 2 effect files.
-        const ledger = JSON.parse(
-          NodeFS.readFileSync(NodePath.join(dir, "Side-Effect-Ledger.json"), "utf8"),
-        ) as Array<{ operationId: string; outcome: string }>;
-        expect(ledger).toHaveLength(3);
-        expect(ledger.filter((entry) => entry.outcome === "effect-created")).toHaveLength(2);
-        const writes = NodeFS.readdirSync(NodePath.join(dir, "writes")).sort();
-        expect(writes).toEqual(["GAUNT-op-1.txt", "GAUNT-op-2.txt"]);
-      } finally {
-        NodeFS.rmSync(dir, { recursive: true, force: true });
-      }
-    },
-    60_000,
-  );
+      // Durable truth on disk: 3 attempts ledgered, exactly 2 effect files.
+      const ledger = JSON.parse(
+        NodeFS.readFileSync(NodePath.join(dir, "Side-Effect-Ledger.json"), "utf8"),
+      ) as Array<{ operationId: string; outcome: string }>;
+      expect(ledger).toHaveLength(3);
+      expect(ledger.filter((entry) => entry.outcome === "effect-created")).toHaveLength(2);
+      const writes = NodeFS.readdirSync(NodePath.join(dir, "writes")).sort();
+      expect(writes).toEqual(["GAUNT-op-1.txt", "GAUNT-op-2.txt"]);
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -646,73 +686,87 @@ describe("Pi harness tool gauntlet (shape 7, idempotent-write instrument)", () =
 // ---------------------------------------------------------------------------
 
 describe("Pi harness tool gauntlet (shape 8, restart replay)", () => {
-  it.effect("gauntlet 8: a fresh adapter re-emits a replayed end frame (per-process dedupe pinned)", () =>
-    Effect.gen(function* () {
-      const threadId = asThreadId("pi-gauntlet-g8");
-      const turnId = asTurnId("turn-g8");
+  it.effect(
+    "gauntlet 8: a fresh adapter re-emits a replayed end frame (per-process dedupe pinned)",
+    () =>
+      Effect.gen(function* () {
+        const threadId = asThreadId("pi-gauntlet-g8");
+        const turnId = asTurnId("turn-g8");
 
-      // ----- Phase 1: original process — one tool call completes exactly once.
-      const factoryA = makeRuntimeFactory();
-      const phaseA = Effect.gen(function* () {
-        const adapter = yield* PiAdapter;
-        yield* drainStartupEvents(adapter, threadId);
-        const runtime = factoryA.lastRuntime;
-        NodeAssert.ok(runtime);
-        const collected = yield* Stream.take(adapter.streamEvents, 5).pipe(
-          Stream.runCollect,
-          Effect.forkChild,
-        );
-        yield* scriptTurn(runtime, threadId, turnId, [
-          { type: "tool_execution_start", toolCallId: "call-r8", toolName: "dummy_echo", args: { text: "pre-restart" } },
-          { type: "tool_execution_end", toolCallId: "call-r8", toolName: "dummy_echo", result: "pre-restart" },
-          assistantEnd("landed before the restart"),
-        ]);
-        const events = yield* Fiber.join(collected);
-        const completions = events.filter(isToolEvent).filter((event) => event.type === "item.completed");
-        NodeAssert.equal(completions.length, 1);
-        return events.length;
-      }).pipe(Effect.provide(makeAdapterLayer(factoryA)));
-      yield* phaseA;
+        // ----- Phase 1: original process — one tool call completes exactly once.
+        const factoryA = makeRuntimeFactory();
+        const phaseA = Effect.gen(function* () {
+          const adapter = yield* PiAdapter;
+          yield* drainStartupEvents(adapter, threadId);
+          const runtime = factoryA.lastRuntime;
+          NodeAssert.ok(runtime);
+          const collected = yield* Stream.take(adapter.streamEvents, 5).pipe(
+            Stream.runCollect,
+            Effect.forkChild,
+          );
+          yield* scriptTurn(runtime, threadId, turnId, [
+            {
+              type: "tool_execution_start",
+              toolCallId: "call-r8",
+              toolName: "dummy_echo",
+              args: { text: "pre-restart" },
+            },
+            {
+              type: "tool_execution_end",
+              toolCallId: "call-r8",
+              toolName: "dummy_echo",
+              result: "pre-restart",
+            },
+            assistantEnd("landed before the restart"),
+          ]);
+          const events = yield* Fiber.join(collected);
+          const completions = events
+            .filter(isToolEvent)
+            .filter((event) => event.type === "item.completed");
+          NodeAssert.equal(completions.length, 1);
+          return events.length;
+        }).pipe(Effect.provide(makeAdapterLayer(factoryA)));
+        yield* phaseA;
 
-      // ----- Phase 2: FRESH adapter ("server restarted"), same thread/turn ids,
-      // pi replays the already-completed end frame.
-      const factoryB = makeRuntimeFactory();
-      const phaseB = Effect.gen(function* () {
-        const adapter = yield* PiAdapter;
-        yield* drainStartupEvents(adapter, threadId);
-        const runtime = factoryB.lastRuntime;
-        NodeAssert.ok(runtime);
-        const collected = yield* Stream.take(adapter.streamEvents, 1).pipe(
-          Stream.runCollect,
-          Effect.forkChild,
-        );
-        yield* runtime.emit({
-          kind: "rpc-event",
-          threadId,
-          turnId,
-          payload: {
-            type: "tool_execution_end",
-            toolCallId: "call-r8",
-            toolName: "dummy_echo",
-            result: "pre-restart",
-          },
-        } as PiRuntimeEvent);
-        const events = yield* Fiber.join(collected);
-        return events;
-      }).pipe(Effect.provide(makeAdapterLayer(factoryB)));
-      const replayEvents = yield* phaseB;
+        // ----- Phase 2: FRESH adapter ("server restarted"), same thread/turn ids,
+        // pi replays the already-completed end frame.
+        const factoryB = makeRuntimeFactory();
+        const phaseB = Effect.gen(function* () {
+          const adapter = yield* PiAdapter;
+          yield* drainStartupEvents(adapter, threadId);
+          const runtime = factoryB.lastRuntime;
+          NodeAssert.ok(runtime);
+          const collected = yield* Stream.take(adapter.streamEvents, 1).pipe(
+            Stream.runCollect,
+            Effect.forkChild,
+          );
+          yield* runtime.emit({
+            kind: "rpc-event",
+            threadId,
+            turnId,
+            payload: {
+              type: "tool_execution_end",
+              toolCallId: "call-r8",
+              toolName: "dummy_echo",
+              result: "pre-restart",
+            },
+          } as PiRuntimeEvent);
+          const events = yield* Fiber.join(collected);
+          return events;
+        }).pipe(Effect.provide(makeAdapterLayer(factoryB)));
+        const replayEvents = yield* phaseB;
 
-      // PINNED TRUTH: the fresh process has no per-turn dedupe memory, so the
-      // replayed end frame maps AGAIN as an item.completed at this layer.
-      // Cross-restart exactly-once for durable SIDE EFFECTS is owned by the
-      // operationId instrument (gauntlet 7) — event-layer dedupe is per
-      // process by design; do not add cross-restart state here.
-      NodeAssert.equal(replayEvents.length, 1);
-      const replayed = replayEvents[0] as ProviderRuntimeEvent;
-      NodeAssert.ok(replayed.type === "item.completed");
-      NodeAssert.equal(replayed.itemId, "pi-tool:call-r8");
-      NodeAssert.equal(replayed.payload.itemType, "dynamic_tool_call");
-    }),
+        // PINNED TRUTH: the fresh process has no per-turn dedupe memory, so the
+        // replayed end frame maps AGAIN as an item.completed at this layer.
+        // Cross-restart exactly-once for durable SIDE EFFECTS is owned by the
+        // operationId instrument (gauntlet 7) — event-layer dedupe is per
+        // process by design; do not add cross-restart state here.
+        NodeAssert.equal(replayEvents.length, 1);
+        const replayed = replayEvents[0] as ProviderRuntimeEvent;
+        NodeAssert.ok(replayed.type === "item.completed");
+        NodeAssert.equal(replayed.itemId, "pi-tool:call-r8");
+        NodeAssert.equal(replayed.payload.itemType, "dynamic_tool_call");
+      }),
   );
 });
 
@@ -772,9 +826,52 @@ describe("Pi harness tool gauntlet (probe retry, wake-from-idle regression)", ()
         NodeAssert.ok(error.detail.includes("no Pi native Anthropic OAuth fallback"));
         // The NEGATIVE result is cached only AFTER the retry also failed —
         // a further turn hits the cache without probing again (still closed).
-        const cachedError = yield* guard.guardAnthropicTurn("anthropic/claude-test").pipe(Effect.flip);
+        const cachedError = yield* guard
+          .guardAnthropicTurn("anthropic/claude-test")
+          .pipe(Effect.flip);
         NodeAssert.equal(cachedError.reason, "unreachable");
         NodeAssert.equal(attempts, 2);
       }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  // 2026-10-01: Meridian's /health runs `claude auth status` under its own 5s
+  // timeout, so a healthy Meridian can take that long to answer. A probe budget
+  // at or below that ceiling fails a healthy Meridian on every cache miss.
+  it("gauntlet 11: the probe budget outlasts Meridian's own auth-check ceiling", () => {
+    expect(PROBE_TIMEOUT_MS).toBeGreaterThanOrEqual(MERIDIAN_HEALTH_AUTH_CHECK_CEILING_MS * 2);
+  });
+
+  it.effect("gauntlet 12: a refused connection fails closed and the error names the refusal", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      // A loopback port with nothing listening: bind, read the port, close.
+      const port = yield* Effect.promise(
+        () =>
+          new Promise<number>((resolve) => {
+            const server = NodeNet.createServer();
+            server.listen(0, "127.0.0.1", () => {
+              const address = server.address() as NodeNet.AddressInfo;
+              server.close(() => resolve(address.port));
+            });
+          }),
+      );
+      const configPath = NodePath.join(
+        NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "pi-meridian-refused-")),
+        "models.json",
+      );
+      NodeFS.writeFileSync(
+        configPath,
+        `{"providers":{"anthropic":{"baseUrl":"http://127.0.0.1:${port}"}}}`,
+      );
+      const guard = makePiMeridianRouteGuard(fileSystem, {
+        configPath,
+        probeRetryDelayMs: 0,
+        probeCacheTtlMs: 0,
+      });
+      const error = yield* guard.guardAnthropicTurn("anthropic/claude-test").pipe(Effect.flip);
+      NodeAssert.equal(error.reason, "unreachable");
+      NodeAssert.ok(error.detail.includes(`Meridian is down or unreachable at 127.0.0.1:${port}`));
+      NodeAssert.ok(error.detail.includes("the connection was refused"));
+    }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

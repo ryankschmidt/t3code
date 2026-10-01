@@ -74,7 +74,19 @@ const PI_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
 // Governed provider doors do policy and provenance work before they exec the
 // real CLI. Ryan's measured `ryan-pi --version` takes about four seconds, so
 // the generic four-second command budget was guaranteed to race the wrapper.
-export const PI_VERSION_PROBE_TIMEOUT_MS = 10_000;
+// 2026-10-01 (Mac load average 95-166): the door's output closed after
+// 2.8-7.5s from a shell, and the server's own check span ran 10,020ms and
+// marked Pi unavailable for the next five minutes. This check runs in the
+// background every five minutes, so a longer budget costs nothing visible.
+export const PI_VERSION_PROBE_TIMEOUT_MS = 30_000;
+
+// A check that only timed out says the machine was slow, not that Pi broke.
+// Within this window the last successful check keeps the provider ready.
+export const PI_LAST_READY_GRACE_MS = 30 * 60_000;
+const lastReadyPiVersion = new Map<
+  string,
+  { readonly version: string | null; readonly at: string; readonly atMillis: number }
+>();
 
 /** No built-in models by design (#402: models come from Pi, never a static list). */
 const PI_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [];
@@ -157,9 +169,13 @@ const runPiVersionCommand = (
 export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function* (
   piSettings: PiSettings,
   environment: NodeJS.ProcessEnv = process.env,
+  versionTimeoutMs: number = PI_VERSION_PROBE_TIMEOUT_MS,
 ): Effect.fn.Return<ServerProviderDraft, never, ChildProcessSpawner.ChildProcessSpawner> {
-  const checkedAt = DateTime.formatIso(yield* DateTime.now);
+  const now = yield* DateTime.now;
+  const checkedAt = DateTime.formatIso(now);
+  const nowMillis = DateTime.toEpochMillis(now);
   const models = piModelsFromSettings(piSettings.customModels);
+  const binaryKey = piSettings.binaryPath || "pi";
 
   if (!piSettings.enabled) {
     return buildServerProvider({
@@ -178,7 +194,7 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
   }
 
   const versionResult = yield* runPiVersionCommand(piSettings, environment).pipe(
-    Effect.timeoutOption(PI_VERSION_PROBE_TIMEOUT_MS),
+    Effect.timeoutOption(versionTimeoutMs),
     Effect.result,
   );
 
@@ -205,6 +221,28 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
   }
 
   if (Option.isNone(versionResult.success)) {
+    const lastReady = lastReadyPiVersion.get(binaryKey);
+    if (lastReady && nowMillis - lastReady.atMillis <= PI_LAST_READY_GRACE_MS) {
+      yield* Effect.logWarning("Pi CLI health check timed out; keeping the last ready result.", {
+        lastReadyAt: lastReady.at,
+      });
+      return buildServerProvider({
+        presentation: PI_PRESENTATION,
+        enabled: piSettings.enabled,
+        checkedAt,
+        models,
+        probe: {
+          installed: true,
+          version: lastReady.version,
+          status: "ready",
+          auth: { status: "unknown" },
+          message:
+            `Pi CLI ${lastReady.version ?? "(version unknown)"} available. The latest health ` +
+            `check timed out after ${versionTimeoutMs / 1000}s; the check at ` +
+            `${lastReady.at} succeeded.`,
+        },
+      });
+    }
     return buildServerProvider({
       presentation: PI_PRESENTATION,
       enabled: piSettings.enabled,
@@ -241,6 +279,7 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     });
   }
 
+  lastReadyPiVersion.set(binaryKey, { version, at: checkedAt, atMillis: nowMillis });
   return buildServerProvider({
     presentation: PI_PRESENTATION,
     enabled: piSettings.enabled,
