@@ -20,6 +20,11 @@ import {
 import { importAttachment } from "../../lib/composerContextClipboard";
 import { uuidv4 } from "../../lib/uuid";
 
+// ThroughLine-owned preview: hide transport markup, never alter the restored prompt.
+function promptPreview(text: string) {
+  return text.replace(/!\[([^\]]*)\]\([^)]*\)/g, "[Attachment: $1]").trim();
+}
+
 export function ClaudeRewindMenu(props: {
   environmentId: EnvironmentId;
   threadId: ThreadId;
@@ -178,25 +183,34 @@ export function ClaudeRewindMenu(props: {
       presentationStyle="pageSheet"
       onRequestClose={close}
     >
-      <View className="flex-1 bg-background px-5 pb-8 pt-12">
-        <Text className="text-xl font-t3-medium">
-          {selected ? "Restore to before this message?" : "Rewind conversation"}
+      <View className="flex-1 bg-screen px-5 pb-8 pt-8">
+        <Text className="text-2xl font-t3-bold text-foreground">
+          {selected ? "Restore this point?" : "Rewind"}
         </Text>
-        <Text className="py-3 text-foreground-muted">
+        <Text className="pb-5 pt-2 text-base text-foreground-secondary">
           {selected
-            ? "The selected message returns to your composer. Nothing is sent."
-            : "Choose a user message. Times are shown in your local timezone."}
+            ? "Return to just before this message. It will be placed in your composer, not sent."
+            : "Choose the message to return to. Keep the context before it and leave your files unchanged."}
         </Text>
         {error && (
           <Text accessibilityRole="alert" className="py-2 text-foreground">
             {error}
           </Text>
         )}
-        {isRunning && <Text className="py-2">Interrupt the current turn before rewinding.</Text>}
+        {isRunning && (
+          <Text className="py-2 text-foreground">Interrupt the current turn before rewinding.</Text>
+        )}
         <ScrollView className="flex-1">
           {selected ? (
             <>
-              <Text className="py-4">{selected.text.slice(0, 500)}</Text>
+              <View className="mb-5 rounded-2xl border border-border-subtle bg-card p-4">
+                <Text className="mb-2 text-xs text-foreground-muted">
+                  {new Date(selected.createdAt).toLocaleString()}
+                </Text>
+                <Text className="text-base text-foreground">
+                  {promptPreview(selected.text).slice(0, 1000) || "Attachment-only message"}
+                </Text>
+              </View>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Restore conversation, default"
@@ -205,7 +219,7 @@ export function ClaudeRewindMenu(props: {
                 onPress={() => void restore(false)}
               >
                 <Text className="text-primary-foreground">
-                  {busy ? "Restoring…" : "Restore conversation (default)"}
+                  {busy ? "Restoring…" : "Rewind conversation · keep files"}
                 </Text>
               </Pressable>
               {thread?.worktreePath && selected.turnCount !== null && (
@@ -215,13 +229,15 @@ export function ClaudeRewindMenu(props: {
                   className="mt-3 rounded-xl border border-border p-4"
                   onPress={() => void restore(true)}
                 >
-                  <Text>Restore code and conversation</Text>
+                  <Text className="text-foreground">Restore code and conversation</Text>
                 </Pressable>
               )}
             </>
           ) : (
             <>
-              {entries.length === 0 && <Text>No user messages loaded.</Text>}
+              {entries.length === 0 && (
+                <Text className="text-foreground">No user messages loaded.</Text>
+              )}
               {Option.isSome(state.page) && state.page.value.hasMore && (
                 <Text className="py-2 text-foreground-muted">
                   Older messages are available. Close this menu and load earlier messages in the
@@ -232,17 +248,17 @@ export function ClaudeRewindMenu(props: {
                 <Pressable
                   key={entry.id}
                   accessibilityRole="button"
+                  accessibilityLabel={`${new Date(entry.createdAt).toLocaleString()}: ${promptPreview(entry.text).slice(0, 300) || "Attachment-only message"}`}
                   disabled={isRunning}
-                  className="my-1 rounded-xl border border-border p-3"
+                  className="mb-3 rounded-2xl border border-border-subtle bg-card p-4 active:bg-row-hover"
                   onPress={() => setSelected(entry)}
                 >
-                  <Text className="text-xs text-foreground-muted">
+                  <Text className="mb-2 text-xs text-foreground-muted">
                     {new Date(entry.createdAt).toLocaleString()}
                   </Text>
-                  <Text numberOfLines={2}>{entry.text.slice(0, 180) || "[Attachments]"}</Text>
-                  {entry.unavailableReason && (
-                    <Text className="text-xs text-foreground-muted">{entry.unavailableReason}</Text>
-                  )}
+                  <Text className="text-base text-foreground" numberOfLines={3}>
+                    {promptPreview(entry.text) || "Attachment-only message"}
+                  </Text>
                 </Pressable>
               ))}
             </>
@@ -251,10 +267,12 @@ export function ClaudeRewindMenu(props: {
         <Pressable
           accessibilityRole="button"
           disabled={busy}
-          className="mt-3 p-4"
+          className="mt-3 items-center rounded-xl bg-card p-4 active:bg-row-hover"
           onPress={selected ? () => setSelected(null) : close}
         >
-          <Text>{selected ? "Back" : "Cancel"}</Text>
+          <Text className="text-base font-t3-medium text-foreground">
+            {selected ? "Back to messages" : "Cancel"}
+          </Text>
         </Pressable>
       </View>
     </Modal>

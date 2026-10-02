@@ -9,6 +9,14 @@
  */
 
 import * as NodeUtil from "node:util";
+// ThroughLine: exact native fork provenance stays in our owned identity helper.
+import {
+  CurrentMessageOrigin,
+  CurrentRewindTarget,
+  nativeUuidFor,
+  resolveNative,
+  type ClaudeSessionLineage,
+} from "../../throughline/identity/index.ts";
 import {
   type CanUseTool,
   query,
@@ -526,6 +534,7 @@ export interface ClaudeAdapterLiveOptions {
   }) => ClaudeQueryRuntime;
   readonly getSessionMessages?: typeof getSessionMessages;
   readonly forkSession?: typeof forkSession;
+  readonly readRewindLineage?: (sessionId: string) => Promise<ClaudeSessionLineage | undefined>;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
@@ -5443,6 +5452,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   );
 
   const sendTurn: ClaudeAdapterShape["sendTurn"] = Effect.fn("sendTurn")(function* (input) {
+    const messageOrigin = yield* CurrentMessageOrigin;
     const context = yield* requireSession(input.threadId);
     const modelCatalog = yield* modelCatalogEffect;
     const selectedModel =
@@ -5581,7 +5591,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       message:
         steeringTurnState === null
           ? { ...message, uuid: turnId as NonNullable<SDKUserMessage["uuid"]> }
-          : message,
+          : // ThroughLine: assign a reproducible native identity before a steering prompt is sent.
+            messageOrigin
+            ? {
+                ...message,
+                uuid: nativeUuidFor(messageOrigin) as NonNullable<SDKUserMessage["uuid"]>,
+              }
+            : message,
     }).pipe(Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)));
 
     return {
@@ -5631,7 +5647,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   );
 
   const rollbackThread: ClaudeAdapterShape["rollbackThread"] = Effect.fn("rollbackThread")(
-    function* (threadId, numTurns, target) {
+    function* (threadId, numTurns) {
+      const admittedTarget = yield* CurrentRewindTarget;
+      const target =
+        admittedTarget === undefined
+          ? undefined
+          : {
+              threadId: admittedTarget.threadId,
+              beforeMessageId: admittedTarget.messageId,
+              ...(admittedTarget.turnId ? { fallbackTurnId: admittedTarget.turnId } : {}),
+            };
       const context = yield* requireSession(threadId);
       if (target && context.turnState) {
         return yield* new ProviderAdapterRequestError({
@@ -5644,7 +5669,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         return yield* new ProviderAdapterValidationError({
           provider: PROVIDER,
           operation: "rollbackThread",
-          issue: "numTurns must be an integer >= 1.",
+          issue:
+            numTurns === 0
+              ? "numTurns must be an integer >= 1. Exact-message rewind identity context is unavailable; no conversation was changed."
+              : "numTurns must be an integer >= 1.",
         });
       }
       if (
@@ -5759,10 +5787,40 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         // prompt instead uses its T3 turn UUID as the SDK user-message UUID.
         // Never match text or guess an index from file-checkpoint counts.
         const direct = messages.findIndex((message) => message.uuid === target.beforeMessageId);
-        const exact =
+        const directExact =
           direct >= 0
             ? direct
             : messages.findIndex((message) => message.uuid === target.fallbackTurnId);
+        // ThroughLine: retained UI IDs survive native forks. Resolve only exact recorded
+        // forkedFrom edges, never prompt text, checkpoint arithmetic or list positions.
+        const nativeId =
+          directExact >= 0
+            ? undefined
+            : yield* Effect.tryPromise({
+                try: () =>
+                  resolveNative({
+                    currentSessionId: sessionId,
+                    ...(claudeEnvironment.CLAUDE_CONFIG_DIR
+                      ? { providerInstanceConfigDir: claudeEnvironment.CLAUDE_CONFIG_DIR }
+                      : {}),
+                    threadId: target.threadId ?? threadId,
+                    messageId: target.beforeMessageId,
+                    ...(target.fallbackTurnId ? { fallbackTurnId: target.fallbackTurnId } : {}),
+                    effectivePromptIds: messages
+                      .filter(isClaudeHumanTurnStart)
+                      .map((message) => message.uuid),
+                    ...(options?.readRewindLineage
+                      ? { readLineage: options.readRewindLineage }
+                      : {}),
+                  }),
+                catch: (cause) => toRequestError(threadId, "thread/rollback", cause),
+              });
+        const exact =
+          directExact >= 0
+            ? directExact
+            : messages.findIndex(
+                (message) => nativeId?.status === "resolved" && message.uuid === nativeId.uuid,
+              );
         if (exact < 0 || !isClaudeHumanTurnStart(messages[exact]!)) {
           return yield* new ProviderAdapterRequestError({
             provider: PROVIDER,
