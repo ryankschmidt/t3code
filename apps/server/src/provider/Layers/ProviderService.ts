@@ -2252,15 +2252,17 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "Exact-message rewind is currently supported only by Claude Code.",
         );
       }
-      yield* routed.adapter.rollbackThread(
-        routed.threadId,
-        input.numTurns,
-        input.beforeMessageId === undefined
-          ? undefined
-          : {
-              beforeMessageId: input.beforeMessageId,
-              ...(input.fallbackTurnId ? { fallbackTurnId: input.fallbackTurnId } : {}),
-            },
+      yield* routed.adapter.rollbackThread(routed.threadId, input.numTurns).pipe(
+        Effect.provideService(
+          CurrentRewindTarget,
+          input.beforeMessageId === undefined
+            ? undefined
+            : {
+                threadId: input.threadId,
+                messageId: input.beforeMessageId,
+                ...(input.fallbackTurnId ? { turnId: input.fallbackTurnId } : {}),
+              },
+        ),
       );
       const session = (yield* routed.adapter.listSessions()).find(
         (session) => session.threadId === routed.threadId,
@@ -2469,3 +2471,5 @@ export const ProviderServiceLive = Layer.effect(
 export function makeProviderServiceLive(options?: ProviderServiceLiveOptions) {
   return Layer.effect(ProviderService.ProviderService, makeProviderService(options));
 }
+// ThroughLine: exact rewind context belongs to the owned identity module, not the generic upstream adapter contract.
+import { CurrentRewindTarget } from "../../throughline/identity/index.ts";

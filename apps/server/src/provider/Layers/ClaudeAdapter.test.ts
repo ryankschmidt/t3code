@@ -16,6 +16,7 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  MessageId,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
@@ -51,13 +52,29 @@ import {
 } from "../ClaudeModelCatalog.testFixtures.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
+import type { ProviderSendTurnInput } from "@t3tools/contracts";
+import {
+  CurrentMessageOrigin,
+  CurrentRewindTarget,
+  type RewindTarget,
+} from "../../throughline/identity/index.ts";
 import type { ClaudeScopedLimitNames } from "./claudeUsageLimits.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
-class ClaudeAdapter extends Context.Service<ClaudeAdapter, ClaudeAdapterShape>()(
+type TestClaudeAdapter = Omit<ClaudeAdapterShape, "sendTurn" | "rollbackThread"> & {
+  readonly sendTurn: (
+    input: ProviderSendTurnInput & { readonly messageId?: MessageId },
+  ) => ReturnType<ClaudeAdapterShape["sendTurn"]>;
+  readonly rollbackThread: (
+    threadId: ThreadId,
+    numTurns: number,
+    target?: RewindTarget,
+  ) => ReturnType<ClaudeAdapterShape["rollbackThread"]>;
+};
+class ClaudeAdapter extends Context.Service<ClaudeAdapter, TestClaudeAdapter>()(
   "t3/provider/Layers/ClaudeAdapter.test/ClaudeAdapter",
 ) {}
 
@@ -177,6 +194,7 @@ function makeHarness(config?: {
   readonly environment?: ClaudeAdapterLiveOptions["environment"];
   readonly getSessionMessages?: ClaudeAdapterLiveOptions["getSessionMessages"];
   readonly forkSession?: ClaudeAdapterLiveOptions["forkSession"];
+  readonly readRewindLineage?: ClaudeAdapterLiveOptions["readRewindLineage"];
 }) {
   const query = new FakeClaudeQuery();
   const queries = [query];
@@ -194,6 +212,7 @@ function makeHarness(config?: {
     modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
     ...(config?.getSessionMessages ? { getSessionMessages: config.getSessionMessages } : {}),
     ...(config?.forkSession ? { forkSession: config.forkSession } : {}),
+    ...(config?.readRewindLineage ? { readRewindLineage: config.readRewindLineage } : {}),
     createQuery: (input) => {
       if (createInput && config?.getSessionMessages) queries.push(new FakeClaudeQuery());
       createInput = input;
@@ -216,7 +235,36 @@ function makeHarness(config?: {
       ClaudeAdapter,
       Effect.gen(function* () {
         const claudeConfig = decodeClaudeSettings(config?.claudeConfig ?? {});
-        return yield* makeClaudeAdapter(claudeConfig, adapterOptions);
+        const adapter = yield* makeClaudeAdapter(claudeConfig, adapterOptions);
+        // Test convenience preserves the old fixture inputs, but the real adapter uses
+        // the same two-argument upstream API and immutable operation context as production.
+        return {
+          ...adapter,
+          sendTurn: (input: ProviderSendTurnInput & { readonly messageId?: MessageId }) => {
+            const { messageId, ...request } = input;
+            return adapter
+              .sendTurn(request)
+              .pipe(
+                Effect.provideService(
+                  CurrentMessageOrigin,
+                  messageId === undefined ? undefined : { threadId: input.threadId, messageId },
+                ),
+              );
+          },
+          rollbackThread: (threadId: ThreadId, numTurns: number, target?: RewindTarget) =>
+            adapter.rollbackThread(threadId, numTurns).pipe(
+              Effect.provideService(
+                CurrentRewindTarget,
+                target === undefined
+                  ? undefined
+                  : {
+                      threadId: target.threadId ?? threadId,
+                      messageId: target.beforeMessageId,
+                      ...(target.fallbackTurnId ? { turnId: target.fallbackTurnId } : {}),
+                    },
+              ),
+            ),
+        };
       }),
     ).pipe(
       Layer.provideMerge(
@@ -6752,6 +6800,242 @@ describe("ClaudeAdapterLive", () => {
   });
 
   describe("exact rewind keeps T3 turn alignment", () => {
+    // ThroughLine: record the actually queued identity, not a fixture's invented steering UUID.
+    it.effect(
+      "rewinds a newly submitted displayed steering message after a native fork and restart",
+      () => {
+        type History = Awaited<
+          ReturnType<NonNullable<ClaudeAdapterLiveOptions["getSessionMessages"]>>
+        >;
+        const originalSession = CLAUDE_ORIGINAL_SESSION_ID;
+        const displayedSteer = MessageId.make("admitted steering / non-UUID");
+        const histories = new Map<string, History>();
+        const lineage = new Map<
+          string,
+          Map<string, { sessionId: string; messageUuid: string } | null>
+        >();
+        const cutIds: string[] = [];
+        const harness = makeHarness({
+          getSessionMessages: async (id) => histories.get(id) ?? [],
+          readRewindLineage: async (id) => lineage.get(id),
+          forkSession: async (id, options) => {
+            const source = histories.get(id)!;
+            const index = source.findIndex((row) => row.uuid === options?.upToMessageId);
+            assert.notEqual(index, -1);
+            cutIds.push(source[index]!.uuid);
+            const sessionId = `550e8400-e29b-41d4-a716-44665544008${cutIds.length}`;
+            const retained = source.slice(0, index + 1);
+            lineage.set(
+              sessionId,
+              new Map(
+                retained.map((row) => [
+                  `${cutIds.length}-${row.uuid}`,
+                  { sessionId: id, messageUuid: row.uuid },
+                ]),
+              ),
+            );
+            histories.set(
+              sessionId,
+              retained.map((row) => ({
+                ...row,
+                uuid: `${cutIds.length}-${row.uuid}`,
+                session_id: sessionId,
+              })),
+            );
+            return { sessionId };
+          },
+        });
+        return Effect.gen(function* () {
+          const adapter = yield* ClaudeAdapter;
+          yield* adapter.startSession({
+            threadId: THREAD_ID,
+            provider: ProviderDriverKind.make("claudeAgent"),
+            runtimeMode: "full-access",
+            resumeCursor: { resume: originalSession, turnCount: 0 },
+          });
+          const first = yield* adapter.sendTurn({
+            threadId: THREAD_ID,
+            messageId: MessageId.make("first displayed prompt"),
+            input: "same prompt",
+          });
+          const steer = yield* adapter.sendTurn({
+            threadId: THREAD_ID,
+            messageId: displayedSteer,
+            input: "same prompt",
+          });
+          assert.equal(steer.turnId, first.turnId);
+          const queued = yield* Effect.promise(() =>
+            readPromptMessages(harness.getLastCreateQueryInput(), 2),
+          );
+          assert.equal(String(queued[0]?.uuid), String(first.turnId)); // Preserve the original first-turn SDK contract.
+          assert.equal(queued[1]?.uuid, "f4865119-be3c-552a-8e06-dd13589274f6");
+          assert.notEqual(String(queued[1]?.uuid), String(displayedSteer));
+          const completed = yield* Stream.filter(
+            adapter.streamEvents,
+            (event) => event.type === "turn.completed",
+          ).pipe(Stream.runHead, Effect.forkChild);
+          harness.query.emit({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            errors: [],
+            session_id: originalSession,
+            uuid: "completed-first-steered-turn",
+          } as unknown as SDKMessage);
+          yield* Fiber.join(completed);
+          const later = yield* sendCompletedClaudeTurn(adapter, harness, THREAD_ID, "later prompt");
+          const laterQueued = yield* Effect.promise(() =>
+            readPromptMessages(harness.getLastCreateQueryInput(), 1),
+          );
+          histories.set(originalSession, [
+            claudeHistoryMessage({
+              type: "user",
+              uuid: queued[0]!.uuid!,
+              sessionId: originalSession,
+              content: queued[0]!.message.content,
+            }),
+            claudeHistoryMessage({
+              type: "assistant",
+              uuid: "reply-before-steer",
+              sessionId: originalSession,
+            }),
+            claudeHistoryMessage({
+              type: "user",
+              uuid: queued[1]!.uuid!,
+              sessionId: originalSession,
+              content: queued[1]!.message.content,
+            }),
+            claudeHistoryMessage({
+              type: "assistant",
+              uuid: "reply-after-steer",
+              sessionId: originalSession,
+            }),
+            claudeHistoryMessage({
+              type: "user",
+              uuid: laterQueued[0]!.uuid!,
+              sessionId: originalSession,
+              content: laterQueued[0]!.message.content,
+            }),
+          ] as History);
+          yield* adapter.rollbackThread(THREAD_ID, 0, {
+            beforeMessageId: "later displayed prompt",
+            fallbackTurnId: later.turnId,
+          });
+          const cursor = (yield* adapter.listSessions())[0]!.resumeCursor;
+          yield* adapter.stopSession(THREAD_ID);
+          yield* adapter.startSession({
+            threadId: THREAD_ID,
+            provider: ProviderDriverKind.make("claudeAgent"),
+            runtimeMode: "full-access",
+            resumeCursor: cursor,
+          });
+          // The UI supplies no turn-start fallback for this within-turn prompt.
+          yield* adapter.rollbackThread(THREAD_ID, 0, { beforeMessageId: displayedSteer });
+          assert.deepEqual(cutIds, ["reply-after-steer", "1-reply-before-steer"]);
+          const session = (yield* adapter.listSessions())[0]!;
+          assert.equal(session.threadId, THREAD_ID);
+          assert.equal((session.resumeCursor as { turnCount: number }).turnCount, 1);
+          const retained = histories.get((session.resumeCursor as { resume: string }).resume)!;
+          assert.equal(retained.filter((row) => row.type === "user").length, 1);
+        }).pipe(
+          Effect.provideService(Random.Random, makeDeterministicRandomService()),
+          Effect.provide(harness.layer),
+        );
+      },
+    );
+
+    // ThroughLine: the UI keeps stable IDs while every real native fork rewrites UUIDs.
+    it.effect("repeat exact selections survive rewritten UUIDs and a session restart", () => {
+      const originalSession = "550e8400-e29b-41d4-a716-446655440090";
+      const history = [
+        ["user", "turn-one", "first prompt"],
+        ["assistant", "reply-one", "first reply"],
+        ["user", "steer-one", "steering prompt"],
+        ["assistant", "reply-steer", "steering reply"],
+        ["user", "turn-two", "second prompt"],
+        ["assistant", "reply-two", "second reply"],
+        ["user", "turn-three", "third prompt"],
+        ["assistant", "reply-three", "third reply"],
+        ["user", "turn-four", "fourth prompt"],
+      ].map(([type, uuid, content]) => ({
+        type: type as "user" | "assistant",
+        uuid: uuid!,
+        session_id: originalSession,
+        parent_tool_use_id: null,
+        parent_agent_id: null,
+        message: { content },
+      }));
+      const sessions = new Map([[originalSession, history]]);
+      const lineage = new Map<
+        string,
+        Map<string, { sessionId: string; messageUuid: string } | null>
+      >();
+      const cuts: string[] = [];
+      const harness = makeHarness({
+        getSessionMessages: async (id) => sessions.get(id) ?? [],
+        readRewindLineage: async (id) => lineage.get(id),
+        forkSession: async (id, options) => {
+          const source = sessions.get(id)!;
+          const cut = source.findIndex((row) => row.uuid === options?.upToMessageId);
+          assert.notEqual(cut, -1);
+          cuts.push(source[cut]!.message.content!);
+          const sessionId = `550e8400-e29b-41d4-a716-44665544009${cuts.length}`;
+          lineage.set(
+            sessionId,
+            new Map(
+              source
+                .slice(0, cut + 1)
+                .map((row) => [
+                  `${cuts.length}-${row.uuid}`,
+                  { sessionId: id, messageUuid: row.uuid },
+                ]),
+            ),
+          );
+          sessions.set(
+            sessionId,
+            source.slice(0, cut + 1).map((row) => ({
+              ...row,
+              uuid: `${cuts.length}-${row.uuid}`,
+              session_id: sessionId,
+            })),
+          );
+          return { sessionId };
+        },
+      });
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+          resumeCursor: {
+            resume: originalSession,
+            turnCount: 4,
+            turnStartMessageIds: ["turn-one", "turn-two", "turn-three", "turn-four"],
+          },
+        });
+        yield* adapter.rollbackThread(THREAD_ID, 0, { beforeMessageId: "turn-four" });
+        const cursor = (yield* adapter.listSessions())[0]!.resumeCursor;
+        yield* adapter.stopSession(THREAD_ID);
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+          resumeCursor: cursor,
+        });
+        yield* adapter.rollbackThread(THREAD_ID, 0, { beforeMessageId: "turn-three" });
+        yield* adapter.rollbackThread(THREAD_ID, 0, { beforeMessageId: "steer-one" });
+        assert.deepEqual(cuts, ["third reply", "second reply", "first reply"]);
+        yield* adapter.rollbackThread(THREAD_ID, 0, { beforeMessageId: "turn-one" });
+        const reset = (yield* adapter.listSessions())[0]!;
+        assert.equal((reset.resumeCursor as { turnCount: number }).turnCount, 0);
+        assert.equal(cuts.length, 3);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    });
+
     const oldId = "550e8400-e29b-41d4-a716-446655440010";
     const entry = (type: "user" | "assistant", uuid: string, content: unknown) => ({
       type,
