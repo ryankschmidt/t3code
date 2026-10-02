@@ -1548,9 +1548,18 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           appVersion: WINDOWS_PAYLOAD_FIXTURE_VERSION,
         });
 
+        const path = yield* Path.Path;
+        const primaryExecutable = path.join(fixture.packagedAppDir, fixture.appExecutableName);
+        // A parent Electron-as-Node launch can also mark the separate Node
+        // self-containment probe. Identify the primary executable, not that flag alone.
         assert.isFalse(
-          commands.some((command) => command.options.env?.ELECTRON_RUN_AS_NODE === "1"),
+          commands.some(
+            (command) =>
+              command.command === primaryExecutable &&
+              command.options.env?.ELECTRON_RUN_AS_NODE === "1",
+          ),
         );
+        assert.isFalse(commands.some((command) => command.command === primaryExecutable));
         assert.isTrue(
           commands.some(
             (command) =>
