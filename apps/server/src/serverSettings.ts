@@ -58,6 +58,7 @@ import {
   isModelSelectionProviderEnabled,
 } from "@t3tools/shared/serverSettings";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import { applyOperatorProfileIfMounted } from "./throughline/operatorProfile/OperatorProfile.ts"; // ThroughLine: operator profile
 
 export { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
 
@@ -672,7 +673,7 @@ const make = Effect.gen(function* () {
     if (folded !== loaded) {
       yield* writeSettingsAtomically(folded);
     }
-    return retireModelDefaults(folded);
+    return retireModelDefaults(yield* applyOperatorProfileIfMounted(folded)); // ThroughLine: operator profile layer
   });
 
   const settingsCache = yield* Cache.make<typeof cacheKey, ServerSettings, ServerSettingsError>({
