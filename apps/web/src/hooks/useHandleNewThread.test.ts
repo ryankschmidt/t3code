@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import type { RuntimeMode } from "@t3tools/contracts";
 
 const testState = vi.hoisted(() => {
   let completeProjectFileRead: (value: null) => void = () => undefined;
@@ -7,6 +8,7 @@ const testState = vi.hoisted(() => {
     defaultThreadEnvMode: "local" as "local" | "worktree",
     newWorktreesStartFromOrigin: false,
     defaultModelSelection: null,
+    defaultRuntimeMode: "full-access" as RuntimeMode,
   };
   let storedDraft: {
     readonly draftId: string;
@@ -55,6 +57,7 @@ const testState = vi.hoisted(() => {
         defaultThreadEnvMode: workspaceDefaults.envMode,
         newWorktreesStartFromOrigin: workspaceDefaults.startFromOrigin,
         defaultModelSelection: null,
+        defaultRuntimeMode: "full-access",
       };
       router.state.location.href = "/";
       router.navigate.mockClear();
@@ -97,17 +100,24 @@ vi.mock("@t3tools/contracts", () => ({
 vi.mock("@t3tools/shared/projectSettings", () => ({
   // Environment settings pass through; the tests set project fields on the
   // project record, which the hook still honors until the server folds them.
-  resolveProjectSettings: (settings: Record<string, unknown>) => ({
-    settings,
+  // With a file argument the env mode resolves like the real chain.
+  resolveProjectSettings: (
+    settings: Record<string, unknown>,
+    _projectId: unknown,
+    _project: unknown,
+    projectFile?: { defaultThreadEnvMode?: "local" | "worktree" } | null,
+  ) => ({
+    settings:
+      projectFile === undefined
+        ? settings
+        : {
+            ...settings,
+            defaultThreadEnvMode:
+              settings.defaultThreadEnvMode ?? projectFile?.defaultThreadEnvMode ?? "local",
+          },
     sources: { defaultModelSelection: "environment", defaultThreadEnvMode: "environment" },
     overrides: {},
   }),
-}));
-vi.mock("@t3tools/shared/threadEnvMode", () => ({
-  resolveDefaultThreadEnvMode: (input: {
-    readonly projectFile: "local" | "worktree" | null;
-    readonly globalDefault: "local" | "worktree";
-  }) => input.projectFile ?? input.globalDefault,
 }));
 vi.mock("@tanstack/react-router", () => ({
   useParams: () => null,
@@ -134,7 +144,7 @@ vi.mock("../lib/chatThreadActions", async (importOriginal) => ({
   resolveNewThreadModelSelectionOverride: () => null,
 }));
 vi.mock("../lib/t3ProjectFileDefaults", () => ({
-  readT3ProjectFileDefaultThreadEnvMode: () => testState.projectFileRead,
+  readT3ProjectFile: () => testState.projectFileRead,
 }));
 vi.mock("../lib/utils", () => ({
   newDraftId: () => "draft-delayed",
@@ -184,6 +194,28 @@ describe.each([
     },
   ],
 ])("useNewThreadHandler with a %s draft", (_, draft) => {
+  it.each(["approval-required", "auto-accept-edits", "auto", "full-access"] as const)(
+    "uses the target environment's %s permissions for new threads",
+    async (runtimeMode) => {
+      testState.reset(draft);
+      testState.targetSettings.defaultRuntimeMode = runtimeMode;
+      const projectRef = {
+        environmentId: "environment-ssh",
+        projectId: "project-remote",
+      } as never;
+      const pendingOpen = useNewThreadHandler()(projectRef);
+      testState.completeProjectFileRead(null);
+      const opened = await pendingOpen;
+
+      expect(testState.draftStore.setLogicalProjectDraftThreadId).toHaveBeenCalledWith(
+        "remote-project",
+        projectRef,
+        opened!.draftId,
+        expect.objectContaining({ runtimeMode }),
+      );
+    },
+  );
+
   it("abandons a delayed draft open when the user navigates elsewhere", async () => {
     testState.reset(draft);
     const openThread = useNewThreadHandler();

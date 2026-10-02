@@ -125,6 +125,10 @@ function makeSnapshotQueryLayer(input: {
     getImportedAgentSessionSources: () => Effect.die("unused"),
     getThreadRuntimeContext: () => Effect.die("unused"),
     getTurnStartMessage: () => Effect.die("unused"),
+    listActivitiesByKind: () => Effect.die("unused"),
+    getDeletedWorktreeThreads: () => Effect.die("unused"),
+    getProjectShells: () => Effect.die("unused"),
+    listThreadsWithPullRequests: () => Effect.die("unused"),
   });
 }
 

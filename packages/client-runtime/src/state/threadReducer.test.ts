@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   CheckpointRef,
   CommandId,
+  ComposerContextId,
   EventId,
   MessageId,
   ProjectId,
@@ -285,6 +286,46 @@ describe("applyThreadDetailEvent", () => {
       expect(result.kind).toBe("updated");
       if (result.kind === "updated") {
         expect(result.thread.pinnedAt).toBeNull();
+      }
+    });
+  });
+
+  describe("thread.auto-settle-set", () => {
+    it("stores and clears autoSettleDisabledAt", () => {
+      const disabledAt = "2026-04-01T05:00:00.000Z";
+      const off = applyThreadDetailEvent(baseThread, {
+        ...baseEventFields,
+        sequence: 7,
+        occurredAt: disabledAt,
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.auto-settle-set",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          autoSettleDisabledAt: disabledAt,
+          updatedAt: disabledAt,
+        },
+      });
+      expect(off.kind).toBe("updated");
+      if (off.kind !== "updated") return;
+      expect(off.thread.autoSettleDisabledAt).toBe(disabledAt);
+
+      const on = applyThreadDetailEvent(off.thread, {
+        ...baseEventFields,
+        sequence: 8,
+        occurredAt: "2026-04-01T06:00:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.auto-settle-set",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          autoSettleDisabledAt: null,
+          updatedAt: "2026-04-01T06:00:00.000Z",
+        },
+      });
+      expect(on.kind).toBe("updated");
+      if (on.kind === "updated") {
+        expect(on.thread.autoSettleDisabledAt).toBeNull();
       }
     });
   });
@@ -633,6 +674,48 @@ describe("applyThreadDetailEvent", () => {
       expect(repeated.thread.messages).toEqual(imported.thread.messages);
       expect(repeated.thread.latestTurn).toBeNull();
       expect(repeated.thread.checkpoints).toBe(baseThread.checkpoints);
+    });
+
+    it("keeps structured context on a newly sent message", () => {
+      const context = {
+        version: 1 as const,
+        records: [
+          {
+            version: 1 as const,
+            contextId: ComposerContextId.make("video-1"),
+            kind: "file" as const,
+            label: "demo.mp4",
+            attachmentId: "attachment-video-1",
+            name: "demo.mp4",
+            mimeType: "video/mp4",
+            sizeBytes: 42,
+          },
+        ],
+      };
+      const result = applyThreadDetailEvent(baseThread, {
+        ...baseEventFields,
+        sequence: 7,
+        occurredAt: "2026-04-01T06:01:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: MessageId.make("msg-with-context"),
+          role: "user",
+          text: "Watch [demo.mp4](t3-context://v1/file/video-1).",
+          context,
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-01T06:01:00.000Z",
+          updatedAt: "2026-04-01T06:01:00.000Z",
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages[0]?.context).toEqual(context);
+      }
     });
 
     it("appends text for streaming messages", () => {
@@ -1433,6 +1516,86 @@ describe("applyThreadDetailEvent", () => {
   });
 
   describe("thread.reverted", () => {
+    it("keeps work from message-less turns recorded before the rewind boundary", () => {
+      const activity = (id: string, turnId: string, createdAt: string) => ({
+        id: EventId.make(id),
+        tone: "tool" as const,
+        kind: "tool.completed",
+        summary: id,
+        payload: {},
+        turnId: TurnId.make(turnId),
+        createdAt,
+      });
+      const result = applyThreadDetailEvent(
+        {
+          ...baseThread,
+          activities: [
+            activity("background-before", "provider-turn", "2026-04-01T01:30:00.000Z"),
+            activity("rewound-after", "rewound-turn", "2026-04-01T02:30:00.000Z"),
+          ],
+        },
+        {
+          ...baseEventFields,
+          sequence: 14,
+          occurredAt: "2026-04-01T03:00:00.000Z",
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-1"),
+          type: "thread.reverted",
+          payload: {
+            threadId: ThreadId.make("thread-1"),
+            turnCount: 0,
+            conversationBoundary: {
+              messageId: MessageId.make("boundary"),
+              beforeCreatedAt: "2026-04-01T02:00:00.000Z",
+              retainedMessageIds: [],
+              retainedTurnIds: [],
+            },
+          },
+        },
+      );
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.activities.map((row) => row.id)).toEqual(["background-before"]);
+      }
+    });
+
+    it("retains explicit earlier messages without file checkpoints", () => {
+      const messages = ["older", "failed", "retry"].map((id) => ({
+        id: MessageId.make(id),
+        role: "user" as const,
+        text: id,
+        turnId: null,
+        streaming: false,
+        createdAt: "2026-04-01T01:00:00.000Z",
+        updatedAt: "2026-04-01T01:00:00.000Z",
+      }));
+      const result = applyThreadDetailEvent(
+        { ...baseThread, messages, checkpoints: [] },
+        {
+          ...baseEventFields,
+          sequence: 14,
+          occurredAt: "2026-04-01T02:00:00.000Z",
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-1"),
+          type: "thread.reverted",
+          payload: {
+            threadId: ThreadId.make("thread-1"),
+            turnCount: 0,
+            conversationBoundary: {
+              messageId: MessageId.make("failed"),
+              beforeCreatedAt: "2026-04-01T01:00:00.000Z",
+              retainedMessageIds: [MessageId.make("older")],
+              retainedTurnIds: [],
+            },
+          },
+        },
+      );
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages.map((row) => row.id)).toEqual(["older"]);
+        expect(result.thread.latestTurn).toBeNull();
+      }
+    });
     it("keeps imported history and removes the first live prompt at checkpoint zero", () => {
       const threadWithImportedHistory: OrchestrationThread = {
         ...baseThread,

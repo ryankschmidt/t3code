@@ -34,6 +34,8 @@
  *           Migrations run automatically for fresh profiles.
  */
 import { parseArgs } from "node:util";
+import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
+import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { OrchestrationCommand } from "@t3tools/contracts";
@@ -366,8 +368,11 @@ const makeConfig = Effect.fn(function* (baseDir: string, profile: "dev" | "deskt
     traceMaxFiles: 2,
     otlpTracesUrl: undefined,
     otlpMetricsUrl: undefined,
-    otlpExportIntervalMs: 60_000,
-    otlpServiceName: "t3-import-claude-sessions",
+    otlpLogsUrl: undefined,
+    otlpTracesExport: DEFAULT_SIGNAL_EXPORT,
+    otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
+    otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
+    otelEnvironment: OtelEnvironment.none,
     mode: "web",
     port: 0,
     host: undefined,

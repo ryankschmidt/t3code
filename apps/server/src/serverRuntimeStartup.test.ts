@@ -164,34 +164,36 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getUserInputActivity: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.succeed([]),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
+        getDeletedWorktreeThreads: () => Effect.die("unused"),
+        listThreadsWithPullRequests: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
         getEventReplayStats: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () =>
-          Effect.succeed(
-            Option.some({
-              id: bootstrapProjectId,
-              title: "Startup Project",
-              workspaceRoot: "/tmp/startup-project",
-              defaultModelSelection: {
-                instanceId: ProviderInstanceId.make("codex"),
-                model: DEFAULT_MODEL,
-              },
-              scripts: [],
-              createdAt: "2026-01-01T00:00:00.000Z",
-              updatedAt: "2026-01-01T00:00:00.000Z",
-              deletedAt: null,
-            }),
-          ),
+          Effect.succeedSome({
+            id: bootstrapProjectId,
+            title: "Startup Project",
+            workspaceRoot: "/tmp/startup-project",
+            defaultModelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: DEFAULT_MODEL,
+            },
+            scripts: [],
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            deletedAt: null,
+          }),
+        getProjectShells: () => Effect.die("unused"),
         getProjectShellById: () => Effect.die("unused"),
-        getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.some(bootstrapThreadId)),
+        getFirstActiveThreadIdByProjectId: () => Effect.succeedSome(bootstrapThreadId),
         getImportedAgentSessionSources: () => Effect.die("unused"),
-        getThreadCheckpointContext: () => Effect.succeed(Option.none()),
-        getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+        getThreadCheckpointContext: () => Effect.succeedNone,
+        getFullThreadDiffContext: () => Effect.succeedNone,
         getThreadRuntimeContext: () => Effect.die("unused"),
         getTurnStartMessage: () => Effect.die("unused"),
         getThreadShellById: () => Effect.die("unused"),
@@ -225,12 +227,37 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
 });
 
 it.effect.each([
-  { existing: false, machineModel: null, projectModel: null },
-  { existing: false, machineModel: "claude-sonnet-4-6", projectModel: null },
-  { existing: true, machineModel: "claude-sonnet-4-6", projectModel: null },
-  { existing: true, machineModel: "claude-sonnet-4-6", projectModel: "gpt-5.4" },
-])("auto-bootstrap model precedence: %j", ({ existing, machineModel, projectModel }) =>
+  {
+    existing: false,
+    machineModel: null,
+    projectModel: null,
+    machineMode: "full-access",
+    projectMode: null,
+  },
+  {
+    existing: false,
+    machineModel: "claude-sonnet-4-6",
+    projectModel: null,
+    machineMode: "approval-required",
+    projectMode: null,
+  },
+  {
+    existing: true,
+    machineModel: "claude-sonnet-4-6",
+    projectModel: null,
+    machineMode: "auto",
+    projectMode: null,
+  },
+  {
+    existing: true,
+    machineModel: "claude-sonnet-4-6",
+    projectModel: "gpt-5.4",
+    machineMode: "full-access",
+    projectMode: "auto-accept-edits",
+  },
+] as const)("auto-bootstrap model and permissions precedence: %j", (options) =>
   Effect.gen(function* () {
+    const { existing, machineModel, projectModel, machineMode, projectMode } = options;
     const machineSelection = machineModel
       ? { instanceId: ProviderInstanceId.make("claude-code"), model: machineModel }
       : null;
@@ -242,16 +269,21 @@ it.effect.each([
         readonly type: string;
         readonly defaultModelSelection?: unknown;
         readonly modelSelection?: unknown;
+        readonly runtimeMode?: unknown;
       }>
     >([]);
     const targets = yield* ServerRuntimeStartup.resolveAutoBootstrapWelcomeTargets.pipe(
       Effect.provide(
         ServerSettings.layerTest({
           defaultModelSelection: machineSelection,
+          defaultRuntimeMode: machineMode,
           projectSettingsOverrides:
             existing && projectSelection
               ? {
-                  [ProjectId.make("existing-project")]: { defaultModelSelection: projectSelection },
+                  [ProjectId.make("existing-project")]: {
+                    defaultModelSelection: projectSelection,
+                    ...(projectMode ? { defaultRuntimeMode: projectMode } : {}),
+                  },
                 }
               : {},
         }),
@@ -262,9 +294,12 @@ it.effect.each([
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getUserInputActivity: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.succeed([]),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
+        getDeletedWorktreeThreads: () => Effect.die("unused"),
+        listThreadsWithPullRequests: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
@@ -284,11 +319,12 @@ it.effect.each([
                 })
               : Option.none(),
           ),
+        getProjectShells: () => Effect.die("unused"),
         getProjectShellById: () => Effect.die("unused"),
-        getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+        getFirstActiveThreadIdByProjectId: () => Effect.succeedNone,
         getImportedAgentSessionSources: () => Effect.die("unused"),
-        getThreadCheckpointContext: () => Effect.succeed(Option.none()),
-        getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+        getThreadCheckpointContext: () => Effect.succeedNone,
+        getFullThreadDiffContext: () => Effect.succeedNone,
         getThreadRuntimeContext: () => Effect.die("unused"),
         getTurnStartMessage: () => Effect.die("unused"),
         getThreadShellById: () => Effect.die("unused"),
@@ -321,6 +357,7 @@ it.effect.each([
       existing ? ["thread.create"] : ["project.create", "thread.create"],
     );
     if (!existing) assert.equal("defaultModelSelection" in commands[0]!, false);
+    assert.equal(commands.at(-1)?.runtimeMode, projectMode ?? machineMode);
     assert.deepStrictEqual(
       commands.at(-1)?.modelSelection,
       projectSelection ??
@@ -345,19 +382,23 @@ it.effect(
         } as never),
         Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
           getUserInputActivity: () => Effect.die("unused"),
+          listActivitiesByKind: () => Effect.succeed([]),
           getCommandReadModel: () => Effect.die("unused"),
           getSnapshot: () => Effect.die("unused"),
           getShellSnapshot: () => Effect.die("unused"),
+          getDeletedWorktreeThreads: () => Effect.die("unused"),
+          listThreadsWithPullRequests: () => Effect.die("unused"),
           getArchivedShellSnapshot: () => Effect.die("unused"),
           getSnapshotSequence: () => Effect.die("unused"),
           getCounts: () => Effect.die("unused"),
           getEventReplayStats: () => Effect.die("unused"),
-          getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+          getActiveProjectByWorkspaceRoot: () => Effect.succeedNone,
+          getProjectShells: () => Effect.die("unused"),
           getProjectShellById: () => Effect.die("unused"),
           getFirstActiveThreadIdByProjectId: () => Effect.die("thread lookup failed"),
           getImportedAgentSessionSources: () => Effect.die("unused"),
-          getThreadCheckpointContext: () => Effect.succeed(Option.none()),
-          getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+          getThreadCheckpointContext: () => Effect.succeedNone,
+          getFullThreadDiffContext: () => Effect.succeedNone,
           getThreadRuntimeContext: () => Effect.die("unused"),
           getTurnStartMessage: () => Effect.die("unused"),
           getThreadShellById: () => Effect.die("unused"),
@@ -407,19 +448,23 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getUserInputActivity: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.succeed([]),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
+        getDeletedWorktreeThreads: () => Effect.die("unused"),
+        listThreadsWithPullRequests: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
         getEventReplayStats: () => Effect.die("unused"),
-        getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+        getActiveProjectByWorkspaceRoot: () => Effect.succeedNone,
+        getProjectShells: () => Effect.die("unused"),
         getProjectShellById: () => Effect.die("unused"),
-        getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+        getFirstActiveThreadIdByProjectId: () => Effect.succeedNone,
         getImportedAgentSessionSources: () => Effect.die("unused"),
-        getThreadCheckpointContext: () => Effect.succeed(Option.none()),
-        getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+        getThreadCheckpointContext: () => Effect.succeedNone,
+        getFullThreadDiffContext: () => Effect.succeedNone,
         getThreadRuntimeContext: () => Effect.die("unused"),
         getTurnStartMessage: () => Effect.die("unused"),
         getThreadShellById: () => Effect.die("unused"),

@@ -34,37 +34,12 @@ refuse() { echo "REFUSED: $*"; exit 2; }
 
 # Check-only is parsed and returned BEFORE the install/detach parser. It cannot launch,
 # quit or replace an app, even when an install-mode flag is accidentally supplied.
-answer_local_network_prompt() {
-  osascript <<'APPLESCRIPT'
-with timeout of 2 seconds
-  tell application "System Events"
-    if not (exists application process "UserNotificationCenter") then return "NO_PROMPT"
-    tell application process "UserNotificationCenter"
-      repeat with w in windows
-        set promptText to ""
-        set itemsOnScreen to entire contents of w
-        repeat with e in itemsOnScreen
-          try
-            if class of e is static text then set promptText to promptText & " " & (value of e as text)
-          end try
-        end repeat
-        if promptText contains "ThroughLine" and promptText contains "find devices on local networks" then
-          repeat with e in itemsOnScreen
-            try
-              if class of e is button and name of e is "Allow" then
-                click e
-                return "ALLOW_CLICKED"
-              end if
-            end try
-          end repeat
-          return "PERMISSION_REFUSAL: matching local-network prompt has no accessible Allow button"
-        end if
-      end repeat
-    end tell
-  end tell
-end timeout
-return "NO_PROMPT"
-APPLESCRIPT
+# Both checks below read the CoreGraphics window list. That needs no Accessibility grant, presses nothing and never
+# brings an app forward. The earlier System Events versions made macOS ask Ryan to grant Accessibility to `sh` on
+# Sep 25, 2026, and the window check also stole focus. Clearing a prompt is the ship pipeline's permission-prompts step.
+system_prompt_open() {
+  # Prints the owners of any permission prompt on screen, or NO_PROMPT.
+  osascript -l JavaScript -e "ObjC.import('CoreGraphics');const o=[...new Set(ObjC.deepUnwrap(ObjC.castRefToObject(\$.CGWindowListCopyWindowInfo(1,0))).filter(w=>['UserNotificationCenter','universalAccessAuthWarn','CoreServicesUIAgent','SecurityAgent'].includes(w.kCGWindowOwnerName)&&w.kCGWindowAlpha>=0.1).map(w=>w.kCGWindowOwnerName))];o.length?'PROMPT_OPEN: '+o.join(', '):'NO_PROMPT'"
 }
 
 candidate_owns_port() {
@@ -79,26 +54,16 @@ candidate_owns_port() {
 }
 
 candidate_window_count() {
-  # System Events only: focusing an existing process cannot launch a closed app.
-  osascript - "$APP" <<'APPLESCRIPT'
-on run argv
-  set appPath to item 1 of argv
-  with timeout of 2 seconds
-    tell application "System Events"
-      repeat with p in application processes
-        try
-          set processPath to POSIX path of (application file of p as alias)
-          if processPath is appPath or processPath is (appPath & "/") then
-            set frontmost of p to true
-            return count of windows of p
-          end if
-        end try
-      end repeat
-    end tell
-  end timeout
-  return 0
-end run
-APPLESCRIPT
+  # Layer-0 windows of at least 200x200 owned by a process running from the candidate bundle.
+  # -a keeps ancestors in the match: a check run from inside ThroughLine must still see ThroughLine.
+  pids=$(pgrep -a -f "$APP/Contents/MacOS/" 2>/dev/null | tr '\n' ' ')
+  [ -n "$pids" ] || { echo 0; return 0; }
+  # shellcheck disable=SC2086
+  osascript -l JavaScript - $pids <<'JXA'
+ObjC.import('CoreGraphics');
+function run(argv){const pids=argv.map(Number);
+return ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(0,0))).filter(w=>pids.includes(w.kCGWindowOwnerPID)&&w.kCGWindowLayer===0&&w.kCGWindowBounds.Width>=200&&w.kCGWindowBounds.Height>=200).length;}
+JXA
 }
 
 post_install_checks() {
@@ -109,15 +74,11 @@ post_install_checks() {
   deadline=$(($(date +%s)+90))
   permission_error_seen=0
   while [ "$L_POST" = PASS ] && [ "$(date +%s)" -lt "$deadline" ]; do
-    permission_result=$(answer_local_network_prompt 2>&1)
-    permission_status=$?
-    case "$permission_result" in
-      ALLOW_CLICKED) echo "  $(date -u '+%Y-%m-%dT%H:%M:%SZ') local-network permission ALLOW_CLICKED" ;;
-      PERMISSION_REFUSAL:*) [ "$permission_error_seen" = 1 ] || echo "  $permission_result"; permission_error_seen=1 ;;
-      *) if [ "$permission_status" != 0 ] && [ "$permission_error_seen" = 0 ]; then
-           echo "  permission automation refusal: $permission_result"; permission_error_seen=1
-         fi ;;
-    esac
+    prompt_state=$(system_prompt_open 2>/dev/null)
+    if [ "$permission_error_seen" = 0 ] && [ "${prompt_state#PROMPT_OPEN}" != "$prompt_state" ]; then
+      echo "  $(date -u '+%Y-%m-%dT%H:%M:%SZ') $prompt_state; left for the ship's permission-prompts step, not pressed here"
+      permission_error_seen=1
+    fi
     if candidate_owns_port; then
       response=$(curl -s --connect-timeout 1 --max-time 1 -w '\n%{http_code}' "http://127.0.0.1:$POST_PORT/.well-known/t3/environment")
       curl_status=$?
@@ -142,7 +103,7 @@ post_install_checks() {
       sleep 1
     done
   fi
-  echo "  [9] window        $L_WINDOW   (existing candidate process only; accessibility can hide Electron windows; diagnostic, NOT a verdict input)"
+  echo "  [9] window        $L_WINDOW   (CoreGraphics window list of the candidate process; no Accessibility grant; diagnostic, NOT a verdict input)"
   echo "--------------------------------------------------------------"
   if [ "$L_POST" = PASS ] && [ "$L_READY" = PASS ]; then
     echo " POST-INSTALL VERDICT: PASS"

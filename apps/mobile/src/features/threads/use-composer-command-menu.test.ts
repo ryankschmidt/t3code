@@ -1,9 +1,16 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { ProviderDriverKind } from "@t3tools/contracts";
+vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
 
 vi.mock("../../state/queries", () => ({
   useComposerPathSearch: () => ({ entries: [], isPending: false }),
+  useComposerPullRequestSearch: () => ({ entries: [], isPending: false, error: null }),
 }));
+vi.mock("../../state/use-composer-drafts", () => ({
+  getComposerDraftSnapshot: vi.fn(),
+  setComposerDraftContext: vi.fn(),
+}));
+vi.mock("../../lib/uuid", () => ({ uuidv4: () => "context-id" }));
 vi.mock("../../state/server", () => ({
   serverEnvironment: { refreshProviders: Symbol("refreshProviders") },
 }));
@@ -17,6 +24,18 @@ import {
 } from "./use-composer-command-menu";
 
 describe("mobile slash commands", () => {
+  it("offers Claude client menus once, only in an existing thread", () => {
+    const input = {
+      query: "rew",
+      atMessageStart: true,
+      hasThread: true,
+      allowInteractionMode: true,
+      selectedProviderStatus: { driver: ProviderDriverKind.make("claudeAgent"), slashCommands: [] },
+    };
+    expect(buildComposerSlashCommandItems(input).map((item) => item.label)).toEqual(["/rewind"]);
+    expect(buildComposerSlashCommandItems({ ...input, hasThread: false })).toEqual([]);
+    expect(buildComposerSlashCommandItems({ ...input, atMessageStart: false })).toEqual([]);
+  });
   const antigravity = {
     driver: ProviderDriverKind.make("antigravity"),
     showInteractionModeToggle: false,

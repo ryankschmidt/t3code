@@ -1,5 +1,7 @@
 export * from "./baseSchemas.ts";
 export * from "./assistantCitations.ts";
+export * from "./composerContext.ts";
+export * from "./composerContextClipboard.ts";
 export * from "./background.ts";
 export * from "./auth.ts";
 export * from "./environment.ts";
@@ -17,12 +19,14 @@ export * from "./providerRuntime.ts";
 export * from "./providerUsageLimits.ts";
 export * from "./usageLimitSourceId.ts";
 export * from "./model.ts";
+export * from "./modelOffering.ts";
 export * from "./keybindings.ts";
 export * from "./server.ts";
 export * from "./settings.ts";
 export * from "./git.ts";
 export * from "./vcs.ts";
 export * from "./sourceControl.ts";
+export * from "./projectClone.ts";
 export * from "./pullRequest.ts";
 export * from "./orchestration.ts";
 // ThroughLine: fork-owned contract module. symphony.ts is a fork addition (agent orchestration
@@ -43,3 +47,4 @@ export * from "./previewAutomation.ts";
 export * from "./resourceTelemetry.ts";
 export * from "./usage.ts";
 export * from "./rpc.ts";
+export * from "./worktreeSetup.ts";

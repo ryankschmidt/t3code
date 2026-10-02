@@ -204,9 +204,12 @@ describe("getAppModelOptionsForInstance (pi end-to-end)", () => {
     if (!entry) {
       return [];
     }
-    return getAppModelOptionsForInstance(settingsWithPiConfig(config), entry).map(
-      (option) => option.slug,
-    );
+    return getAppModelOptionsForInstance(
+      settingsWithPiConfig(config),
+      entry,
+      undefined,
+      new Set(PI_CATALOG.map((id) => id.split("/").at(-1)!)),
+    ).map((option) => option.slug);
   }
 
   it("applies the default floor + newest-first family sort to the picker list", () => {
@@ -241,9 +244,12 @@ describe("getAppModelOptionsForInstance (pi end-to-end)", () => {
       "anthropic/claude-opus-5",
     ];
     const entry = deriveProviderInstanceEntries([piProvider(models)])[0]!;
-    const choices = getAppModelOptionsForInstance(settingsWithPiConfig(), entry).map(
-      (model) => model.slug,
-    );
+    const choices = getAppModelOptionsForInstance(
+      settingsWithPiConfig(),
+      entry,
+      undefined,
+      new Set(models.map((id) => id.split("/").at(-1)!)),
+    ).map((model) => model.slug);
     expect(choices).toContain("openai-codex/gpt-5.3-codex-spark");
     expect(choices).toContain("openai/gpt-5.3-codex-spark");
     expect(choices).toContain("openai/gpt-5.6-sol");

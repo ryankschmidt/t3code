@@ -2,9 +2,11 @@ import {
   ANTIGRAVITY_DEFAULT_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  buildCatalogueParity,
   defaultInstanceIdForDriver,
-  isAllowedProviderModel,
   isCurrentCodexModel,
+  isOfferedProviderModel,
+  isProductDefaultModel,
   type ModelSelection,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -119,7 +121,7 @@ function appendUnavailableDynamicModelSelection(
   return [...options, { slug, name: slug, isCustom: false, isUnavailable: true }];
 }
 
-function toAppModelOption(model: ServerProvider["models"][number]): AppModelOption {
+function toAppModelOption(model: ServerProvider["models"][number], driver: string): AppModelOption {
   const option: AppModelOption = {
     slug: model.slug,
     name: model.name,
@@ -129,7 +131,9 @@ function toAppModelOption(model: ServerProvider["models"][number]): AppModelOpti
   if (model.subProvider) option.subProvider = model.subProvider;
   if (model.aliases) option.aliases = model.aliases;
   if (model.badge) option.badge = model.badge;
-  if (model.isDefault) option.isDefault = true;
+  // The product's declared default wins over the provider's self-reported one:
+  // the Claude CLI reports Fable, and Fable is never a default here.
+  if (isProductDefaultModel(model.slug, driver, model.isDefault === true)) option.isDefault = true;
   if (model.isLegacy && !isCurrentCodexModel(model.slug.split("/").at(-1) ?? model.slug))
     option.isLegacy = true;
   return option;
@@ -156,6 +160,11 @@ function applyInstanceModelPreferences(
   ordering?: {
     readonly driverKind: ProviderDriverKind;
     readonly floor: ModelFloorConfig | undefined;
+    /**
+     * ThroughLine: catalogue parity. Models the Claude and Codex providers
+     * actually report, which is the whole offer for a mirror driver.
+     */
+    readonly parity?: ReadonlySet<string> | undefined;
   },
 ): AppModelOption[] {
   const hiddenModels = new Set(preferences.hiddenModels);
@@ -167,7 +176,10 @@ function applyInstanceModelPreferences(
   return sortModelsForProviderInstance(
     familyOrdered.filter(
       (option) =>
-        isAllowedProviderModel(option.slug, ordering?.driverKind ?? "") &&
+        isOfferedProviderModel(option.slug, ordering?.driverKind ?? "", {
+          parity: ordering?.parity,
+          isCustom: option.isCustom,
+        }) &&
         (option.isCustom || !hiddenModels.has(option.slug)),
     ),
     { modelOrder: preferences.modelOrder },
@@ -200,6 +212,30 @@ function normalizeCustomModelEntries(
   return normalizedModels;
 }
 
+/**
+ * ThroughLine: one catalogue across providers.
+ *
+ * The parity set the mirror drivers are filtered against, derived from the
+ * live snapshots the Claude and Codex providers report. Nothing here is a
+ * written list: a model appears here because its own provider reported it.
+ */
+export function buildProviderCatalogueParity(
+  providers: ReadonlyArray<ServerProvider>,
+): ReadonlySet<string> {
+  return buildCatalogueParity(
+    providers.map((provider) => ({ driver: provider.driver, models: provider.models })),
+  );
+}
+
+/** Instance-entry form of {@link buildProviderCatalogueParity}. */
+export function buildInstanceCatalogueParity(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+): ReadonlySet<string> {
+  return buildCatalogueParity(
+    entries.map((entry) => ({ driver: entry.driverKind, models: entry.models })),
+  );
+}
+
 function getAppModelOptions(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
@@ -212,7 +248,7 @@ function getAppModelOptions(
   // settings below.
   const options: AppModelOption[] = rawModels
     .filter((model) => !model.isCustom)
-    .map(toAppModelOption);
+    .map((model) => toAppModelOption(model, provider));
   const seen = new Set(options.map((option) => option.slug));
   const builtInModelSlugs = new Set(
     Arr.filterMap(getProviderModels(providers, provider), (model) =>
@@ -243,6 +279,7 @@ function getAppModelOptions(
         provider,
         settings.providerInstances?.[defaultInstanceId]?.config,
       ),
+      parity: buildProviderCatalogueParity(providers),
     }),
     rawModels,
     provider,
@@ -268,10 +305,17 @@ export function getAppModelOptionsForInstance(
   settings: UnifiedSettings,
   entry: ProviderInstanceEntry,
   selectedModel?: string | null,
+  /**
+   * ThroughLine: catalogue parity across the instance list. Omitting it means
+   * the caller cannot say what the source providers offer, and a mirror driver
+   * then offers NOTHING rather than falling back to its own catalogue — an
+   * empty list that fills in, never a full list that shrinks.
+   */
+  parity?: ReadonlySet<string>,
 ): AppModelOption[] {
   const options: AppModelOption[] = entry.models
     .filter((model) => !model.isCustom)
-    .map(toAppModelOption);
+    .map((model) => toAppModelOption(model, entry.driverKind));
   const seen = new Set(options.map((option) => option.slug));
   const builtInModelSlugs = new Set(
     Arr.filterMap(entry.models, (model) =>
@@ -297,6 +341,7 @@ export function getAppModelOptionsForInstance(
         entry.driverKind,
         settings.providerInstances?.[entry.instanceId]?.config,
       ),
+      parity,
     }),
     entry.models,
     entry.driverKind,
@@ -369,13 +414,16 @@ export function getCustomModelOptionsByInstance(
   selectedModel?: string | null,
 ): ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>> {
   const out = new Map<ProviderInstanceId, ReadonlyArray<ModelEsque>>();
-  for (const entry of deriveProviderInstanceEntries(providers)) {
+  const entries = deriveProviderInstanceEntries(providers);
+  const parity = buildInstanceCatalogueParity(entries);
+  for (const entry of entries) {
     out.set(
       entry.instanceId,
       getAppModelOptionsForInstance(
         settings,
         entry,
         entry.instanceId === selectedInstanceId ? selectedModel : null,
+        parity,
       ),
     );
   }

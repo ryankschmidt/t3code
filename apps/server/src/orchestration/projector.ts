@@ -14,6 +14,7 @@ import {
   OrchestrationMessage,
   OrchestrationSession,
   OrchestrationThread,
+  WORKTREE_SETUP_ACTIVITY_KIND,
 } from "@t3tools/contracts";
 import {
   legacyLinkedPullRequestOf,
@@ -42,6 +43,7 @@ import {
   ThreadSettledPayload,
   ThreadPinnedPayload,
   ThreadPinReorderedPayload,
+  ThreadAutoSettleSetPayload,
   ThreadPullRequestLinkedPayload,
   ThreadPullRequestSyncedPayload,
   ThreadPullRequestUnlinkedPayload,
@@ -77,7 +79,13 @@ function retainThreadActivities(activities: OrchestrationThread["activities"]) {
   }
   const pendingActivities = new Set(pending.values());
   return activities.filter(
-    (activity, index) => index >= recentStart || pendingActivities.has(activity),
+    (activity, index) =>
+      index >= recentStart ||
+      pendingActivities.has(activity) ||
+      // The worktree setup record is upserted under one id for the thread's
+      // whole life and is the only durable copy of a running setup; an async
+      // setup script can outlast a chatty first turn.
+      activity.kind === WORKTREE_SETUP_ACTIVITY_KIND,
   );
 }
 
@@ -110,12 +118,26 @@ function settledTurnStateForSessionStatus(
   }
 }
 
+// Runs for every thread event (including streaming deltas) against every
+// thread the server has ever seen, so copy the array rather than map it.
 function updateThread(
   threads: ReadonlyArray<OrchestrationThread>,
   threadId: ThreadId,
   patch: ThreadPatch,
-): OrchestrationThread[] {
-  return threads.map((thread) => (thread.id === threadId ? { ...thread, ...patch } : thread));
+): ReadonlyArray<OrchestrationThread> {
+  const index = threads.findIndex((thread) => thread.id === threadId);
+  return index === -1 ? threads : patchThreadAt(threads, index, patch);
+}
+
+/** For callers that already located the thread and must not scan again. */
+function patchThreadAt(
+  threads: ReadonlyArray<OrchestrationThread>,
+  index: number,
+  patch: ThreadPatch,
+): ReadonlyArray<OrchestrationThread> {
+  const next = threads.slice();
+  next[index] = { ...threads[index]!, ...patch };
+  return next;
 }
 
 /** Patch that swaps a thread's links and re-derives the legacy single-PR field from them. */
@@ -434,6 +456,7 @@ export function projectEvent(
             settledAt: null,
             unsettledAt: null,
             activeOrderKey: null,
+            autoSettleDisabledAt: null,
             snoozedUntil: null,
             snoozedAt: null,
             deletedAt: null,
@@ -574,6 +597,17 @@ export function projectEvent(
         })),
       );
 
+    case "thread.auto-settle-set":
+      return decodeForEvent(ThreadAutoSettleSetPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            autoSettleDisabledAt: payload.autoSettleDisabledAt,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
     case "thread.pin-reordered":
       return decodeForEvent(ThreadPinReorderedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => ({
@@ -608,6 +642,7 @@ export function projectEvent(
             ...nextBase,
             threads: updateThread(nextBase.threads, payload.threadId, {
               ...(payload.title !== undefined ? { title: payload.title } : {}),
+              ...(payload.titleState !== undefined ? { titleState: payload.titleState } : {}),
               ...(payload.titleRegeneration !== undefined
                 ? { titleRegeneration: payload.titleRegeneration }
                 : {}),
@@ -747,7 +782,8 @@ export function projectEvent(
           event.type,
           "payload",
         );
-        const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+        const threadIndex = nextBase.threads.findIndex((entry) => entry.id === payload.threadId);
+        const thread = nextBase.threads[threadIndex];
         if (!thread) {
           return nextBase;
         }
@@ -759,6 +795,7 @@ export function projectEvent(
             role: payload.role,
             text: payload.text,
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
+            ...(payload.context !== undefined ? { context: payload.context } : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
             createdAt: payload.createdAt,
@@ -785,6 +822,7 @@ export function projectEvent(
                     ...(message.attachments !== undefined
                       ? { attachments: message.attachments }
                       : {}),
+                    ...(message.context !== undefined ? { context: message.context } : {}),
                   }
                 : entry,
             )
@@ -793,7 +831,7 @@ export function projectEvent(
 
         return {
           ...nextBase,
-          threads: updateThread(nextBase.threads, payload.threadId, {
+          threads: patchThreadAt(nextBase.threads, threadIndex, {
             messages: cappedMessages,
             updatedAt: event.occurredAt,
           }),
@@ -982,6 +1020,31 @@ export function projectEvent(
             return nextBase;
           }
 
+          if (payload.conversationBoundary) {
+            const boundary = payload.conversationBoundary;
+            const messages = new Set(boundary.retainedMessageIds);
+            const turns = new Set(boundary.retainedTurnIds);
+            // Provider-started turns carry no message, so anything recorded before
+            // the boundary is kept by time, not only by a retained message's turn.
+            return {
+              ...nextBase,
+              threads: updateThread(nextBase.threads, payload.threadId, {
+                messages: thread.messages.filter((row) => messages.has(row.id)),
+                checkpoints: thread.checkpoints.filter(
+                  (row) => turns.has(row.turnId) || row.completedAt < boundary.beforeCreatedAt,
+                ),
+                proposedPlans: thread.proposedPlans.filter(
+                  (row) => row.createdAt < boundary.beforeCreatedAt,
+                ),
+                activities: thread.activities.filter(
+                  (row) => row.createdAt < boundary.beforeCreatedAt,
+                ),
+                latestTurn: null,
+                updatedAt: event.occurredAt,
+              }),
+            };
+          }
+
           const checkpoints = thread.checkpoints
             .filter((entry) => entry.checkpointTurnCount <= payload.turnCount)
             .toSorted((left, right) => left.checkpointTurnCount - right.checkpointTurnCount)
@@ -1033,7 +1096,8 @@ export function projectEvent(
         "payload",
       ).pipe(
         Effect.map((payload) => {
-          const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+          const threadIndex = nextBase.threads.findIndex((entry) => entry.id === payload.threadId);
+          const thread = nextBase.threads[threadIndex];
           if (!thread) {
             return nextBase;
           }
@@ -1047,7 +1111,7 @@ export function projectEvent(
 
           return {
             ...nextBase,
-            threads: updateThread(nextBase.threads, payload.threadId, {
+            threads: patchThreadAt(nextBase.threads, threadIndex, {
               activities,
               updatedAt: event.occurredAt,
             }),

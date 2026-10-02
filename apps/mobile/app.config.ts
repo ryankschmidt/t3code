@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
@@ -10,6 +12,17 @@ Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+// ThroughLine: build the iOS app without its share and widget extensions.
+//
+// Both extensions hard-code an app group (`group.${iosBundleIdentifier}`). An App Group can
+// only be created and assigned in a browser — App Store Connect's API answers 404 on every
+// /v1/appGroups verb — so until that group exists, a distribution profile carries an EMPTY
+// application-groups entitlement and an extension signed against it silently cannot reach its
+// shared container. Shipping that looks green and breaks on the device.
+//
+// This switch makes the extension-free build an explicit, named choice rather than a lane
+// side effect. Unset, every default below is unchanged.
+const disableIosExtensions = repoEnv.THROUGHLINE_IOS_DISABLE_EXTENSIONS === "1";
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
@@ -20,6 +33,25 @@ const IOS_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/;
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
+
+// ThroughLine: the phone must report the SAME version the desktop and server report.
+//
+// `version` below is the App Store version, and it is not the ThroughLine version. TestFlight
+// orders builds by it: 0.0.47 sorted below the older 1.1.1, so the phone never offered it. The ship
+// tool therefore stamps it as (major+1).(minor+1).patch of the ThroughLine version, so 0.0.48 ships
+// as 1.1.48 and every release sorts above 1.1.1 (checked against App Store Connect before the build;
+// scheme approved Sep 25, 2026). Settings shows the ThroughLine version, read here from the same
+// package the desktop and server are versioned from, so it never reads the App Store number.
+const throughlineVersion = (() => {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../../packages/contracts/package.json", import.meta.url), "utf8"),
+    ) as { version?: string };
+    return pkg.version ?? null;
+  } catch {
+    return null;
+  }
+})();
 // Android layers are rendered by scripts/export-android-icons.ts from the Icon Composer sources.
 // The wordmark sits inside the adaptive safe zone; the variant artwork is a full-bleed background.
 const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
@@ -37,6 +69,32 @@ if (
 if (isIosPersonalTeamBuild && (!personalTeamId || !IOS_TEAM_ID_PATTERN.test(personalTeamId))) {
   throw new Error(
     "T3CODE_IOS_PERSONAL_TEAM_ID must be the 10-character Apple team id when T3CODE_IOS_PERSONAL_TEAM=1.",
+  );
+}
+
+// ThroughLine fork: signing under the fork's own company is a first-class configured path.
+// Upstream offers exactly two lanes — its own pinned team, or the Personal Team lane — so a
+// fork shipping under a paid company team had no lane at all, and the only signable build was
+// an individual one that also drops paid-team capabilities. These values are read from build
+// variables rather than written into this file, so an upstream merge never fights a literal.
+// When they are unset every upstream default below is unchanged.
+const companyBundleIdentifier = repoEnv.THROUGHLINE_IOS_BUNDLE_ID?.trim();
+const companyTeamId = repoEnv.THROUGHLINE_IOS_TEAM_ID?.trim();
+const companyAssociatedDomain = repoEnv.THROUGHLINE_IOS_ASSOCIATED_DOMAIN?.trim();
+
+if (companyBundleIdentifier && !IOS_BUNDLE_IDENTIFIER_PATTERN.test(companyBundleIdentifier)) {
+  throw new Error(
+    "THROUGHLINE_IOS_BUNDLE_ID must be a reverse-DNS identifier such as us.wccert.throughline.",
+  );
+}
+
+if (companyTeamId && !IOS_TEAM_ID_PATTERN.test(companyTeamId)) {
+  throw new Error("THROUGHLINE_IOS_TEAM_ID must be the 10-character Apple team id.");
+}
+
+if (companyBundleIdentifier && isIosPersonalTeamBuild) {
+  throw new Error(
+    "THROUGHLINE_IOS_BUNDLE_ID and T3CODE_IOS_PERSONAL_TEAM=1 are different signing lanes; set only one.",
   );
 }
 
@@ -68,7 +126,15 @@ const PREVIEW_ASSETS = {
 
 const RELEASE_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
+  // ThroughLine: the iOS icon is the ThroughLine mark PNG, not an Icon Composer project.
+  //
+  // The production Icon Composer project at assets/prod/app-icon.icon draws a literal "T3"
+  // glyph, and ios.icon overrides the generic icon, so every build through build 5 put a
+  // black T3 square on Ryan's home screen and on the TestFlight page. Its macOS and Linux
+  // siblings were rebranded to the ThroughLine mark long ago; only iOS was left behind.
+  // The mark is a finished raster with its own background, so feeding it to Icon Composer
+  // as a glyph layer would double the background — the PNG is the right input.
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidAdaptiveForeground,
   androidAdaptiveBackgroundColor: "#000000",
@@ -85,7 +151,7 @@ const VARIANT_CONFIG = {
     appName: "ThroughLine Dev",
     scheme: "t3code-dev",
     iosBundleIdentifier: "com.t3tools.t3code.dev",
-    androidPackage: "com.t3tools.t3code.dev",
+    androidPackage: "us.wccert.throughline.dev",
     relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
@@ -93,7 +159,7 @@ const VARIANT_CONFIG = {
     appName: "ThroughLine Preview",
     scheme: "t3code-preview",
     iosBundleIdentifier: "com.t3tools.t3code.preview",
-    androidPackage: "com.t3tools.t3code.preview",
+    androidPackage: "us.wccert.throughline.preview",
     relyingParty: "clerk.t3.codes",
     assets: PREVIEW_ASSETS,
   },
@@ -101,7 +167,7 @@ const VARIANT_CONFIG = {
     appName: "ThroughLine",
     scheme: "t3code",
     iosBundleIdentifier: "com.t3tools.t3code",
-    androidPackage: "com.t3tools.t3code",
+    androidPackage: "us.wccert.throughline",
     relyingParty: "clerk.t3.codes",
     assets: RELEASE_ASSETS,
   },
@@ -119,9 +185,10 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
-const iosBundleIdentifier = isIosPersonalTeamBuild
-  ? personalTeamBundleIdentifier!
-  : variant.iosBundleIdentifier;
+// ThroughLine fork: company identifier first, then the Personal Team lane, then upstream's own.
+const iosBundleIdentifier =
+  companyBundleIdentifier ??
+  (isIosPersonalTeamBuild ? personalTeamBundleIdentifier! : variant.iosBundleIdentifier);
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -140,6 +207,45 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
     frequentUpdates: true,
     widgets: [
       {
+        name: "SubscriptionUsage",
+        displayName: "Subscription usage",
+        description: "Subscription quotas from your connected T3 Code environments.",
+        configuration: {
+          title: "Subscription usage",
+          description:
+            "Both shows Session and Weekly when available. The Lock Screen shows the tightest selected limit.",
+          parameters: {
+            codexPeriod: {
+              title: "Codex limits",
+              type: "enum",
+              default: "auto",
+              values: [
+                { name: "Both", value: "auto" },
+                { name: "Session", value: "session" },
+                { name: "Weekly", value: "weekly" },
+              ],
+            },
+            claudePeriod: {
+              title: "Claude limits",
+              type: "enum",
+              default: "auto",
+              values: [
+                { name: "Both", value: "auto" },
+                { name: "Session", value: "session" },
+                { name: "Weekly", value: "weekly" },
+              ],
+            },
+          },
+        },
+        supportedFamilies: [
+          "systemSmall",
+          "systemMedium",
+          "systemLarge",
+          "systemExtraLarge",
+          "accessoryRectangular",
+        ],
+      },
+      {
         name: "AgentActivity",
         displayName: "Agent Activity",
         description: "Shows the current state of active T3 Code agents.",
@@ -156,7 +262,7 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       // Personal Teams cannot sign App Groups or extension targets. Keep the
       // reduced-capability local build usable while release builds expose the
       // real system share target.
-      enabled: !isIosPersonalTeamBuild,
+      enabled: !isIosPersonalTeamBuild && !disableIosExtensions,
       extensionBundleIdentifier: `${iosBundleIdentifier}.sharing`,
       appGroupId: `group.${iosBundleIdentifier}`,
       activationRule: {
@@ -184,7 +290,7 @@ const config: ExpoConfig = {
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "1.1.1",
+  version: "1.1.51",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
@@ -203,7 +309,12 @@ const config: ExpoConfig = {
     fallbackToCacheTimeout: 0,
   },
   ios: {
-    icon: "./assets/throughline-icon.icon",
+    // ThroughLine fork: read the Icon Composer project the variant already names, which is
+    // tracked in the repository. This line used to point at ./assets/throughline-icon.icon,
+    // a path nothing in the repository creates and nothing else references — it existed only
+    // as an untracked leftover in one checkout. Any other checkout handed Apple's asset tool
+    // a missing input, which it reports as a crash rather than a missing file.
+    icon: variant.assets.iosIcon,
     supportsTablet: true,
     // Multitasking-capable iPad apps cannot rotate programmatically, so the
     // showcase capture build requires full screen (see infoPlist below).
@@ -215,20 +326,31 @@ const config: ExpoConfig = {
     // ThroughLine fork: a Personal Team build must sign with the operator own team.
     // Upstream pinned this to T3 Tools, which makes the T3CODE_IOS_PERSONAL_TEAM lane
     // unsignable on any other account. Default is unchanged when the flag is off.
-    appleTeamId: isIosPersonalTeamBuild && personalTeamId ? personalTeamId : "ARK85ZXQ4Z",
+    // ThroughLine fork: the company team when one is configured, then the operator's own team
+    // on the Personal Team lane, then upstream's pinned team unchanged.
+    appleTeamId:
+      companyTeamId ?? (isIosPersonalTeamBuild && personalTeamId ? personalTeamId : "ARK85ZXQ4Z"),
     // ThroughLine fork: Associated Domains is a paid-team capability; omit it on a Personal Team build.
     ...(isIosPersonalTeamBuild
       ? {}
       : {
           associatedDomains: [
-            `applinks:${variant.relyingParty}`,
-            `webcredentials:${variant.relyingParty}`,
+            `applinks:${companyAssociatedDomain ?? variant.relyingParty}`,
+            `webcredentials:${companyAssociatedDomain ?? variant.relyingParty}`,
           ],
         }),
     entitlements: {
-      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
+      // ThroughLine fork: derive the keychain group from the identifier the build actually
+      // ships under. Upstream read the variant literal, so a renamed build kept a keychain
+      // group naming the vendor — the group the app's own credential storage uses.
+      "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`],
     },
     infoPlist: {
+      // ThroughLine fork: Live Activities is a paid-team feature and is declared here rather
+      // than as an entitlement — Apple has no Live Activities capability to register. The
+      // widget target already asks for push updates and frequent updates; this key is what
+      // lets the app start one. Off on the Personal Team lane, which cannot sign the widget.
+      ...(isIosPersonalTeamBuild ? {} : { NSSupportsLiveActivities: true }),
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },
@@ -307,7 +429,7 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "expo-sqlite",
-    ...(isIosPersonalTeamBuild
+    ...(isIosPersonalTeamBuild || disableIosExtensions
       ? [sharingPlugin]
       : ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]),
     [
@@ -402,10 +524,14 @@ const config: ExpoConfig = {
     // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
     // would delete the asset catalog) and its xcodeproj mod creates the widget
     // target (which must exist before the compile phase can be attached).
-    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
+    ...(!isIosPersonalTeamBuild && !disableIosExtensions
+      ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin]
+      : []),
     "./plugins/withIosSceneLifecycle.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
+    "./plugins/withAndroidReleaseSigning.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
+    "./plugins/withAndroidInputBackground.cjs",
     "./plugins/withAndroidModernPopupMenu.cjs",
     "./plugins/withAndroidModernAlertDialog.cjs",
     "./plugins/withAndroidPredictiveBackCompat.cjs",
@@ -413,6 +539,8 @@ const config: ExpoConfig = {
   ],
   extra: {
     appVariant: APP_VARIANT,
+    // The ThroughLine version of this build — the same number the desktop and server report.
+    throughlineVersion,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
