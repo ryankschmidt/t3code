@@ -91,7 +91,13 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
-import { claudeSignedOutMessage, makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
+import {
+  claudeSignedOutMessage,
+  makeClaudeEnvironment,
+  resolveClaudeHomePath,
+} from "../Drivers/ClaudeHome.ts";
+// ThroughLine: owned helper for rewinding to the first message without leaving the session.
+import { readClaudeParentUuid } from "../../throughline/rewind/claudeTranscriptParent.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
@@ -490,6 +496,9 @@ interface ClaudeSessionContext {
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
   lastKnownTotalProcessedTokens: number | undefined;
   lastAssistantUuid: string | undefined;
+  /** ThroughLine: a same-session rewind not yet committed by a new reply. Keeps the cut point
+   * in the cursor, so a restart before the next prompt resumes at the cut, not the old end. */
+  rewindPending: boolean;
   lastThreadStartedId: string | undefined;
   /**
    * ThroughLine: when this context REPLACED a live session, the session it replaced — still
@@ -2143,6 +2152,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, options?.environment).pipe(
     Effect.provideService(Path.Path, path),
   );
+  // ThroughLine: where this instance's native transcripts live, for the first-message rewind.
+  const claudeHomePath = yield* resolveClaudeHomePath(claudeSettings, claudeEnvironment).pipe(
+    Effect.provideService(Path.Path, path),
+  );
   const claudeSdkExecutablePath = yield* resolveClaudeSdkExecutablePath(
     claudeSettings.binaryPath,
     claudeEnvironment,
@@ -2308,7 +2321,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ...(context.lastAssistantUuid ? { resumeSessionAt: context.lastAssistantUuid } : {}),
       turnCount: context.turnStartMessageIds.length,
       turnStartMessageIds: [...context.turnStartMessageIds],
-      ...(options?.rewind ? { rewind: true } : {}),
+      ...(options?.rewind || context.rewindPending ? { rewind: true } : {}),
     };
 
     context.session = {
@@ -3591,6 +3604,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         }
       }
       context.lastAssistantUuid = message.uuid;
+      context.rewindPending = false;
       yield* updateResumeCursor(context);
       return;
     }
@@ -3708,6 +3722,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     context.lastAssistantUuid = message.uuid;
+    context.rewindPending = false;
     yield* updateResumeCursor(context);
   });
 
@@ -5333,6 +5348,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         lastKnownTokenUsage: undefined,
         lastKnownTotalProcessedTokens: undefined,
         lastAssistantUuid: resumeState?.resumeSessionAt,
+        rewindPending: resumeState?.rewind === true && resumeState.resumeSessionAt !== undefined,
         lastThreadStartedId: undefined,
         announcedUsageLimits: undefined,
         interruptedTurnSettled: undefined,
@@ -5815,9 +5831,26 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       }
       // An exact rewind keeps native history before the message even when no T3
       // turn precedes it, such as imported conversation.
-      const rollbackAt = (exactIndex === undefined ? retainedCount > 0 : firstRemoved > 0)
+      let rollbackAt = (exactIndex === undefined ? retainedCount > 0 : firstRemoved > 0)
         ? messages[firstRemoved - 1]?.uuid
         : undefined;
+      // ThroughLine: the first prompt has no earlier message in Claude's history API, but it
+      // hangs from the session-start hook entries in the transcript. Cutting there keeps the
+      // same native session, as the CLI's /rewind does, instead of starting a new one.
+      if (rollbackAt === undefined && exactIndex === 0) {
+        rollbackAt = yield* readClaudeParentUuid(claudeHomePath, sessionId, messages[0]!.uuid).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        );
+        if (rollbackAt === undefined) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "thread/rollback",
+            detail:
+              "Nothing comes before the first message of this Claude conversation, so a rewind there would leave no conversation. No conversation was changed.",
+          });
+        }
+      }
       if (target && context.turnState) {
         return yield* new ProviderAdapterRequestError({
           provider: PROVIDER,
@@ -5829,40 +5862,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         0,
         Math.max(0, context.turns.length - (target ? boundaries.length - retainedCount : numTurns)),
       );
-      const fork = rollbackAt
-        ? yield* Effect.tryPromise({
-            try: async () => {
-              const forkOptions = {
-                ...(context.session.cwd ? { dir: context.session.cwd } : {}),
-                upToMessageId: rollbackAt,
-              };
-              if (options?.forkSession) return options.forkSession(sessionId, forkOptions);
-              if (claudeEnvironment.CLAUDE_CONFIG_DIR === process.env.CLAUDE_CONFIG_DIR) {
-                return forkSession(sessionId, forkOptions);
-              }
-              return decodeHistoryFork(await runScopedHistoryCommand("forkSession", forkOptions));
-            },
-            catch: (cause) => toRequestError(threadId, "thread/rollback", cause),
-          })
-        : undefined;
+      // ThroughLine: rewind the way the Claude CLI's own /rewind does. Keep the SAME native
+      // session and resume it cut at the entry before the chosen message. A fork copied the
+      // transcript into a new session id and rewrote every message id, so the next rewind could
+      // not find the message the operator picked. Resuming in place keeps every id, and Claude
+      // writes nothing to the transcript until the next prompt is sent.
       const retainedBoundaries = boundaries.slice(0, retainedCount);
-      if (fork) {
-        const forkMessages = yield* readHistory(fork.sessionId);
-        const remappedBoundaries = remapClaudeForkTurnBoundaries(
-          messages,
-          forkMessages,
-          firstRemoved,
-          retainedBoundaries,
-        );
-        if (!remappedBoundaries) {
-          return yield* new ProviderAdapterRequestError({
-            provider: PROVIDER,
-            method: "thread/rollback",
-            detail: "Claude fork history did not preserve the retained turn boundaries.",
-          });
-        }
-        retainedBoundaries.splice(0, retainedBoundaries.length, ...remappedBoundaries);
-      }
       if (target && context.turnState) {
         return yield* new ProviderAdapterRequestError({
           provider: PROVIDER,
@@ -5875,9 +5880,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       yield* startSession({
         ...context.startInput,
         runtimeMode: context.session.runtimeMode,
-        resumeCursor: fork
+        resumeCursor: rollbackAt
           ? {
-              resume: fork.sessionId,
+              resume: sessionId,
+              resumeSessionAt: rollbackAt,
+              rewind: true,
               turnCount: retainedCount,
               turnStartMessageIds: retainedBoundaries,
             }
