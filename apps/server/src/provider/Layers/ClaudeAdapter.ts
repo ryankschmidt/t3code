@@ -9,6 +9,8 @@
  */
 
 import * as NodeUtil from "node:util";
+// ThroughLine: exact native fork ancestry is owned provider identity, not prompt matching.
+import { resolveNative, type ClaudeSessionLineage } from "../../throughline/identity/index.ts";
 import {
   type CanUseTool,
   query,
@@ -526,6 +528,7 @@ export interface ClaudeAdapterLiveOptions {
   }) => ClaudeQueryRuntime;
   readonly getSessionMessages?: typeof getSessionMessages;
   readonly forkSession?: typeof forkSession;
+  readonly readRewindLineage?: (sessionId: string) => Promise<ClaudeSessionLineage | undefined>;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
@@ -5759,10 +5762,39 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         // prompt instead uses its T3 turn UUID as the SDK user-message UUID.
         // Never match text or guess an index from file-checkpoint counts.
         const direct = messages.findIndex((message) => message.uuid === target.beforeMessageId);
-        const exact =
+        const directExact =
           direct >= 0
             ? direct
             : messages.findIndex((message) => message.uuid === target.fallbackTurnId);
+        // ThroughLine: retained displayed identities survive native UUID rewriting.
+        const resolved =
+          directExact >= 0
+            ? undefined
+            : yield* Effect.tryPromise({
+                try: () =>
+                  resolveNative({
+                    currentSessionId: sessionId,
+                    ...(claudeEnvironment.CLAUDE_CONFIG_DIR
+                      ? { providerInstanceConfigDir: claudeEnvironment.CLAUDE_CONFIG_DIR }
+                      : {}),
+                    threadId,
+                    messageId: target.beforeMessageId,
+                    ...(target.fallbackTurnId ? { fallbackTurnId: target.fallbackTurnId } : {}),
+                    effectivePromptIds: messages
+                      .filter(isClaudeHumanTurnStart)
+                      .map((message) => message.uuid),
+                    ...(options?.readRewindLineage
+                      ? { readLineage: options.readRewindLineage }
+                      : {}),
+                  }),
+                catch: (cause) => toRequestError(threadId, "thread/rollback", cause),
+              });
+        const exact =
+          directExact >= 0
+            ? directExact
+            : messages.findIndex(
+                (message) => resolved?.status === "resolved" && message.uuid === resolved.uuid,
+              );
         if (exact < 0 || !isClaudeHumanTurnStart(messages[exact]!)) {
           return yield* new ProviderAdapterRequestError({
             provider: PROVIDER,
