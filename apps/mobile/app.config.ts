@@ -36,12 +36,9 @@ const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 
 // ThroughLine: the phone must report the SAME version the desktop and server report.
 //
-// `version` below is the App Store version, and it is not the ThroughLine version. TestFlight
-// orders builds by it: 0.0.47 sorted below the older 1.1.1, so the phone never offered it. The ship
-// tool therefore stamps it as (major+1).(minor+1).patch of the ThroughLine version, so 0.0.48 ships
-// as 1.1.48 and every release sorts above 1.1.1 (checked against App Store Connect before the build;
-// scheme approved Sep 25, 2026). Settings shows the ThroughLine version, read here from the same
-// package the desktop and server are versioned from, so it never reads the App Store number.
+// `version` below is stamped with the exact ThroughLine release, with no major/minor offset.
+// Settings reads the same release from the contracts package. Older 1.1.x TestFlight builds
+// remain available until Ryan has installed and opened the replacement and voice proof exists.
 const throughlineVersion = (() => {
   try {
     const pkg = JSON.parse(
@@ -290,7 +287,7 @@ const config: ExpoConfig = {
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "1.1.51",
+  version: "0.0.52",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
