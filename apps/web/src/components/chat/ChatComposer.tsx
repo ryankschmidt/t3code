@@ -1,4 +1,7 @@
-import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
+import {
+  DESKTOP_PASTE_AS_TEXT_EVENT,
+  requestDesktopPasteAsTextForChord,
+} from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
@@ -2211,12 +2214,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       pasteAsTextShortcutUntilRef.current = Date.now() + 1_000;
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      const macPlatform = isMacPlatform(navigator.platform);
       if (
         event.target instanceof Node &&
         composerFormRef.current?.contains(event.target) &&
-        isPasteAsTextShortcut(event, isMacPlatform(navigator.platform))
+        isPasteAsTextShortcut(event, macPlatform)
       ) {
         armPasteAsTextShortcut();
+        requestDesktopPasteAsTextForChord(event, macPlatform, window.desktopBridge);
       }
     };
     const onBlur = () => {
