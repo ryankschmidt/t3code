@@ -138,7 +138,7 @@ it.skip("carries each persisted admitted origin through concurrent reactor sends
   const second = MessageId.make("admitted second / non-UUID");
   const observed: Array<{
     before: MessageOrigin | undefined;
-    after?: MessageOrigin;
+    after?: MessageOrigin | undefined;
     inputHasMessageId: boolean;
   }> = [];
   const releases = new Map<string, () => void>();
