@@ -12,8 +12,9 @@
  *     (`openai-native-pi` | `anthropic-meridian-claude-code-sdk`)
  *   - at session/turn start for Anthropic-family models, verify the Meridian
  *     route override is configured (parse models.json server-side) and that
- *     the loopback Meridian endpoint is reachable (cheap GET /health with a
- *     short timeout and one retry for wake-from-idle blips, cached briefly)
+ *     the loopback Meridian endpoint is reachable (GET /health, bounded to
+ *     cover Meridian's own auth check, one retry for wake-from-idle blips,
+ *     cached briefly)
  *   - on any failure, fail the turn with an error that NAMES the seam —
  *     never fall back to Pi native Anthropic OAuth
  *
@@ -49,8 +50,17 @@ export const PI_MODELS_JSON_RELATIVE_PATH = ".pi/agent/models.json";
 // Meridian's FIRST /health answer after an idle stretch takes ~1.6s cold
 // (measured live 2026-07-06: 1.59s then ~1ms warm) — a 750ms timeout failed
 // every first-turn-after-idle and the false result cached across both gates.
-// 4s absorbs the cold start while staying snappy for a turn-start gate.
-const PROBE_TIMEOUT_MS = 4_000;
+// 4s absorbed that cold start, but it is shorter than /health itself can take:
+// Meridian 1.45.0 answers /health only after `claude auth status` runs under
+// its OWN 5s execFile timeout, and it caches a failed check for only 5s.
+// Measured 2026-10-01 on the Mac (load average 95-166): /health answered 200
+// in 5.1-5.7s on every cache miss, so the 4s first attempt timed out in 5 of 5
+// rounds against a healthy Meridian; under load the retry missed too and turns
+// failed with a false "Meridian is down". The budget now covers Meridian's own
+// ceiling plus spawn headroom. A genuinely down Meridian still fails fast:
+// nothing listening on loopback refuses the connection immediately.
+export const MERIDIAN_HEALTH_AUTH_CHECK_CEILING_MS = 5_000;
+export const PROBE_TIMEOUT_MS = 12_000;
 const DEFAULT_PROBE_CACHE_TTL_MS = 5_000;
 // Wake-from-idle can exceed even the 4s timeout on the FIRST attempt
 // (measured live 2026-07-06, events 4634-4636: the guard declared Meridian
@@ -208,38 +218,59 @@ function notConfiguredMessage(model: string, reason: string): string {
   );
 }
 
-function unreachableMessage(model: string, displayTarget: string): string {
+function unreachableMessage(model: string, displayTarget: string, cause?: string): string {
   return (
     `Anthropic route unavailable for '${model}': Meridian is down or unreachable at ` +
-    `${displayTarget}. Anthropic/Claude models route through the Meridian Claude Code ` +
-    `SDK seam — the turn was not sent, and no Pi native Anthropic OAuth fallback was attempted.`
+    `${displayTarget}${cause ? ` (${cause})` : ""}. Anthropic/Claude models route through ` +
+    `the Meridian Claude Code SDK seam — the turn was not sent, and no Pi native ` +
+    `Anthropic OAuth fallback was attempted.`
   );
 }
 
+/** Plain-words cause of one failed health probe, carried into the turn error. */
+function describeProbeFailure(error: unknown): string {
+  const errno = (error as { cause?: NodeJS.ErrnoException })?.cause;
+  if (errno?.code === "ECONNREFUSED") {
+    return "nothing is listening there; the connection was refused";
+  }
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return `its health check did not answer within ${PROBE_TIMEOUT_MS / 1000}s`;
+  }
+  return `its health check failed: ${errno?.code ?? (error instanceof Error ? error.name : String(error))}`;
+}
+
 /**
- * Default reachability probe: one cheap GET against Meridian's stable
- * `/health` route with a short abort timeout. Any transport failure is
- * "unreachable" — the guard fails closed, it never guesses.
+ * Default reachability probe: one GET against Meridian's stable `/health`
+ * route, bounded by PROBE_TIMEOUT_MS. Any transport failure or non-2xx answer
+ * is "unreachable" — the guard fails closed, it never guesses. The cause of
+ * the last failure is kept per URL so the turn error can name it.
  */
-const defaultProbe = (healthUrl: string): Effect.Effect<boolean> =>
-  Effect.tryPromise({
-    try: async () => {
-      // @effect-diagnostics-next-line globalFetchInEffect:off - Deliberately tiny, injectable, timeout-bounded loopback health probe; threading HttpClient through the Pi adapter would widen the driver SPI for no gain.
-      const response = await fetch(healthUrl, {
-        method: "GET",
-        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-      });
-      return response.ok;
-    },
-    catch: (error) => {
-      // Surface WHY the seam probe failed (raw stderr: pre-Effect diagnostics
-      // for a loopback health check; never carries secrets).
-      const errno = (error as { cause?: NodeJS.ErrnoException })?.cause;
-      const detail = errno?.code ?? (error instanceof Error ? error.name : String(error));
-      process.stderr.write(`[pi-meridian-probe] ${healthUrl} probe failed: ${detail}\n`);
-      return false;
-    },
-  }).pipe(Effect.orElseSucceed(() => false));
+const makeDefaultProbe =
+  (lastFailure: Map<string, string>) =>
+  (healthUrl: string): Effect.Effect<boolean> =>
+    Effect.tryPromise({
+      try: async () => {
+        // @effect-diagnostics-next-line globalFetchInEffect:off - Deliberately tiny, injectable, timeout-bounded loopback health probe; threading HttpClient through the Pi adapter would widen the driver SPI for no gain.
+        const response = await fetch(healthUrl, {
+          method: "GET",
+          signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+        });
+        if (response.ok) {
+          lastFailure.delete(healthUrl);
+          return true;
+        }
+        lastFailure.set(healthUrl, `its health check answered HTTP ${response.status}`);
+        return false;
+      },
+      catch: (error) => {
+        // Surface WHY the seam probe failed (raw stderr: pre-Effect diagnostics
+        // for a loopback health check; never carries secrets).
+        const cause = describeProbeFailure(error);
+        lastFailure.set(healthUrl, cause);
+        process.stderr.write(`[pi-meridian-probe] ${healthUrl} probe failed: ${cause}\n`);
+        return false;
+      },
+    }).pipe(Effect.orElseSucceed(() => false));
 
 export interface PiMeridianRouteGuardOptions {
   /** Overrides the models.json path (tests; default `~/.pi/agent/models.json`). */
@@ -271,7 +302,8 @@ export function makePiMeridianRouteGuard(
   options?: PiMeridianRouteGuardOptions,
 ): PiMeridianRouteGuardShape {
   const configPath = options?.configPath ?? defaultPiModelsJsonPath();
-  const probe = options?.probe ?? defaultProbe;
+  const lastProbeFailure = new Map<string, string>();
+  const probe = options?.probe ?? makeDefaultProbe(lastProbeFailure);
   const probeCacheTtlMs = options?.probeCacheTtlMs ?? DEFAULT_PROBE_CACHE_TTL_MS;
   const probeRetryDelayMs = options?.probeRetryDelayMs ?? PROBE_RETRY_DELAY_MS;
   const probeCache = new Map<string, { readonly atMillis: number; readonly ok: boolean }>();
@@ -336,7 +368,11 @@ export function makePiMeridianRouteGuard(
         return yield* new PiMeridianRouteError({
           reason: "unreachable",
           model,
-          detail: unreachableMessage(model, config.target.displayTarget),
+          detail: unreachableMessage(
+            model,
+            config.target.displayTarget,
+            lastProbeFailure.get(config.target.healthUrl),
+          ),
         });
       }
     });

@@ -1,0 +1,21 @@
+{
+  "name": "@t3tools/task-workspaces",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ThroughLine task-scoped Git publication storage; account, UI and provider adapters remain separate.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

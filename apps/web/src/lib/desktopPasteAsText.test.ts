@@ -1,6 +1,29 @@
 import type { DesktopBridge } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { DESKTOP_PASTE_AS_TEXT_EVENT, installDesktopPasteAsText } from "./desktopPasteAsText";
+import {
+  DESKTOP_PASTE_AS_TEXT_EVENT,
+  installDesktopPasteAsText,
+  requestDesktopPasteAsTextForChord,
+} from "./desktopPasteAsText";
+
+describe("paste-as-text chord on a desktop build", () => {
+  it.each([
+    { macPlatform: true, hasBridge: true, requested: true },
+    { macPlatform: false, hasBridge: true, requested: false },
+    { macPlatform: true, hasBridge: false, requested: false },
+  ])("mac $macPlatform, bridge $hasBridge requests a paste: $requested", (input) => {
+    const event = { preventDefault: vi.fn() };
+    const bridge = { pasteAsText: vi.fn(async () => {}) };
+    const requested = requestDesktopPasteAsTextForChord(
+      event,
+      input.macPlatform,
+      input.hasBridge ? bridge : undefined,
+    );
+    expect(requested).toBe(input.requested);
+    expect(event.preventDefault).toHaveBeenCalledTimes(input.requested ? 1 : 0);
+    expect(bridge.pasteAsText).toHaveBeenCalledTimes(input.requested ? 1 : 0);
+  });
+});
 
 describe("desktop paste as text", () => {
   it.each([false, true])("pastes with a mounted composer: %s", (hasComposer) => {

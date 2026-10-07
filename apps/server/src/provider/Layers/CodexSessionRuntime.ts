@@ -187,6 +187,17 @@ export interface CodexSessionRuntimeOptions {
   readonly models?: Effect.Effect<ReadonlyArray<ServerProviderModel>>;
   /** Capabilities the session's `t3-code` MCP credential grants; drives the prompt blocks. */
   readonly mcpCapabilities?: ReadonlySet<string>;
+  /** Trusted server integration only, never decoded from client settings or messages.
+   * Acquisition owns the already-authorized process and its scope cleanup. */
+  readonly supervisedProcess?: {
+    readonly threadId: ThreadId;
+    readonly cwd: string;
+    readonly acquire: Effect.Effect<
+      ChildProcessSpawner.ChildProcessHandle,
+      CodexErrors.CodexAppServerError,
+      Scope.Scope
+    >;
+  };
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -1297,14 +1308,23 @@ export const rollbackCodexThread = Effect.fn("rollbackCodexThread")(function* (
 });
 
 export const makeCodexSessionRuntime = (
-  options: CodexSessionRuntimeOptions,
+  input: CodexSessionRuntimeOptions,
 ): Effect.Effect<
   CodexSessionRuntimeShape,
   CodexErrors.CodexAppServerError,
   ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | Scope.Scope
-> =>
-  Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+> => {
+  const options =
+    "supervisedProcess" in input
+      ? {
+          ...input,
+          supervisedProcess: input.supervisedProcess
+            ? { ...input.supervisedProcess }
+            : input.supervisedProcess,
+          ...(input.resumeCursor ? { resumeCursor: { ...input.resumeCursor } } : {}),
+        }
+      : input;
+  return Effect.gen(function* () {
     const runtimeScope = yield* Scope.Scope;
     const crypto = yield* Crypto.Crypto;
     const events = yield* Queue.unbounded<ProviderEvent>();
@@ -1322,40 +1342,68 @@ export const makeCodexSessionRuntime = (
     const lastAdditionalContextRef =
       yield* Ref.make<CodexTurnStartParamsWithCollaborationMode["additionalContext"]>(undefined);
 
-    // `~` is not shell-expanded when env vars are set via
-    // `child_process.spawn`; `expandHomePath` lets a configured
-    // `CODEX_HOME=~/.codex_work` reach codex as an absolute path.
-    const resolvedHomePath = options.homePath ? expandHomePath(options.homePath) : undefined;
-    const env = {
-      ...options.environment,
-      ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
-    };
-    const extendEnv = options.environment === undefined;
-    const appServerArgs = codexSessionAppServerArgs(options.appServerArgs, options.launchArgs);
-    const spawnCommand = yield* resolveSpawnCommand(options.binaryPath, appServerArgs, {
-      env,
-      extendEnv,
-    });
-    const child = yield* spawner
-      .spawn(
-        ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-          cwd: options.cwd,
-          env,
-          extendEnv,
-          forceKillAfter: CODEX_APP_SERVER_FORCE_KILL_AFTER,
-          shell: spawnCommand.shell,
-        }),
-      )
-      .pipe(
-        Effect.provideService(Scope.Scope, runtimeScope),
-        Effect.mapError(
-          (cause) =>
-            new CodexErrors.CodexAppServerSpawnError({
-              command: `${options.binaryPath} app-server`,
-              cause,
-            }),
-        ),
-      );
+    // A managed selection is exclusive. Even malformed or failed acquisition
+    // must never fall through to a local process under the server's identity.
+    const managed = options.supervisedProcess;
+    if (
+      "supervisedProcess" in options &&
+      (!managed ||
+        managed.threadId !== options.threadId ||
+        managed.cwd !== options.cwd ||
+        !Effect.isEffect(managed.acquire))
+    ) {
+      return yield* new CodexErrors.CodexAppServerSpawnError({
+        command: "SUPERVISED_PROCESS_BINDING_MISMATCH",
+        cause: new Error("SUPERVISED_PROCESS_BINDING_MISMATCH"),
+      });
+    }
+    const acquire: Effect.Effect<
+      ChildProcessSpawner.ChildProcessHandle,
+      CodexErrors.CodexAppServerError,
+      Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+    > = managed
+      ? managed.acquire
+      : Effect.gen(function* () {
+          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          // `~` is not shell-expanded when env vars are set via
+          // `child_process.spawn`; `expandHomePath` lets a configured
+          // `CODEX_HOME=~/.codex_work` reach codex as an absolute path.
+          const resolvedHomePath = options.homePath ? expandHomePath(options.homePath) : undefined;
+          const env = {
+            ...options.environment,
+            ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
+          };
+          const extendEnv = options.environment === undefined;
+          const appServerArgs = codexSessionAppServerArgs(
+            options.appServerArgs,
+            options.launchArgs,
+          );
+          const spawnCommand = yield* resolveSpawnCommand(options.binaryPath, appServerArgs, {
+            env,
+            extendEnv,
+          });
+          return yield* spawner
+            .spawn(
+              ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+                cwd: options.cwd,
+                env,
+                extendEnv,
+                forceKillAfter: CODEX_APP_SERVER_FORCE_KILL_AFTER,
+                shell: spawnCommand.shell,
+              }),
+            )
+            .pipe(
+              Effect.provideService(Scope.Scope, runtimeScope),
+              Effect.mapError(
+                (cause) =>
+                  new CodexErrors.CodexAppServerSpawnError({
+                    command: `${options.binaryPath} app-server`,
+                    cause,
+                  }),
+              ),
+            );
+        });
+    const child = yield* acquire.pipe(Effect.provideService(Scope.Scope, runtimeScope));
 
     const clientContext = yield* CodexClient.layerChildProcess(child).pipe(
       Layer.build,
@@ -2738,3 +2786,4 @@ export const makeCodexSessionRuntime = (
       close,
     } satisfies CodexSessionRuntimeShape;
   });
+};

@@ -181,6 +181,7 @@ import { useTheme } from "../hooks/useTheme";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
+import { requestDesktopPasteAsTextForChord } from "../lib/desktopPasteAsText";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
@@ -6987,11 +6988,10 @@ export default function ChatView(props: ChatViewProps) {
   // Route it to the composer like a typed key, which also expands it.
   useEffect(() => {
     const keyHandler = (event: KeyboardEvent) => {
-      if (
-        shouldRedirectInputToComposer(event) &&
-        isPasteAsTextShortcut(event, isMacPlatform(navigator.platform))
-      ) {
+      const macPlatform = isMacPlatform(navigator.platform);
+      if (shouldRedirectInputToComposer(event) && isPasteAsTextShortcut(event, macPlatform)) {
         pasteAsTextShortcutUntilRef.current = Date.now() + 1_000;
+        requestDesktopPasteAsTextForChord(event, macPlatform, window.desktopBridge);
       }
     };
     const handler = (event: ClipboardEvent) => {

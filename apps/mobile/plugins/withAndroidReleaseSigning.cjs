@@ -60,16 +60,14 @@ module.exports = function withAndroidReleaseSigning(config) {
 
     // 2. Point the release build type at it instead of the debug config.
     const releaseUsesDebug = /signingConfig\s+signingConfigs\.debug/g;
-    const releaseBuildType = /(buildTypes\s*\{[\s\S]*?release\s*\{[\s\S]*?)signingConfig\s+signingConfigs\.debug/;
+    const releaseBuildType =
+      /(buildTypes\s*\{[\s\S]*?release\s*\{[\s\S]*?)signingConfig\s+signingConfigs\.debug/;
     if (!releaseBuildType.test(contents)) {
       throw new Error(
         "withAndroidReleaseSigning: release build type does not reference signingConfigs.debug",
       );
     }
-    contents = contents.replace(
-      releaseBuildType,
-      "$1signingConfig signingConfigs.release",
-    );
+    contents = contents.replace(releaseBuildType, "$1signingConfig signingConfigs.release");
     void releaseUsesDebug;
 
     nextConfig.modResults.contents = contents;

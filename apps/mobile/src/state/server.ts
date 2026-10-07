@@ -30,15 +30,13 @@ const EMPTY_ENVIRONMENT_THEMES: ReadonlyArray<EnvironmentTheme> = [];
  * theme it is set to keeps rendering as long as any connected machine still
  * publishes it.
  */
-export const environmentPublishedThemesAtom = Atom.make(
-  (get): ReadonlyArray<EnvironmentTheme> => {
-    const configs = get(environmentServerConfigsAtom);
-    const byId = new Map<string, EnvironmentTheme>();
-    for (const config of configs.values()) {
-      for (const theme of config?.environmentThemes ?? EMPTY_ENVIRONMENT_THEMES) {
-        if (!byId.has(theme.id)) byId.set(theme.id, theme);
-      }
+export const environmentPublishedThemesAtom = Atom.make((get): ReadonlyArray<EnvironmentTheme> => {
+  const configs = get(environmentServerConfigsAtom);
+  const byId = new Map<string, EnvironmentTheme>();
+  for (const config of configs.values()) {
+    for (const theme of config?.environmentThemes ?? EMPTY_ENVIRONMENT_THEMES) {
+      if (!byId.has(theme.id)) byId.set(theme.id, theme);
     }
-    return byId.size === 0 ? EMPTY_ENVIRONMENT_THEMES : [...byId.values()];
-  },
-).pipe(Atom.withLabel("mobile-environment-published-themes"));
+  }
+  return byId.size === 0 ? EMPTY_ENVIRONMENT_THEMES : [...byId.values()];
+}).pipe(Atom.withLabel("mobile-environment-published-themes"));

@@ -12,6 +12,7 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { SettingsVoiceOptimizationSection } from "./components/SettingsVoiceOptimizationSection";
 import {
   AndroidSettingsEnvironmentFilter,
   SettingsEnvironmentFilterHeader,
@@ -152,6 +153,8 @@ function SettingsIndexSections() {
           <SettingsRow icon="keyboard" label="Keyboard" target="SettingsKeyboard" />
         ) : null}
       </SettingsSection>
+
+      <SettingsVoiceOptimizationSection />
 
       <SettingsSection title="Projects & threads">
         {selectedProjectKey !== null ? (

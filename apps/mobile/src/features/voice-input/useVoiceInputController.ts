@@ -12,9 +12,13 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useSharedValue } from "react-native-reanimated";
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/unstable/reactivity";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";
+import { mobilePreferencesAtom } from "../../state/preferences";
+import { withMessageOptimizer, type VoiceOptimizationProvider } from "./messageOptimizer";
 import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";
 import {
   VoiceInputController,
@@ -71,6 +75,13 @@ export function useVoiceInputController(input: {
   readonly onChangeSelection: (selection: ComposerEditorSelection) => void;
 }) {
   const [state, setState] = useState<VoiceInputState>(INITIAL_STATE);
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const optimizationProviderRef = useRef<VoiceOptimizationProvider>("off");
+  // Do not send a dictation while a saved Off choice is still loading.
+  optimizationProviderRef.current =
+    AsyncResult.isSuccess(preferences) && !preferences.waiting
+      ? (preferences.value.voiceOptimizationProvider ?? "claude")
+      : "off";
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const keepAwakeId = useId();
   const keepAwakeSessionRef = useRef(0);
@@ -103,7 +114,10 @@ export function useVoiceInputController(input: {
   if (!controllerRef.current) {
     controllerRef.current = new VoiceInputController({
       recorder,
-      getTranscriber: getLocalVoiceTranscriber,
+      getTranscriber: () => {
+        const local = getLocalVoiceTranscriber();
+        return local ? withMessageOptimizer(local, () => optimizationProviderRef.current) : null;
+      },
       requestPermission: async () => {
         const permission = await requestRecordingPermissionsAsync();
         return { granted: permission.granted, canAskAgain: permission.canAskAgain };

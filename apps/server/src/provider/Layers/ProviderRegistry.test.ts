@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
@@ -35,6 +36,7 @@ import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
 import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
+import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { AntigravityInstallation } from "../AntigravityInstallation.ts";
 import * as ModelManifest from "../ModelManifest.ts";
@@ -1591,6 +1593,157 @@ it.layer(
         }).pipe(Effect.provide(runtimeServices));
       }),
     );
+
+    for (const change of ["added", "removed"] as const) {
+      for (const refreshMode of ["manual", "background"] as const) {
+        it.effect(
+          `refreshes cached workspace skills when a skill is ${change} on disk (${refreshMode})`,
+          () =>
+            Effect.gen(function* () {
+              const fileSystem = yield* FileSystem.FileSystem;
+              const path = yield* Path.Path;
+              const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "picker-refresh-" });
+              const cwd = path.join(root, "workspace");
+              const skillDirectory = path.join(cwd, ".claude", "skills", "project-skill");
+              yield* fileSystem.makeDirectory(cwd, { recursive: true });
+              const installSkill = fileSystem
+                .makeDirectory(skillDirectory, { recursive: true })
+                .pipe(
+                  Effect.andThen(
+                    fileSystem.writeFileString(
+                      path.join(skillDirectory, "SKILL.md"),
+                      "---\ndescription: Project skill\n---\nProject instructions.\n",
+                    ),
+                  ),
+                );
+              if (change === "removed") yield* installSkill;
+              const driver = ProviderDriverKind.make("claudeAgent");
+              const instanceId = ProviderInstanceId.make("claudeAgent");
+              const machineProvider = {
+                instanceId,
+                driver,
+                status: "ready",
+                enabled: true,
+                installed: true,
+                auth: { status: "authenticated" },
+                checkedAt: "2026-06-10T00:00:00.000Z",
+                version: "1.0.0",
+                models: [],
+                slashCommands: [{ name: "global" }],
+                skills: [],
+              } as const satisfies ServerProvider;
+              const refreshedProvider = {
+                ...machineProvider,
+                checkedAt: "2026-06-10T00:01:00.000Z",
+              } satisfies ServerProvider;
+              const machineSnapshot = yield* Ref.make<ServerProvider>(machineProvider);
+              const sourceChanges = yield* PubSub.unbounded<ServerProvider>();
+              const instance = {
+                instanceId,
+                driverKind: driver,
+                continuationIdentity: {
+                  driverKind: driver,
+                  continuationKey: "claude:picker-refresh",
+                },
+                displayName: undefined,
+                enabled: true,
+                snapshot: {
+                  resolveMaintenance: () =>
+                    Effect.succeed(
+                      makeManualOnlyProviderMaintenanceCapabilities({
+                        provider: driver,
+                        packageName: null,
+                      }),
+                    ),
+                  getSnapshot: Ref.get(machineSnapshot),
+                  refresh: Ref.set(machineSnapshot, refreshedProvider).pipe(
+                    Effect.as(refreshedProvider),
+                  ),
+                  streamChanges: Stream.fromPubSub(sourceChanges),
+                  applyUsageLimits: () => Effect.void,
+                },
+                snapshotForCwd: (workspace: string) =>
+                  Effect.all([
+                    Ref.get(machineSnapshot),
+                    discoverClaudeSkills({ homePath: path.join(root, "config") }, workspace, {}),
+                  ]).pipe(
+                    Effect.map(([snapshot, skills]) => ({
+                      ...snapshot,
+                      skills,
+                      slashCommands: skills.map((skill) => ({ name: skill.name })),
+                    })),
+                    Effect.provideService(FileSystem.FileSystem, fileSystem),
+                    Effect.provideService(Path.Path, path),
+                  ),
+                adapter: {} as ProviderInstance["adapter"],
+                textGeneration: {} as ProviderInstance["textGeneration"],
+              } satisfies ProviderInstance;
+              const instanceRegistryLayer = Layer.succeed(
+                ProviderInstanceRegistry.ProviderInstanceRegistry,
+                {
+                  getInstance: (id) => Effect.succeed(id === instanceId ? instance : undefined),
+                  listInstances: Effect.succeed([instance]),
+                  listUnavailable: Effect.succeed([]),
+                  streamChanges: Stream.empty,
+                  subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), PubSub.subscribe),
+                },
+              );
+              yield* Effect.gen(function* () {
+                const registry = yield* ProviderRegistry.ProviderRegistry;
+                yield* registry.refreshWorkspaceSnapshot({ instanceId, cwd });
+                const initial = (yield* registry.getProviders)[0]?.workspaceSnapshots?.[0];
+                assert.deepStrictEqual(
+                  initial?.skills.map((skill) => skill.name),
+                  change === "removed" ? ["project-skill"] : [],
+                );
+                if (change === "added") yield* installSkill;
+                else yield* fileSystem.remove(skillDirectory, { recursive: true });
+                const expectedNames = change === "added" ? ["project-skill"] : [];
+                const update = yield* registry.streamChanges.pipe(
+                  Stream.filter(
+                    (providers) =>
+                      providers[0]?.workspaceSnapshots?.[0]?.skills
+                        .map((skill) => skill.name)
+                        .join() === expectedNames.join(),
+                  ),
+                  Stream.runHead,
+                  Effect.forkChild,
+                );
+                yield* Effect.yieldNow;
+                if (refreshMode === "manual") {
+                  yield* registry.refreshInstance(instanceId);
+                } else {
+                  yield* Ref.set(machineSnapshot, refreshedProvider);
+                  yield* PubSub.publish(sourceChanges, refreshedProvider);
+                }
+                // The published workspace is the completion receipt for the background path.
+                if (refreshMode === "background") yield* Fiber.join(update);
+                const providers = yield* registry.getProviders;
+                const workspace = providers[0]?.workspaceSnapshots?.[0];
+                assert.deepStrictEqual(
+                  workspace?.skills.map((skill) => skill.name),
+                  expectedNames,
+                );
+                assert.deepStrictEqual(
+                  workspace?.slashCommands.map((command) => command.name),
+                  expectedNames,
+                );
+                assert.strictEqual(workspace?.checkedAt, refreshedProvider.checkedAt);
+                assert.deepStrictEqual(providers[0]?.skills, machineProvider.skills);
+                assert.strictEqual((yield* Fiber.join(update))._tag, "Some");
+              }).pipe(
+                Effect.provide(
+                  ProviderRegistryLive.pipe(
+                    Layer.provide(instanceRegistryLayer),
+                    Layer.provide(ServerConfig.layerTest(root, { prefix: "picker-registry-" })),
+                    Layer.provide(NodeServices.layer),
+                  ),
+                ),
+              );
+            }),
+        );
+      }
+    }
 
     it.effect("refreshes OpenCode catalogs and preserves other providers", () =>
       Effect.gen(function* () {

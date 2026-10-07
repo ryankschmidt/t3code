@@ -14,6 +14,7 @@ import {
 } from "../lib/mobileTheme";
 
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
+import type { VoiceOptimizationProvider } from "../features/voice-input/messageOptimizer";
 
 import * as MobileDatabase from "./mobile-database";
 import * as MobileSecureStorage from "./mobile-secure-storage";
@@ -37,6 +38,8 @@ export interface Preferences {
   readonly collapsedProjectGroups?: readonly string[];
   /** What the Return key does in the composer on a hardware keyboard. iOS only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
+  /** Device-local voice optimization; absent means Claude. */
+  readonly voiceOptimizationProvider?: VoiceOptimizationProvider;
   /** @deprecated Kept temporarily so older OTA bundles retain the selected mode. */
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
@@ -104,6 +107,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
     collapsedProjectGroups?: readonly string[];
     composerEnterBehavior?: ComposerEnterBehavior;
+    voiceOptimizationProvider?: VoiceOptimizationProvider;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     planModeEnabled?: boolean;
@@ -172,6 +176,13 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (parsed.composerEnterBehavior === "send" || parsed.composerEnterBehavior === "newline") {
     preferences.composerEnterBehavior = parsed.composerEnterBehavior;
+  }
+  if (
+    parsed.voiceOptimizationProvider === "claude" ||
+    parsed.voiceOptimizationProvider === "codex" ||
+    parsed.voiceOptimizationProvider === "off"
+  ) {
+    preferences.voiceOptimizationProvider = parsed.voiceOptimizationProvider;
   }
   if (typeof parsed.projectGroupingEnabled === "boolean") {
     preferences.projectGroupingEnabled = parsed.projectGroupingEnabled;

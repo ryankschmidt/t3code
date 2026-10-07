@@ -137,7 +137,6 @@ export interface ProviderAdapterShape<TError> {
   readonly rollbackThread: (
     threadId: ThreadId,
     numTurns: number,
-    target?: { readonly beforeMessageId: string; readonly fallbackTurnId?: string },
   ) => Effect.Effect<ProviderThreadSnapshot, TError>;
 
   /**

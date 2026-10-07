@@ -26,7 +26,10 @@ describe("ThroughLine protected setting defaults", () => {
   it("resumes interrupted threads after restarts unless turned off", () => {
     expect(decodeServerSettings({}).continueThreadsAfterServerUpdate).toBe(true);
     expect(DEFAULT_SERVER_SETTINGS.continueThreadsAfterServerUpdate).toBe(true);
-    expect(decodeServerSettings({ continueThreadsAfterServerUpdate: false }).continueThreadsAfterServerUpdate).toBe(false);
+    expect(
+      decodeServerSettings({ continueThreadsAfterServerUpdate: false })
+        .continueThreadsAfterServerUpdate,
+    ).toBe(false);
   });
 
   it("keeps agent device access on unless turned off", () => {
