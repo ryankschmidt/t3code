@@ -9055,6 +9055,112 @@ describe("ClaudeAdapterLive", () => {
 // ThroughLine: the replacement lane. `startSession` on a thread that already has a live session
 // must bring the replacement up, prove it from the replacement's OWN handshake, and only then
 // retire the previous session — and must refuse rather than retire when that proof never lands.
+describe("ClaudeAdapterLive zero-history rewind resume", () => {
+  it.effect.each([
+    ["cursor restart", false], ["context replacement", false],
+    ["cursor restart", true], ["context replacement", true],
+  ] as const)(
+    "preserves the assigned native identity after zero-history rewind: %s, transcriptPersisted=%s",
+    (caseInput) => {
+      const [restartMode, transcriptPersisted] = caseInput;
+      const oldId = "550e8400-e29b-41d4-a716-446655440310";
+      const firstPromptId = "550e8400-e29b-41d4-a716-446655440311";
+      const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "tl-zero-rewind-"));
+      // Deliberately not the cwd encoding: exact provider-home discovery must not guess cwd.
+      const projects = NodePath.join(home, "projects", "different-project-encoding");
+      NodeFS.mkdirSync(projects, { recursive: true });
+      const originalPath = NodePath.join(projects, oldId + ".jsonl");
+      const originalBytes = JSON.stringify({
+        type: "user", uuid: firstPromptId, sessionId: oldId, parentUuid: null,
+        cwd: home, isSidechain: false,
+        message: { role: "user", content: [{ type: "text", text: "disposable first prompt" }] },
+      }) + "\n";
+      NodeFS.writeFileSync(originalPath, originalBytes);
+      let forks = 0;
+      const history: Awaited<ReturnType<NonNullable<ClaudeAdapterLiveOptions["getSessionMessages"]>>> = [{
+        type: "user", uuid: firstPromptId, session_id: oldId,
+        parent_tool_use_id: null, parent_agent_id: null,
+        message: { content: "disposable first prompt" },
+      }];
+      const harness = makeHarness({
+        cwd: home, baseDir: home, environment: { CLAUDE_CONFIG_DIR: home },
+        getSessionMessages: async (id) => id === oldId ? history : [],
+        forkSession: async () => {
+          forks += 1;
+          throw new Error("rewind before the first prompt must not fork retained history");
+        },
+      });
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID, provider: ProviderDriverKind.make("claudeAgent"),
+          cwd: home, runtimeMode: "full-access",
+          resumeCursor: { resume: oldId, turnCount: 1, turnStartMessageIds: [firstPromptId] },
+        });
+        const emptyThread = yield* adapter.rollbackThread(
+          THREAD_ID, 0, { beforeMessageId: firstPromptId },
+        );
+        const emptySession = (yield* adapter.listSessions()).find(s => s.threadId === THREAD_ID);
+        const emptyCursor = emptySession?.resumeCursor;
+        const emptyQuery = harness.getLastCreateQueryInput();
+        const generated = emptyQuery?.options.sessionId;
+        assert.equal(emptyQuery?.options.resume, undefined);
+        if (typeof generated !== "string") throw new Error("fresh SDK session ID not assigned");
+        assert.equal(forks, 0);
+        assert.equal(emptyThread.turns.length, 0);
+        assert.equal((emptyCursor as { turnCount?: number } | undefined)?.turnCount, 0);
+        assert.equal(emptyQuery?.options.cwd, home);
+        assert.equal(emptyQuery?.options.env?.CLAUDE_CONFIG_DIR, home);
+        const assignedPath = NodePath.join(projects, generated + ".jsonl");
+        assert.equal(NodeFS.existsSync(assignedPath), false);
+        if (transcriptPersisted) {
+          // First prompt reached disk, then process died before any SDK acknowledgement.
+          // Exercise behavior, not a proposed pending-cursor field or getSessionInfo result.
+          NodeFS.writeFileSync(assignedPath, JSON.stringify({
+            type: "user", uuid: "550e8400-e29b-41d4-a716-446655440312",
+            sessionId: generated, parentUuid: null, cwd: home, isSidechain: false,
+            message: { role: "user", content: [{ type: "text", text: "persisted before acknowledgement" }] },
+          }) + "\n");
+        }
+        if (restartMode === "cursor restart") {
+          yield* adapter.stopSession(THREAD_ID);
+          yield* adapter.startSession({
+            threadId: THREAD_ID, provider: ProviderDriverKind.make("claudeAgent"),
+            cwd: home, runtimeMode: "full-access", resumeCursor: emptyCursor,
+          });
+        } else {
+          yield* adapter.startSession({
+            threadId: THREAD_ID, provider: ProviderDriverKind.make("claudeAgent"),
+            cwd: home, runtimeMode: "full-access",
+          });
+        }
+        yield* adapter.sendTurn({ threadId: THREAD_ID, input: "disposable next prompt after rewind" });
+        const nextQuery = harness.getLastCreateQueryInput();
+        console.info("ZERO_TURN_RESUME_OBSERVATION", JSON.stringify({
+          restartMode, transcriptPersisted, providerHome: home, cwd: home,
+          generated, persistedCursor: emptyCursor,
+          nextQueryResume: nextQuery?.options.resume ?? null,
+          nextQueryAssigned: nextQuery?.options.sessionId ?? null,
+          exactAssignedTranscriptExists: NodeFS.existsSync(assignedPath),
+          originalIntact: NodeFS.readFileSync(originalPath, "utf8") === originalBytes,
+          forks, realAdapterExecuted: true, actualModelOrSdkProcessStarted: false,
+        }));
+        assert.equal(NodeFS.readFileSync(originalPath, "utf8"), originalBytes);
+        if (transcriptPersisted) {
+          assert.equal(nextQuery?.options.resume, generated, "persisted identity must resume, not be silently replaced");
+          assert.equal(nextQuery?.options.sessionId, undefined);
+        } else {
+          assert.equal(nextQuery?.options.resume, undefined, "missing history must not be resumed");
+          assert.equal(nextQuery?.options.sessionId, generated, "pending assigned identity must not be silently reminted");
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+});
+
 describe("ClaudeAdapterLive session replacement", () => {
   const REPLACE_THREAD_ID = ThreadId.make("thread-claude-replace");
   const PROVIDER_SESSION_UUID = "11111111-2222-4333-8444-555555555555";
