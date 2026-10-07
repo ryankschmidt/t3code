@@ -106,7 +106,11 @@ post_install_checks() {
   echo "  [9] window        $L_WINDOW   (CoreGraphics window list of the candidate process; no Accessibility grant; diagnostic, NOT a verdict input)"
   echo "--------------------------------------------------------------"
   if [ "$L_POST" = PASS ] && [ "$L_READY" = PASS ]; then
-    echo " POST-INSTALL VERDICT: PASS"
+    if [ "${ARCHIVE_PENDING:-0}" = 1 ]; then
+      echo " POST-INSTALL CHECKS VERDICT: PASS (archive pending; not the final install verdict)"
+    else
+      echo " POST-INSTALL VERDICT: PASS"
+    fi
   else
     echo " POST-INSTALL VERDICT: FAIL — roll back with the command below."
   fi
@@ -194,6 +198,8 @@ refuse() { echo "REFUSED: $*"; exit 2; }
 
 APP=/Applications/ThroughLine.app
 BACKUP_ROOT=/Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/_versions/app-backups
+ARCHIVE_HELPER=/Users/Admin/core-root/src/tools/throughline-ship/dist/disk-retention.js
+ARCHIVE_LEDGER=/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/install-archive-ledger.json
 MNT=""
 
 L_DMG=FAIL; L_VERSION=FAIL; L_CURRENT=FAIL; L_BACKUP=FAIL; L_MOUNT=FAIL; L_SIG=FAIL
@@ -336,6 +342,11 @@ echo "--------------------------------------------------------------"
 cleanup_mount() { [ -n "${MNT:-}" ] && hdiutil detach "$MNT" >/dev/null 2>&1; rmdir "$MNT" 2>/dev/null; }
 
 if [ "$VERDICT" != PASS ]; then cleanup_mount; refuse "one or more checks failed above; nothing was quit and nothing was replaced"; fi
+# Archive availability is checked before quitting or replacing anything. The drive must really
+# be mounted, not an empty mount directory on the Raspberry Pi's system disk.
+if [ ! -f "$ARCHIVE_HELPER" ] || ! command -v node >/dev/null 2>&1 || ! ssh -o BatchMode=yes -o ConnectTimeout=15 rpi 'mountpoint -q /mnt/storage && test -w /mnt/storage/archives'; then
+  cleanup_mount; refuse "replaced-build archive helper or Raspberry Pi archive drive unavailable; nothing was quit or replaced"
+fi
 if [ "$VERIFY_ONLY" = 1 ]; then
   cleanup_mount
   echo "verify-only: every check ran and passed. NOTHING was quit, replaced, or backed up."
@@ -376,7 +387,7 @@ ditto "$SRC" "$STAGE" 2>/dev/null || { cleanup_mount; refuse "copy out of the im
 OLD="/Applications/.ThroughLine-outgoing-$$.app"
 [ -d "$APP" ] && mv "$APP" "$OLD"
 mv "$STAGE" "$APP" || { [ -d "$OLD" ] && mv "$OLD" "$APP"; cleanup_mount; refuse "swap failed; previous app restored in place"; }
-[ -d "$OLD" ] && rm -rf "$OLD" 2>/dev/null
+# Keep the original outgoing bundle until the external archive is checksum/count verified.
 
 cleanup_mount
 
@@ -399,4 +410,11 @@ if [ "$L_POST" = PASS ]; then
   open -a "$APP" >/dev/null 2>&1 || echo "  could not reopen — readiness must fail unless the installed app is already answering"
 fi
 POST_PORT=3773
+ARCHIVE_PENDING=1
 post_install_checks || exit 3
+if ! node "$ARCHIVE_HELPER" --post-install "$BACKUP" "$OLD" "$ARCHIVE_LEDGER"; then
+  echo " POST-INSTALL VERDICT: FAIL — app checks passed but archiving failed; unverified Mac copies retained. See $ARCHIVE_LEDGER"
+  exit 4
+fi
+echo "Replaced build archived with SHA-256 and matching file counts; rollback archive addresses: $ARCHIVE_LEDGER"
+echo " POST-INSTALL VERDICT: PASS"

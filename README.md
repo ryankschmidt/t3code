@@ -131,3 +131,9 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR
 Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
 
 Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+
+## Mac build retention — Ryan, verbatim, 2026-10-07
+
+> i've ruled that i only want the last successful throughline build on my mac and the previous builds to be archived on my external hard drive. that was supposed to be written into all associated processes and workflows and tools so agents continued the archiving when new installs landed
+
+The Mac installer archives the replaced app to rpi:/mnt/storage/archives/throughline-builds/ only after startup checks pass. SHA-256 file-content and symlink-target fingerprints and matching file counts are required before any Mac copy is removed. An unavailable or unmounted drive refuses before the app is quit. The compiled throughline-ship retention adapter owns verification; the Health Hub watchdog measures remaining older builds and free space.

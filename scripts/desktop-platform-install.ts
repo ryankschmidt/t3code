@@ -2,6 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { assertRunningPlatform, macBackupBundlePath } from "./platform-lockstep-contract.ts";
 
 export const MAC_APP_PATH = "/Applications/ThroughLine.app";
@@ -29,6 +30,11 @@ export function installMacBundleCopy(input: {
   version: string;
   at: string;
 }): { backupBundle: string | null } {
+  if (input.destinationBundle === MAC_APP_PATH) {
+    throw new Error(
+      "LOCKSTEP_REFUSED: live Mac installs must use mac/install-mac.sh so preflight, archive verification and retention cannot be bypassed",
+    );
+  }
   if (basename(input.candidateBundle) !== "ThroughLine.app") {
     throw new Error(
       `LOCKSTEP_REFUSED: candidate bundle must be named ThroughLine.app: ${input.candidateBundle}`,
@@ -82,44 +88,21 @@ export function installMacDmg(input: { dmgPath: string; version: string; backupR
   backupBundle: string | null;
   executable: string;
 } {
-  const mounted = mountedVolumeFromAttach(
-    command("hdiutil", ["attach", "-nobrowse", "-readonly", input.dmgPath]),
-  );
-  try {
-    const candidateBundle = join(mounted, "ThroughLine.app");
-    const installed = installMacBundleCopy({
-      candidateBundle,
-      destinationBundle: MAC_APP_PATH,
-      backupRoot: input.backupRoot,
-      version: input.version,
-      at: new Date().toISOString(),
-    });
-    try {
-      command("pkill", ["-TERM", "-x", "ThroughLine"]);
-    } catch {
-      // A stopped app has nothing to quit. The subsequent launch and proof remain mandatory.
-    }
-    command("open", [MAC_APP_PATH]);
-    let actualExecutable: string | null = null;
-    for (let attempt = 0; attempt < 20 && !actualExecutable; attempt += 1) {
-      try {
-        command("sleep", ["1"]);
-        actualExecutable = currentMacExecutable();
-      } catch {
-        actualExecutable = null;
-      }
-    }
-    assertRunningPlatform({
-      platform: "mac-arm64",
-      expectedExecutable: MAC_EXECUTABLE_PATH,
-      actualExecutable,
-      expectedVersion: input.version,
-      actualVersion: readBundleVersion(MAC_APP_PATH),
-    });
-    return { ...installed, executable: actualExecutable! };
-  } finally {
-    command("hdiutil", ["detach", mounted]);
-  }
+  // Both lockstep packaging and the release pipeline use one install boundary.
+  // The installer checks startup before archiving; a failed archive retains Mac copies.
+  command("/bin/sh", [
+    fileURLToPath(new URL("../apps/desktop/mac/install-mac.sh", import.meta.url)),
+    input.dmgPath,
+  ]);
+  const actualExecutable = currentMacExecutable();
+  assertRunningPlatform({
+    platform: "mac-arm64",
+    expectedExecutable: MAC_EXECUTABLE_PATH,
+    actualExecutable,
+    expectedVersion: input.version,
+    actualVersion: readBundleVersion(MAC_APP_PATH),
+  });
+  return { backupBundle: null, executable: actualExecutable! };
 }
 
 export function verifyLinuxProcess(input: {
