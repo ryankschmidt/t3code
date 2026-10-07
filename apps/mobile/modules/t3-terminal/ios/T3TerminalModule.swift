@@ -54,7 +54,10 @@ public class T3TerminalModule: Module {
       Prop("captureRequest") { (view: T3TerminalView, request: Double) in
         view.captureRequest = request
       }
-      Events("onInput", "onResize", "onCapture")
+      Prop("copyAllRequest") { (view: T3TerminalView, request: Double) in
+        view.copyAllRequest = request
+      }
+      Events("onInput", "onResize", "onCapture", "onCopyAll")
     }
   }
 }

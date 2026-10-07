@@ -294,7 +294,8 @@ const config: ExpoConfig = {
     // fingerprinted so OTAs only reach binaries with matching native projects.
     policy: runtimeVersionPolicy,
   },
-  orientation: "portrait",
+  // The terminal must track the phone's viewport in both portrait and landscape.
+  orientation: "default",
   // ThroughLine: mobile-only assets; do not overwrite the shared upstream icon catalog.
   icon: "./assets/throughline-icon.png",
   userInterfaceStyle: "automatic",

@@ -1,5 +1,7 @@
-import { memo, useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
+  Platform,
   Pressable,
   ScrollView,
   TextInput,
@@ -8,6 +10,7 @@ import {
   type NativeSyntheticEvent,
   type ViewProps,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 
 import { AppText as Text } from "../../components/AppText";
 import { MOBILE_TYPOGRAPHY } from "../../lib/typography";
@@ -22,6 +25,8 @@ import {
   type TerminalTheme,
 } from "./terminalTheme";
 import { terminalDebugLog } from "./terminalDebugLog";
+import { TerminalCopyButton } from "./TerminalCopyButton";
+import { copyTerminalOutput } from "./terminalCopy";
 
 interface TerminalInputEvent {
   readonly data: string;
@@ -180,6 +185,26 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
   const { onInput, onResize } = props;
   const NativeTerminalSurfaceView = resolveNativeTerminalSurfaceView();
   const hasNativeSurface = Boolean(NativeTerminalSurfaceView);
+  const [copyAllRequest, setCopyAllRequest] = useState(0);
+  const [copying, setCopying] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setCopying(false);
+    setCopied(false);
+  }, [props.terminalKey]);
+
+  const handleCopyAll = useCallback(async (text: string) => {
+    try {
+      const didCopy = await copyTerminalOutput(text, Clipboard.setStringAsync);
+      setCopied(didCopy);
+      if (!didCopy) Alert.alert("No terminal output", "There is no output to copy.");
+    } catch {
+      Alert.alert("Copy failed", "Terminal output could not be copied to the clipboard.");
+    } finally {
+      setCopying(false);
+    }
+  }, []);
 
   useEffect(() => {
     terminalDebugLog("native:surface", {
@@ -216,6 +241,18 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
   if (NativeTerminalSurfaceView) {
     return (
       <View style={props.style}>
+        {Platform.OS === "ios" ? (
+          <TerminalCopyButton
+            color={theme.foreground}
+            copied={copied}
+            disabled={copying}
+            onPress={() => {
+              setCopying(true);
+              setCopied(false);
+              setCopyAllRequest((request) => request + 1);
+            }}
+          />
+        ) : null}
         <NativeTerminalSurfaceView
           appearanceScheme={themeAppearance}
           autoFocus={props.autoFocus ?? true}
@@ -232,6 +269,12 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
           onResize={handleNativeResize}
           captureRequest={props.captureRequest}
           onCapture={(event) => props.onCapture?.(event.nativeEvent.text)}
+          copyAllRequest={Platform.OS === "ios" ? copyAllRequest : undefined}
+          onCopyAll={
+            Platform.OS === "ios"
+              ? (event) => void handleCopyAll(event.nativeEvent.text)
+              : undefined
+          }
         />
       </View>
     );
