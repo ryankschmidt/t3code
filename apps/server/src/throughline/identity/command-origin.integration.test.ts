@@ -1,5 +1,6 @@
 // ThroughLine-owned integration: real reactor + persisted admitted messages, mock provider only.
 // @effect-diagnostics nodeBuiltinImport:off
+// @effect-diagnostics globalConsole:off
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
