@@ -5,7 +5,7 @@ import {
   resolveClaudeRewindMessage,
   type ClaudeSessionLineage,
 } from "./native-lineage.ts";
-export { NATIVE_UUID_NAMESPACE_V1, readClaudeSessionLineage } from "./native-lineage.ts";
+export { NATIVE_UUID_NAMESPACE_V1 } from "./native-lineage.ts";
 export type { ClaudeSessionLineage } from "./native-lineage.ts";
 
 export type AdmittedMessageRef = {

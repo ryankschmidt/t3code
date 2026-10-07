@@ -7104,7 +7104,6 @@ describe("ClaudeAdapterLive", () => {
           resume: "550e8400-e29b-41d4-a716-446655440101",
           turnCount: 3,
           turnStartMessageIds: ["turn-1", "synthetic-2", "turn-3"],
-          rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
         });
         // Back to T3 turn 1: removes the provider-started reply and P3, keeps the steer.
         yield* adapter.rollbackThread(THREAD_ID, 2);
@@ -7143,7 +7142,6 @@ describe("ClaudeAdapterLive", () => {
           resume: "550e8400-e29b-41d4-a716-446655440101",
           turnCount: 3,
           turnStartMessageIds: [null, "synthetic-2", "turn-3"],
-          rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
         });
         const error = yield* adapter.rollbackThread(THREAD_ID, 1).pipe(Effect.flip);
         assert.match(String(error), /turn boundary is unavailable/);
@@ -7240,7 +7238,6 @@ describe("ClaudeAdapterLive", () => {
           resume: "550e8400-e29b-41d4-a716-446655440201",
           turnCount: 3,
           turnStartMessageIds: [null, "fork-turn-2", "fork-turn-3"],
-          rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
         });
       }).pipe(
         Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -7337,7 +7334,6 @@ describe("ClaudeAdapterLive", () => {
           resume: newId,
           turnCount: 1,
           turnStartMessageIds: ["first"],
-          rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
         });
         assert.equal(harness.getLastCreateQueryInput()?.options.resume, newId);
         assert.equal(harness.getLastCreateQueryInput()?.options.resumeSessionAt, undefined);
@@ -7728,7 +7724,6 @@ describe("ClaudeAdapterLive", () => {
         resume: "550e8400-e29b-41d4-a716-446655440020",
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
-        rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
       });
 
       yield* adapter.rollbackThread(session.threadId, 2);
@@ -7854,7 +7849,6 @@ describe("ClaudeAdapterLive", () => {
         resume: CLAUDE_FORK_SESSION_ID,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
-        rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
       });
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -7914,7 +7908,6 @@ describe("ClaudeAdapterLive", () => {
         resume: CLAUDE_FORK_SESSION_ID,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
-        rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
       });
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -7980,7 +7973,6 @@ describe("ClaudeAdapterLive", () => {
         resume: CLAUDE_FORK_SESSION_ID,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
-        rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
       });
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -8071,7 +8063,6 @@ describe("ClaudeAdapterLive", () => {
         resume: CLAUDE_FORK_SESSION_ID,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
-        rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
       });
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -8133,7 +8124,6 @@ describe("ClaudeAdapterLive", () => {
         resume: CLAUDE_FORK_SESSION_ID,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
-        rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
       });
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -8211,7 +8201,6 @@ describe("ClaudeAdapterLive", () => {
         resume: CLAUDE_FORK_SESSION_ID,
         turnCount: 2,
         turnStartMessageIds: [`fork-${firstTurnId}`, `fork-${secondTurnId}`],
-        rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
       });
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -9350,90 +9339,6 @@ describe("ClaudeAdapterLive", () => {
 // ThroughLine: the replacement lane. `startSession` on a thread that already has a live session
 // must bring the replacement up, prove it from the replacement's OWN handshake, and only then
 // retire the previous session — and must refuse rather than retire when that proof never lands.
-describe("ClaudeAdapterLive pending-native safety", () => {
-  it.effect.each(["malformed", "ambiguous", "escaping-symlink"] as const)(
-    "refuses unsafe pending native history before starting another query: %s",
-    (mode) => {
-      const pending = "550e8400-e29b-41d4-a716-446655440420";
-      const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "tl-pending-safety-"));
-      const directory = NodePath.join(home, "projects", "one");
-      NodeFS.mkdirSync(directory, { recursive: true });
-      const path = NodePath.join(directory, pending + ".jsonl");
-      const bytes = JSON.stringify({ type: "user", uuid: "record", sessionId: pending }) + "\n";
-      if (mode === "malformed") NodeFS.writeFileSync(path, "{\n");
-      if (mode === "ambiguous") {
-        NodeFS.writeFileSync(path, bytes);
-        const second = NodePath.join(home, "projects", "two");
-        NodeFS.mkdirSync(second);
-        NodeFS.writeFileSync(NodePath.join(second, pending + ".jsonl"), bytes);
-      }
-      if (mode === "escaping-symlink") {
-        const outside = NodePath.join(home, "outside.jsonl");
-        NodeFS.writeFileSync(outside, bytes);
-        NodeFS.symlinkSync(outside, path);
-      }
-      const harness = makeHarness({
-        cwd: home,
-        baseDir: home,
-        environment: { CLAUDE_CONFIG_DIR: home },
-      });
-      return Effect.gen(function* () {
-        const adapter = yield* ClaudeAdapter;
-        const result = yield* adapter
-          .startSession({
-            threadId: THREAD_ID,
-            provider: ProviderDriverKind.make("claudeAgent"),
-            cwd: home,
-            runtimeMode: "full-access",
-            resumeCursor: {
-              resume: pending,
-              nativeSessionPending: true,
-              turnCount: 0,
-              rewindSourceSessionId: CLAUDE_ORIGINAL_SESSION_ID,
-            },
-          })
-          .pipe(Effect.result);
-        assert.equal(result._tag, "Failure", "unsafe history must refuse, not resume or remint");
-        assert.equal(
-          harness.getLastCreateQueryInput(),
-          undefined,
-          "no native query may be started",
-        );
-      }).pipe(
-        Effect.provideService(Random.Random, makeDeterministicRandomService()),
-        Effect.provide(harness.layer),
-      );
-    },
-  );
-
-  it.effect("does not silently replace an ordinary missing historical resume identity", () => {
-    const historical = "550e8400-e29b-41d4-a716-446655440421";
-    const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "tl-ordinary-resume-"));
-    NodeFS.mkdirSync(NodePath.join(home, "projects"), { recursive: true });
-    const harness = makeHarness({
-      cwd: home,
-      baseDir: home,
-      environment: { CLAUDE_CONFIG_DIR: home },
-    });
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-      yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        cwd: home,
-        runtimeMode: "full-access",
-        resumeCursor: { resume: historical, turnCount: 0 },
-      });
-      assert.equal(harness.getLastCreateQueryInput()?.options.resume, historical);
-      assert.equal(harness.getLastCreateQueryInput()?.options.sessionId, undefined);
-      assert.equal((yield* adapter.listSessions())[0]!.resumeCursor !== undefined, true);
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-});
-
 describe("ClaudeAdapterLive session replacement", () => {
   const REPLACE_THREAD_ID = ThreadId.make("thread-claude-replace");
   const PROVIDER_SESSION_UUID = "11111111-2222-4333-8444-555555555555";
@@ -9853,272 +9758,6 @@ describe("ClaudeAdapterLive session replacement", () => {
         Effect.provide(
           Layer.merge(harness.layer, Logger.layer([logger], { mergeWithExisting: false })),
         ),
-      );
-    },
-  );
-});
-
-describe("ClaudeAdapterLive zero-history rewind resume", () => {
-  it.effect.each([
-    ["cursor restart", false],
-    ["context replacement", false],
-    ["cursor restart", true],
-    ["context replacement", true],
-  ] as const)(
-    "preserves the assigned native identity after zero-history rewind: %s, transcriptPersisted=%s",
-    (caseInput) => {
-      const [restartMode, transcriptPersisted] = caseInput;
-      const oldId = "550e8400-e29b-41d4-a716-446655440310";
-      const firstPromptId = "550e8400-e29b-41d4-a716-446655440311";
-      const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "tl-zero-rewind-"));
-      // Deliberately not the cwd encoding: exact provider-home discovery must not guess cwd.
-      const projects = NodePath.join(home, "projects", "different-project-encoding");
-      NodeFS.mkdirSync(projects, { recursive: true });
-      const originalPath = NodePath.join(projects, oldId + ".jsonl");
-      const originalBytes =
-        JSON.stringify({
-          type: "user",
-          uuid: firstPromptId,
-          sessionId: oldId,
-          parentUuid: null,
-          cwd: home,
-          isSidechain: false,
-          message: { role: "user", content: [{ type: "text", text: "disposable first prompt" }] },
-        }) + "\n";
-      NodeFS.writeFileSync(originalPath, originalBytes);
-      let forks = 0;
-      const history: Awaited<
-        ReturnType<NonNullable<ClaudeAdapterLiveOptions["getSessionMessages"]>>
-      > = [
-        {
-          type: "user",
-          uuid: firstPromptId,
-          session_id: oldId,
-          parent_tool_use_id: null,
-          parent_agent_id: null,
-          message: { content: "disposable first prompt" },
-        },
-      ];
-      const harness = makeHarness({
-        cwd: home,
-        baseDir: home,
-        environment: { CLAUDE_CONFIG_DIR: home },
-        getSessionMessages: async (id) => (id === oldId ? history : []),
-        forkSession: async () => {
-          forks += 1;
-          throw new Error("rewind before the first prompt must not fork retained history");
-        },
-      });
-      return Effect.gen(function* () {
-        const adapter = yield* ClaudeAdapter;
-        yield* adapter.startSession({
-          threadId: THREAD_ID,
-          provider: ProviderDriverKind.make("claudeAgent"),
-          cwd: home,
-          runtimeMode: "full-access",
-          resumeCursor: { resume: oldId, turnCount: 1, turnStartMessageIds: [firstPromptId] },
-        });
-        const emptyThread = yield* adapter.rollbackThread(THREAD_ID, 0, {
-          beforeMessageId: firstPromptId,
-        });
-        const emptySession = (yield* adapter.listSessions()).find((s) => s.threadId === THREAD_ID);
-        const emptyCursor = emptySession?.resumeCursor;
-        const emptyQuery = harness.getLastCreateQueryInput();
-        const generated = emptyQuery?.options.sessionId;
-        assert.equal(emptyQuery?.options.resume, undefined);
-        if (typeof generated !== "string") throw new Error("fresh SDK session ID not assigned");
-        assert.equal(forks, 0);
-        assert.equal(emptyThread.turns.length, 0);
-        assert.equal((emptyCursor as { turnCount?: number } | undefined)?.turnCount, 0);
-        assert.deepEqual(emptyCursor, {
-          threadId: THREAD_ID,
-          resume: generated,
-          nativeSessionPending: true,
-          rewindSourceSessionId: oldId,
-          turnCount: 0,
-        });
-        assert.equal(emptyQuery?.options.cwd, home);
-        assert.equal(emptyQuery?.options.env?.CLAUDE_CONFIG_DIR, home);
-        const assignedPath = NodePath.join(projects, generated + ".jsonl");
-        assert.equal(NodeFS.existsSync(assignedPath), false);
-        if (transcriptPersisted) {
-          // First prompt reached disk, then process died before any SDK acknowledgement.
-          // Exercise behavior, not a proposed pending-cursor field or getSessionInfo result.
-          NodeFS.writeFileSync(
-            assignedPath,
-            JSON.stringify({
-              type: "user",
-              uuid: "550e8400-e29b-41d4-a716-446655440312",
-              sessionId: generated,
-              parentUuid: null,
-              cwd: home,
-              isSidechain: false,
-              message: {
-                role: "user",
-                content: [{ type: "text", text: "persisted before acknowledgement" }],
-              },
-            }) + "\n",
-          );
-        }
-        if (restartMode === "cursor restart") {
-          yield* adapter.stopSession(THREAD_ID);
-          yield* adapter.startSession({
-            threadId: THREAD_ID,
-            provider: ProviderDriverKind.make("claudeAgent"),
-            cwd: home,
-            runtimeMode: "full-access",
-            resumeCursor: emptyCursor,
-          });
-        } else {
-          yield* adapter.startSession({
-            threadId: THREAD_ID,
-            provider: ProviderDriverKind.make("claudeAgent"),
-            cwd: home,
-            runtimeMode: "full-access",
-          });
-        }
-        yield* adapter.sendTurn({
-          threadId: THREAD_ID,
-          input: "disposable next prompt after rewind",
-        });
-        const nextQuery = harness.getLastCreateQueryInput();
-        console.info(
-          "ZERO_TURN_RESUME_OBSERVATION",
-          JSON.stringify({
-            restartMode,
-            transcriptPersisted,
-            providerHome: home,
-            cwd: home,
-            generated,
-            persistedCursor: emptyCursor,
-            nextQueryResume: nextQuery?.options.resume ?? null,
-            nextQueryAssigned: nextQuery?.options.sessionId ?? null,
-            exactAssignedTranscriptExists: NodeFS.existsSync(assignedPath),
-            originalIntact: NodeFS.readFileSync(originalPath, "utf8") === originalBytes,
-            forks,
-            realAdapterExecuted: true,
-            actualModelOrSdkProcessStarted: false,
-          }),
-        );
-        assert.equal(NodeFS.readFileSync(originalPath, "utf8"), originalBytes);
-        if (transcriptPersisted) {
-          assert.equal(
-            nextQuery?.options.resume,
-            generated,
-            "persisted identity must resume, not be silently replaced",
-          );
-          assert.equal(nextQuery?.options.sessionId, undefined);
-        } else {
-          assert.equal(nextQuery?.options.resume, undefined, "missing history must not be resumed");
-          assert.equal(
-            nextQuery?.options.sessionId,
-            generated,
-            "pending assigned identity must not be silently reminted",
-          );
-        }
-        const cursorBeforeInit = (yield* adapter.listSessions())[0]!.resumeCursor as {
-          rewindSourceSessionId?: string;
-          nativeSessionPending?: boolean;
-        };
-        assert.equal(cursorBeforeInit.rewindSourceSessionId, oldId);
-        const initCompleted = yield* Stream.filter(
-          adapter.streamEvents,
-          (event) => event.type === "turn.completed",
-        ).pipe(Stream.runHead, Effect.forkChild);
-        const runtime = harness.queries.at(-1)!;
-        runtime.emit({
-          type: "system",
-          subtype: "init",
-          session_id: generated,
-          uuid: "550e8400-e29b-41d4-a716-446655440410",
-        } as unknown as SDKMessage);
-        runtime.emit({
-          type: "result",
-          subtype: "success",
-          is_error: false,
-          errors: [],
-          session_id: generated,
-          uuid: "550e8400-e29b-41d4-a716-446655440411",
-          num_turns: 0,
-        } as unknown as SDKMessage);
-        assert.equal((yield* Fiber.join(initCompleted))._tag, "Some");
-        const afterInit = (yield* adapter.listSessions())[0]!.resumeCursor as {
-          rewindSourceSessionId?: string;
-          nativeSessionPending?: boolean;
-        };
-        assert.equal(afterInit.rewindSourceSessionId, oldId);
-        assert.equal(
-          afterInit.nativeSessionPending,
-          transcriptPersisted ? undefined : true,
-          "init/result alone must not promote unpersisted native identity",
-        );
-
-        // A real top-level response implies persisted native history. Model that filesystem
-        // phase explicitly, then wait on a completed-turn event, not a guessed sleep.
-        if (!NodeFS.existsSync(assignedPath)) NodeFS.writeFileSync(assignedPath, "");
-        NodeFS.appendFileSync(
-          assignedPath,
-          JSON.stringify({
-            type: "assistant",
-            uuid: "550e8400-e29b-41d4-a716-446655440412",
-            sessionId: generated,
-            parentUuid: null,
-            cwd: home,
-            isSidechain: false,
-            message: { role: "assistant", content: [{ type: "text", text: "fixture response" }] },
-          }) + "\n",
-        );
-        yield* adapter.sendTurn({
-          threadId: THREAD_ID,
-          input: "disposable confirmed-history turn",
-        });
-        const responseCompleted = yield* Stream.filter(
-          adapter.streamEvents,
-          (event) => event.type === "turn.completed",
-        ).pipe(Stream.runHead, Effect.forkChild);
-        runtime.emit({
-          type: "assistant",
-          session_id: generated,
-          parent_tool_use_id: null,
-          uuid: "550e8400-e29b-41d4-a716-446655440412",
-          message: { role: "assistant", content: [{ type: "text", text: "fixture response" }] },
-        } as unknown as SDKMessage);
-        runtime.emit({
-          type: "result",
-          subtype: "success",
-          is_error: false,
-          errors: [],
-          session_id: generated,
-          uuid: "550e8400-e29b-41d4-a716-446655440413",
-          num_turns: 1,
-        } as unknown as SDKMessage);
-        assert.equal((yield* Fiber.join(responseCompleted))._tag, "Some");
-        const confirmedCursor = (yield* adapter.listSessions())[0]!.resumeCursor as {
-          resume?: string;
-          rewindSourceSessionId?: string;
-          nativeSessionPending?: boolean;
-        };
-        assert.equal(confirmedCursor.resume, generated);
-        assert.equal(confirmedCursor.rewindSourceSessionId, oldId);
-        assert.equal(confirmedCursor.nativeSessionPending, undefined);
-        yield* adapter.stopSession(THREAD_ID);
-        yield* adapter.startSession({
-          threadId: THREAD_ID,
-          provider: ProviderDriverKind.make("claudeAgent"),
-          cwd: home,
-          runtimeMode: "full-access",
-          resumeCursor: confirmedCursor,
-        });
-        assert.equal(harness.getLastCreateQueryInput()?.options.resume, generated);
-        assert.equal(harness.getLastCreateQueryInput()?.options.sessionId, undefined);
-        const finalCursor = (yield* adapter.listSessions())[0]!.resumeCursor as {
-          rewindSourceSessionId?: string;
-        };
-        assert.equal(finalCursor.rewindSourceSessionId, oldId);
-        assert.equal(NodeFS.readFileSync(originalPath, "utf8"), originalBytes);
-      }).pipe(
-        Effect.provideService(Random.Random, makeDeterministicRandomService()),
-        Effect.provide(harness.layer),
       );
     },
   );
