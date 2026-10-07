@@ -1158,7 +1158,9 @@ export async function waitForRevertedMessage(
   messageId: MessageId,
   turnCount: number,
   revert: () => Promise<void>,
-  timeoutMs = 120_000,
+  // ThroughLine: a rewind of a long Claude conversation reads the whole native history and
+  // restarts the session; two minutes was measured too short on a 9.6 MB transcript.
+  timeoutMs = 600_000,
   exactMessage = false,
 ): Promise<void> {
   const threadAtom = environmentThreadDetails.detailAtom(threadRef);
@@ -1219,7 +1221,11 @@ export async function waitForRevertedMessage(
     };
     unsubscribe = appAtomRegistry.subscribe(threadAtom, inspect);
     timeout = globalThis.setTimeout(() => {
-      finish(new Error("Timed out waiting for the thread to rewind."));
+      finish(
+        new Error(
+          "Timed out waiting for the thread to rewind. It may still finish; reopen the conversation before trying again.",
+        ),
+      );
     }, timeoutMs);
     Promise.resolve()
       .then(revert)

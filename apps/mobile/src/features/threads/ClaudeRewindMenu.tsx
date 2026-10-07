@@ -138,10 +138,11 @@ export function ClaudeRewindMenu(props: {
           () =>
             finish(
               new Error(
-                "Timed out waiting for rewind. Reconnect and inspect the conversation before trying again.",
+                "Timed out waiting for rewind. It may still finish; reconnect and inspect the conversation before trying again.",
               ),
             ),
-          120_000,
+          // ThroughLine: long Claude conversations take more than two minutes to rewind.
+          600_000,
         );
         unsubscribe = appAtomRegistry.subscribe(atom, inspect);
         void revert({
@@ -259,6 +260,11 @@ export function ClaudeRewindMenu(props: {
                   <Text className="text-base text-foreground" numberOfLines={3}>
                     {promptPreview(entry.text) || "Attachment-only message"}
                   </Text>
+                  {entry.unavailableReason ? (
+                    <Text className="mt-2 text-xs text-foreground-muted">
+                      {entry.unavailableReason}
+                    </Text>
+                  ) : null}
                 </Pressable>
               ))}
             </>
