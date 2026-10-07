@@ -15,6 +15,7 @@ import {
   CurrentRewindTarget,
   nativeUuidFor,
   resolveNative,
+  readClaudeSessionLineage,
   type ClaudeSessionLineage,
 } from "../../throughline/identity/index.ts";
 import {
@@ -270,6 +271,10 @@ type PromptQueueItem =
 interface ClaudeResumeState {
   readonly threadId?: ThreadId;
   readonly resume?: string;
+  /** ThroughLine: an assigned UUID is not resumable until native history exists. */
+  readonly nativeSessionPending?: boolean;
+  /** Preserve the source conversation when a rewind replaces its native session. */
+  readonly rewindSourceSessionId?: string;
   readonly resumeSessionAt?: string;
   /**
    * ThroughLine: the rewind marker, and the ONLY thing that lets `resumeSessionAt` reach the
@@ -459,6 +464,8 @@ interface ClaudeSessionContext {
    * effort override inherit this. */
   currentEffort: string | undefined;
   resumeSessionId: string | undefined;
+  nativeSessionPending: boolean;
+  readonly rewindSourceSessionId: string | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   /** Completed turn ids, reported by readThread and trimmed on rollback.
@@ -1036,6 +1043,8 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
   const cursor = resumeCursor as {
     threadId?: unknown;
     resume?: unknown;
+    nativeSessionPending?: unknown;
+    rewindSourceSessionId?: unknown;
     sessionId?: unknown;
     resumeSessionAt?: unknown;
     rewind?: unknown;
@@ -1073,6 +1082,10 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
   return {
     ...(threadId ? { threadId } : {}),
     ...(resume ? { resume } : {}),
+    ...(cursor.nativeSessionPending === true ? { nativeSessionPending: true } : {}),
+    ...(typeof cursor.rewindSourceSessionId === "string" && isUuid(cursor.rewindSourceSessionId)
+      ? { rewindSourceSessionId: cursor.rewindSourceSessionId }
+      : {}),
     ...(resumeSessionAt ? { resumeSessionAt } : {}),
     ...(rewind ? { rewind } : {}),
     ...(turnStartMessageIds ? { turnStartMessageIds } : {}),
@@ -2314,6 +2327,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const resumeCursor = {
       threadId,
       ...(context.resumeSessionId ? { resume: context.resumeSessionId } : {}),
+      ...(context.nativeSessionPending ? { nativeSessionPending: true } : {}),
+      ...(context.rewindSourceSessionId
+        ? { rewindSourceSessionId: context.rewindSourceSessionId }
+        : {}),
       ...(context.lastAssistantUuid ? { resumeSessionAt: context.lastAssistantUuid } : {}),
       turnCount: context.turnStartMessageIds.length,
       turnStartMessageIds: [...context.turnStartMessageIds],
@@ -2582,6 +2599,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
     const nextThreadId = message.session_id;
     context.resumeSessionId = message.session_id;
+    // An init or hook response can arrive before Claude creates its transcript.
+    // A top-level conversation message is evidence that the native session was used.
+    if (
+      (message.type === "user" || message.type === "assistant") &&
+      message.parent_tool_use_id == null
+    ) {
+      context.nativeSessionPending = false;
+    }
     yield* updateResumeCursor(context);
 
     // ThroughLine: THE REPLACEMENT HAS NOW PROVEN ITSELF — retire the session it replaced.
@@ -4684,8 +4709,27 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // caller's cursor does not carry one. Without this fallback a replacement whose input
       // cursor was empty would mint a brand-new provider session uuid, silently orphaning the
       // conversation the operator can still see in the thread.
-      const existingResumeSessionId = resumeState?.resume ?? previousContext?.resumeSessionId;
-      const newSessionId = existingResumeSessionId === undefined ? yield* randomUUIDv4 : undefined;
+      const assignedSessionId = resumeState?.resume ?? previousContext?.resumeSessionId;
+      const assignedSessionPending = resumeState?.resume
+        ? resumeState.nativeSessionPending === true
+        : previousContext?.nativeSessionPending === true;
+      // ThroughLine: a zero-history rewind can be stopped/replaced before its first
+      // prompt. Keep the assigned identity, but never --resume a nonexistent file.
+      // Conversely, if the first prompt reached disk before acknowledgement, resume
+      // that exact identity instead of reminting it and losing the persisted prompt.
+      const pendingHistory = assignedSessionId && assignedSessionPending
+        ? yield* Effect.tryPromise({
+            try: () => options?.readRewindLineage
+              ? options.readRewindLineage(assignedSessionId)
+              : readClaudeSessionLineage(assignedSessionId, claudeEnvironment.CLAUDE_CONFIG_DIR),
+            catch: (cause) => toRequestError(threadId, "session/start", cause),
+          })
+        : undefined;
+      const pendingWithoutHistory = assignedSessionPending && pendingHistory === undefined;
+      const existingResumeSessionId = pendingWithoutHistory ? undefined : assignedSessionId;
+      const newSessionId = existingResumeSessionId === undefined
+        ? assignedSessionId ?? (yield* randomUUIDv4)
+        : undefined;
       const sessionId = existingResumeSessionId ?? newSessionId;
 
       const runtimeContext = yield* Effect.context<never>();
@@ -5295,6 +5339,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         resumeCursor: {
           ...(threadId ? { threadId } : {}),
           ...(sessionId ? { resume: sessionId } : {}),
+          ...(newSessionId ? { nativeSessionPending: true } : {}),
+          ...(resumeState?.rewindSourceSessionId ?? previousContext?.rewindSourceSessionId
+            ? { rewindSourceSessionId: resumeState?.rewindSourceSessionId ?? previousContext?.rewindSourceSessionId }
+            : {}),
           ...(resumeState?.resumeSessionAt ? { resumeSessionAt: resumeState.resumeSessionAt } : {}),
           // ThroughLine: carry the marker across session start, not just the uuid. The gate above
           // has already consumed it for THIS query, but the cursor is what survives if the
@@ -5328,6 +5376,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         currentApiModelId: apiModelId,
         currentEffort: effectiveEffort ?? undefined,
         resumeSessionId: sessionId,
+        nativeSessionPending: newSessionId !== undefined,
+        rewindSourceSessionId: resumeState?.rewindSourceSessionId ?? previousContext?.rewindSourceSessionId,
         pendingApprovals,
         pendingUserInputs,
         turns: [],
@@ -5349,7 +5399,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         // ThroughLine: set below when this start REPLACED a live session. Retirement of that
         // session is deferred to this one's handshake, never awaited here.
         replacedContext: previousContext,
-        replacedExpectedSessionId: previousContext ? existingResumeSessionId : undefined,
+        replacedExpectedSessionId: previousContext ? sessionId : undefined,
       };
       yield* Ref.set(contextRef, context);
       sessions.set(threadId, context);
@@ -5938,8 +5988,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
               resume: fork.sessionId,
               turnCount: retainedCount,
               turnStartMessageIds: retainedBoundaries,
+              rewindSourceSessionId: sessionId,
             }
-          : undefined,
+          : { turnCount: 0, rewindSourceSessionId: sessionId },
       });
       const restarted = yield* requireSession(threadId);
       restarted.turns.push(...retainedTurns);
