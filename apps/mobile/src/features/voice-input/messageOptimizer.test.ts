@@ -16,10 +16,12 @@ function harness(provider: VoiceOptimizationProvider = "claude") {
       new Response(JSON.stringify({ optimized: "Please fix the mobile voice input." })),
     );
   const transcribe = vi.fn(async () => raw);
+  const outcomes: unknown[] = [];
   const transcriber = withMessageOptimizer(
     { prepare: async () => ({ locale: "en-US", transcribe }) },
     () => provider,
     fetcher,
+    (result: unknown) => outcomes.push(result),
   );
   const commits: string[] = [];
   const draft = {
@@ -48,7 +50,7 @@ function harness(provider: VoiceOptimizationProvider = "claude") {
     await controller.start();
     await controller.stop();
   };
-  return { fetcher, transcribe, transcriber, controller, commits, dictate };
+  return { fetcher, transcribe, transcriber, controller, commits, outcomes, dictate };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -58,6 +60,9 @@ describe("phone voice Message Optimizer", () => {
     const h = harness();
     await h.dictate();
     expect(h.commits).toEqual(["Please fix the mobile voice input."]);
+    expect(h.outcomes).toEqual([
+      { text: "Please fix the mobile voice input.", outcome: "optimized", reason: null },
+    ]);
     expect(h.transcribe).toHaveBeenCalledOnce();
     expect(h.fetcher).toHaveBeenCalledWith(
       "https://twr.tailec334b.ts.net:8443/optimize",
@@ -82,11 +87,20 @@ describe("phone voice Message Optimizer", () => {
     });
   });
 
+  it("reports a successful no-change response as optimized, not as fallback", async () => {
+    const h = harness();
+    h.fetcher.mockResolvedValue(new Response(JSON.stringify({ optimized: raw })));
+    await h.dictate();
+    expect(h.commits).toEqual([raw]);
+    expect(h.outcomes).toEqual([{ text: raw, outcome: "optimized", reason: null }]);
+  });
+
   it("Off commits the raw transcript without a network call", async () => {
     const h = harness("off");
     await h.dictate();
     expect(h.commits).toEqual([raw]);
     expect(h.fetcher).not.toHaveBeenCalled();
+    expect(h.outcomes).toEqual([{ text: raw, outcome: "original-kept", reason: "Off" }]);
   });
 
   it.each([
@@ -124,6 +138,7 @@ describe("phone voice Message Optimizer", () => {
     await vi.advanceTimersByTimeAsync(20_000);
     await expect(result).resolves.toBe(raw);
     expect(h.fetcher.mock.calls[0]![1]!.signal!.aborted).toBe(true);
+    expect(h.outcomes).toEqual([{ text: raw, outcome: "original-kept", reason: "Timeout" }]);
   });
 
   it("cancellation during optimization settles and does not commit into another thread", async () => {
@@ -143,6 +158,20 @@ describe("phone voice Message Optimizer", () => {
     await stopping;
     expect(h.commits).toEqual([]);
     expect(h.fetcher.mock.calls[0]![1]!.signal!.aborted).toBe(true);
+    expect(h.outcomes).toEqual([]);
+  });
+
+  it("reports a non-200 reason while preserving the raw optimizer result byte-for-byte", async () => {
+    const h = harness();
+    const original = "  My ORIGINAL words\nKeep this punctuation!  ";
+    h.transcribe.mockResolvedValue(original);
+    h.fetcher.mockResolvedValue(new Response("unavailable", { status: 503 }));
+    const prepared = await h.transcriber.prepare({ signal: new AbortController().signal });
+    const result = await prepared.transcribe("file:///voice.m4a", {
+      signal: new AbortController().signal,
+    });
+    expect(result).toBe(original);
+    expect(h.outcomes).toEqual([{ text: original, outcome: "original-kept", reason: "HTTP 503" }]);
   });
 
   it("local transcription errors remain errors and never call the optimizer", async () => {

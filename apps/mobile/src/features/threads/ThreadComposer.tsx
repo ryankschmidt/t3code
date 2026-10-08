@@ -100,6 +100,7 @@ import {
   ComposerDictationStartAction,
   ComposerDictationStatus,
   ComposerDictationToolbar,
+  VoiceOptimizationStatus,
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
@@ -941,6 +942,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             ) : null}
             {isExpanded ? <View className="h-1" /> : null}
           </ComposerDictationDraftContent>
+          <VoiceOptimizationStatus result={voiceInput.optimizationResult} />
           <Animated.View
             accessibilityElementsHidden={!isToolbarVisible}
             collapsable={false}

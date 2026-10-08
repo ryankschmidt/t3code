@@ -22,7 +22,11 @@ import Animated, {
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { cn } from "../../lib/cn";
-import type { VoiceComposerPresentation } from "./voiceInputPresentation";
+import {
+  resolveVoiceOptimizationLabel,
+  type VoiceComposerPresentation,
+} from "./voiceInputPresentation";
+import type { VoiceOptimizationResult } from "./messageOptimizer";
 import { VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
 
 const DICTATION_TIMING = {
@@ -272,6 +276,24 @@ function VoiceActionButton(props: {
         </View>
       </View>
     </Pressable>
+  );
+}
+
+export function VoiceOptimizationStatus(props: {
+  readonly result: VoiceOptimizationResult | null;
+}) {
+  const label = resolveVoiceOptimizationLabel(props.result);
+  if (!label) return null;
+  return (
+    <Text
+      accessible
+      accessibilityLabel={label}
+      accessibilityLiveRegion="polite"
+      className="text-xs text-foreground-muted"
+      style={{ paddingHorizontal: 14, paddingVertical: 4 }}
+    >
+      {label}
+    </Text>
   );
 }
 

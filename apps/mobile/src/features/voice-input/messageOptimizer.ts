@@ -6,11 +6,21 @@ import {
 
 export type VoiceOptimizationProvider = "claude" | "codex" | "off";
 export type OptimizerFetch = (url: string, options: RequestInit) => Promise<Response>;
+export type VoiceOptimizationResult =
+  | { readonly text: string; readonly outcome: "optimized"; readonly reason: null }
+  | { readonly text: string; readonly outcome: "original-kept"; readonly reason: string };
+
+const originalKept = (text: string, reason: string): VoiceOptimizationResult => ({
+  text,
+  outcome: "original-kept",
+  reason,
+});
 
 export function withMessageOptimizer(
   transcriber: VoiceTranscriber,
   getProvider: () => VoiceOptimizationProvider,
   fetcher: OptimizerFetch = fetch,
+  onOutcome?: (result: VoiceOptimizationResult) => void,
 ): VoiceTranscriber {
   return {
     prepare: async (options) => {
@@ -21,34 +31,41 @@ export function withMessageOptimizer(
           const raw = await prepared.transcribe(uri, options);
           throwIfVoiceTranscriptionAborted(options.signal);
           const provider = getProvider();
-          if (provider === "off" || !raw.trim()) return raw;
-          return optimizeTranscript(raw, provider, options.signal, fetcher);
+          const result = await optimizeTranscript(raw, provider, options.signal, fetcher);
+          throwIfVoiceTranscriptionAborted(options.signal);
+          onOutcome?.(result);
+          // Preserve the shared VoiceTranscriber text contract; the mobile owner
+          // receives the richer outcome separately and publishes it on draft commit.
+          return result.text;
         },
       };
     },
   };
 }
 
-async function optimizeTranscript(
+export async function optimizeTranscript(
   raw: string,
-  provider: Exclude<VoiceOptimizationProvider, "off">,
+  provider: VoiceOptimizationProvider,
   signal: AbortSignal,
-  fetcher: OptimizerFetch,
-): Promise<string> {
+  fetcher: OptimizerFetch = fetch,
+): Promise<VoiceOptimizationResult> {
+  throwIfVoiceTranscriptionAborted(signal);
+  if (provider === "off") return originalKept(raw, "Off");
+  if (!raw.trim()) return originalKept(raw, "Empty transcript");
   const request = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let onAbort = () => {};
   // Race explicitly: a stalled native fetch or response body must not keep the
   // composer frozen, even if the network implementation ignores abort().
-  const interrupted = new Promise<string>((resolve, reject) => {
+  const interrupted = new Promise<VoiceOptimizationResult>((resolve, reject) => {
     onAbort = () => {
       request.abort();
       reject(new VoiceTranscriptionError("cancelled", "Voice transcription was cancelled."));
     };
     signal.addEventListener("abort", onAbort, { once: true });
     timeout = setTimeout(() => {
+      resolve(originalKept(raw, "Timeout"));
       request.abort();
-      resolve(raw);
     }, 20_000);
   });
   try {
@@ -64,17 +81,17 @@ async function optimizeTranscript(
           credentials: "omit",
           signal: request.signal,
         });
-        if (response.status !== 200) return raw;
+        if (response.status !== 200) return originalKept(raw, `HTTP ${response.status}`);
         const result: unknown = await response.json();
         return typeof result === "object" &&
           result !== null &&
           "optimized" in result &&
           typeof result.optimized === "string" &&
           result.optimized.trim()
-          ? result.optimized
-          : raw;
+          ? { text: result.optimized, outcome: "optimized" as const, reason: null }
+          : originalKept(raw, "Invalid response");
       } catch {
-        return raw;
+        return originalKept(raw, "Request failed");
       }
     })();
     const result = await Promise.race([optimized, interrupted]);

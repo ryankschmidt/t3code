@@ -73,6 +73,7 @@ import {
   ComposerDictationPrimaryAction,
   ComposerDictationStatus,
   ComposerDictationToolbar,
+  VoiceOptimizationStatus,
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
@@ -1654,6 +1655,7 @@ export function NewTaskDraftScreen(props: {
         ) : null}
 
         <View className="px-[14px]">{promptEditor}</View>
+        <VoiceOptimizationStatus result={voiceInput.optimizationResult} />
         <View className="h-1" />
 
         <Animated.View layout={COMPOSER_LAYOUT_TRANSITION} collapsable={false}>

@@ -1,4 +1,12 @@
 import type { VoiceInputState } from "@t3tools/client-runtime/voice-input";
+import type { VoiceOptimizationResult } from "./messageOptimizer";
+
+export function resolveVoiceOptimizationLabel(
+  result: Pick<VoiceOptimizationResult, "outcome" | "reason"> | null,
+): string | null {
+  if (!result) return null;
+  return result.outcome === "optimized" ? "Optimized" : `Original kept (${result.reason})`;
+}
 
 export type VoiceComposerPresentation = {
   readonly leadingAction: "cancel" | null;

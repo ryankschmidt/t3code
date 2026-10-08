@@ -18,7 +18,11 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";
 import { mobilePreferencesAtom } from "../../state/preferences";
-import { withMessageOptimizer, type VoiceOptimizationProvider } from "./messageOptimizer";
+import {
+  withMessageOptimizer,
+  type VoiceOptimizationProvider,
+  type VoiceOptimizationResult,
+} from "./messageOptimizer";
 import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";
 import {
   VoiceInputController,
@@ -75,6 +79,10 @@ export function useVoiceInputController(input: {
   readonly onChangeSelection: (selection: ComposerEditorSelection) => void;
 }) {
   const [state, setState] = useState<VoiceInputState>(INITIAL_STATE);
+  const [optimizationResult, setOptimizationResult] = useState<VoiceOptimizationResult | null>(
+    null,
+  );
+  const pendingOptimizationRef = useRef<VoiceOptimizationResult | null>(null);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const optimizationProviderRef = useRef<VoiceOptimizationProvider>("off");
   // Do not send a dictation while a saved Off choice is still loading.
@@ -116,7 +124,16 @@ export function useVoiceInputController(input: {
       recorder,
       getTranscriber: () => {
         const local = getLocalVoiceTranscriber();
-        return local ? withMessageOptimizer(local, () => optimizationProviderRef.current) : null;
+        return local
+          ? withMessageOptimizer(
+              local,
+              () => optimizationProviderRef.current,
+              fetch,
+              (result) => {
+                pendingOptimizationRef.current = result;
+              },
+            )
+          : null;
       },
       requestPermission: async () => {
         const permission = await requestRecordingPermissionsAsync();
@@ -139,6 +156,10 @@ export function useVoiceInputController(input: {
         const current = latestInputRef.current;
         current.onChangeSelection(selection);
         current.onChangeDraftMessage(text);
+        // Only committed dictation receives feedback. Cancellation, a changed
+        // owner, or a rejected draft revision must not claim optimization succeeded.
+        setOptimizationResult(pendingOptimizationRef.current);
+        pendingOptimizationRef.current = null;
       },
       onStateChange: setState,
     });
@@ -149,8 +170,14 @@ export function useVoiceInputController(input: {
   useEffect(() => {
     if (previousOwnerRef.current === input.ownerKey) return;
     previousOwnerRef.current = input.ownerKey;
+    pendingOptimizationRef.current = null;
+    setOptimizationResult(null);
     controller.ownerChanged();
   }, [controller, input.ownerKey]);
+
+  useEffect(() => {
+    if (input.draftMessage === "") setOptimizationResult(null);
+  }, [input.draftMessage]);
 
   useFocusEffect(
     useCallback(
@@ -227,16 +254,25 @@ export function useVoiceInputController(input: {
   }, [audioLevels, controller, recorder, state.phase]);
 
   const start = useCallback(() => {
-    if (!latestInputRef.current.disabled) void controller.start();
+    if (!latestInputRef.current.disabled) {
+      pendingOptimizationRef.current = null;
+      setOptimizationResult(null);
+      void controller.start();
+    }
   }, [controller]);
   const stop = useCallback(() => controller.stop(), [controller]);
-  const cancel = useCallback(() => controller.cancel(), [controller]);
+  const cancel = useCallback(() => {
+    pendingOptimizationRef.current = null;
+    setOptimizationResult(null);
+    return controller.cancel();
+  }, [controller]);
 
   return {
     // Store screenshots show the dictation button even on simulators, whose
     // on-device transcription is unavailable.
     isAvailable: getLocalVoiceTranscriber() !== null || getNativeShowcaseScene() !== null,
     state,
+    optimizationResult,
     audioLevels,
     elapsedSeconds,
     isBusy: voiceInputBlocksSubmission(state),

@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vite-plus/test";
 import { voiceInputFreezesEditor } from "@t3tools/client-runtime/voice-input";
 
-import { resolveVoiceComposerPresentation } from "./voiceInputPresentation";
+import {
+  resolveVoiceComposerPresentation,
+  resolveVoiceOptimizationLabel,
+} from "./voiceInputPresentation";
+
+describe("voice optimization feedback", () => {
+  it("shows nothing before a committed dictation has an outcome", () => {
+    expect(resolveVoiceOptimizationLabel(null)).toBeNull();
+  });
+  it("distinguishes optimized, Off, timeout, and HTTP failure", () => {
+    expect(resolveVoiceOptimizationLabel({ outcome: "optimized", reason: null })).toBe("Optimized");
+    for (const reason of ["Off", "Timeout", "HTTP 503"]) {
+      expect(resolveVoiceOptimizationLabel({ outcome: "original-kept", reason })).toBe(
+        `Original kept (${reason})`,
+      );
+    }
+  });
+});
 
 describe("resolveVoiceComposerPresentation", () => {
   it("maps voice states to stable composer actions and editor read-only state", () => {
