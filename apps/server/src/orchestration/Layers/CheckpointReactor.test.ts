@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeChildProcess from "node:child_process";
+import * as NodeUtil from "node:util";
 
 import {
   VcsProcessTimeoutError,
@@ -52,6 +53,7 @@ import * as RuntimeReceiptBus from "../Services/RuntimeReceiptBus.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
@@ -90,11 +92,12 @@ function createProviderServiceHarness(
   hasSession = true,
   sessionCwd = cwd,
   providerName: ProviderSession["provider"] = ProviderDriverKind.make("codex"),
+  afterRuntimeEvent?: (event: ProviderRuntimeEvent) => Effect.Effect<void>,
 ) {
   const now = "2026-01-01T00:00:00.000Z";
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
-  const rollbackConversation = vi.fn(
-    (_input: { readonly threadId: ThreadId; readonly numTurns: number }) => Effect.void,
+  const rollbackConversation = vi.fn<ProviderServiceShape["rollbackConversation"]>(
+    (_input) => Effect.void,
   );
   const assertConversationRollbackSupported = vi.fn<
     ProviderServiceShape["assertConversationRollbackSupported"]
@@ -141,7 +144,16 @@ function createProviderServiceHarness(
     rollbackConversation,
     uploadFeedback: () => unsupported(),
     get streamEvents() {
-      return Stream.fromPubSub(runtimeEventPubSub);
+      return Stream.fromPubSub(runtimeEventPubSub).pipe(
+        Stream.flatMap((event) =>
+          Stream.concat(
+            Stream.succeed(event),
+            Stream.fromEffect(afterRuntimeEvent?.(event) ?? Effect.void).pipe(
+              Stream.filter((_value): _value is never => false),
+            ),
+          ),
+        ),
+      );
     },
   };
 
@@ -310,6 +322,20 @@ describe("CheckpointReactor", () => {
     readonly gitStatusRefreshCalls?: Array<string>;
     readonly pullRequestRefreshCalls?: Array<string>;
     readonly pullRequestRefresh?: Effect.Effect<void>;
+    readonly beforeCheckpointCapture?: (
+      input: CheckpointStore.CaptureCheckpointInput,
+    ) => Effect.Effect<void>;
+    readonly beforeCheckpointRestore?: (
+      input: CheckpointStore.RestoreCheckpointInput,
+    ) => Effect.Effect<void>;
+    readonly onCheckpointReceipt?: (
+      receipt: RuntimeReceiptBus.OrchestrationRuntimeReceipt,
+    ) => Effect.Effect<void>;
+    readonly afterRuntimeEvent?: (event: ProviderRuntimeEvent) => Effect.Effect<void>;
+    readonly retentionQueryFailure?: (
+      threadId: ThreadId,
+      turnId?: TurnId,
+    ) => PersistenceSqlError | undefined;
   }) {
     const cwd = createGitRepository();
     if (options?.initializeGit === false) {
@@ -321,6 +347,7 @@ describe("CheckpointReactor", () => {
       options?.hasSession ?? true,
       options?.providerSessionCwd ?? cwd,
       options?.providerName ?? ProviderDriverKind.make("codex"),
+      options?.afterRuntimeEvent,
     );
     const orchestrationLayer = OrchestrationEngineLive.pipe(
       Layer.provide(OrchestrationProjectionSnapshotQueryLive),
@@ -369,10 +396,40 @@ describe("CheckpointReactor", () => {
       streamStatus: () => Stream.empty,
     });
 
+    const receiptPublications: RuntimeReceiptBus.OrchestrationRuntimeReceipt[] = [];
+    const observedReceiptLayer = Layer.effect(
+      RuntimeReceiptBus.RuntimeReceiptBus,
+      Effect.service(RuntimeReceiptBus.RuntimeReceiptBus).pipe(
+        Effect.map((bus) => ({
+          ...bus,
+          publish: (receipt: RuntimeReceiptBus.OrchestrationRuntimeReceipt) =>
+            bus
+              .publish(receipt)
+              .pipe(
+                Effect.andThen(Effect.sync(() => void receiptPublications.push(receipt))),
+                Effect.andThen(options?.onCheckpointReceipt?.(receipt) ?? Effect.void),
+              ),
+        })),
+      ),
+    ).pipe(Layer.provide(RuntimeReceiptBusTest));
+    const observedProjectionLayer = Layer.effect(
+      ProjectionSnapshotQuery,
+      Effect.service(ProjectionSnapshotQuery).pipe(
+        Effect.map((query) => ({
+          ...query,
+          getThreadTurnRetentionContext: (threadId: ThreadId, turnId?: TurnId) => {
+            const failure = options?.retentionQueryFailure?.(threadId, turnId);
+            return failure
+              ? Effect.fail(failure)
+              : query.getThreadTurnRetentionContext(threadId, turnId);
+          },
+        })),
+      ),
+    ).pipe(Layer.provide(projectionSnapshotLayer));
     const layer = CheckpointReactorLive.pipe(
       Layer.provideMerge(orchestrationLayer),
-      Layer.provideMerge(projectionSnapshotLayer),
-      Layer.provideMerge(RuntimeReceiptBusTest),
+      Layer.provideMerge(observedProjectionLayer),
+      Layer.provideMerge(observedReceiptLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(Layer.mock(PullRequestService)({ refreshAfterTurn })),
       Layer.provideMerge(vcsStatusBroadcasterLayer),
@@ -382,6 +439,14 @@ describe("CheckpointReactor", () => {
           CheckpointStore.make.pipe(
             Effect.map((store) => ({
               ...store,
+              captureCheckpoint: (input) =>
+                (options?.beforeCheckpointCapture?.(input) ?? Effect.void).pipe(
+                  Effect.andThen(store.captureCheckpoint(input)),
+                ),
+              restoreCheckpoint: (input) =>
+                (options?.beforeCheckpointRestore?.(input) ?? Effect.void).pipe(
+                  Effect.andThen(store.restoreCheckpoint(input)),
+                ),
               hasCheckpointRef: (input) => {
                 const failure = options?.checkpointLookupFailure?.(input.cwd);
                 return failure ? Effect.fail(failure) : store.hasCheckpointRef(input);
@@ -515,9 +580,893 @@ describe("CheckpointReactor", () => {
       cwd,
       drain,
       nextReceipt: Queue.take(receipts),
+      receiptPublications,
       pullRequestRefreshes,
     };
   }
+
+  const observeExactRevert = Effect.fnUntraced(function* (
+    engine: OrchestrationEngineShape,
+    threadId: ThreadId,
+    messageId: MessageId,
+  ) {
+    const completed = yield* Deferred.make<void>();
+    const events = yield* engine.subscribeDomainEvents.pipe(Scope.provide(scope!));
+    yield* Stream.runForEach(events, (event) =>
+      event.type === "thread.reverted" &&
+      event.payload.threadId === threadId &&
+      event.payload.conversationBoundary?.messageId === messageId
+        ? Deferred.succeed(completed, undefined).pipe(Effect.asVoid)
+        : Effect.void,
+    ).pipe(Effect.forkIn(scope!, { startImmediately: true }));
+    return completed;
+  });
+
+  const seedExtensionHistory = Effect.fnUntraced(function* (
+    engine: OrchestrationEngineShape,
+    threadId: ThreadId,
+  ) {
+    yield* engine.dispatch({
+      type: "thread.history.import",
+      commandId: CommandId.make(`extension-import:${threadId}`),
+      threadId,
+      messages: ["extension-kept", "extension-boundary", "extension-after"].map((id, index) => ({
+        messageId: MessageId.make(id),
+        role: "user" as const,
+        text: id,
+        createdAt: `2026-01-01T01:0${index * 2}:00.000Z`,
+      })),
+    });
+    yield* engine.dispatch({
+      type: "thread.session.set",
+      commandId: CommandId.make(`extension-ready:${threadId}`),
+      threadId,
+      session: {
+        threadId,
+        status: "ready",
+        providerName: "codex",
+        runtimeMode: "approval-required",
+        activeTurnId: null,
+        lastError: null,
+        updatedAt: "2026-01-01T01:00:00.000Z",
+      },
+      createdAt: "2026-01-01T01:00:00.000Z",
+    });
+  });
+
+  const seedExtensionTurn = Effect.fnUntraced(function* (
+    engine: OrchestrationEngineShape,
+    threadId: ThreadId,
+    turnId: TurnId,
+    count: number,
+    createdAt: string,
+  ) {
+    yield* engine.dispatch({
+      type: "thread.turn.diff.complete",
+      commandId: CommandId.make(`extension-placeholder:${turnId}`),
+      threadId,
+      turnId,
+      checkpointRef: CheckpointRef.make(`provider-diff:${turnId}`),
+      status: "missing",
+      files: [],
+      checkpointTurnCount: count,
+      completedAt: createdAt,
+      createdAt,
+    });
+  });
+
+  effectIt.live.each([
+    "retained-message-less",
+    "failed-provider-rollback",
+    "older-retained-completion",
+  ] as const)(
+    "checkpoint-contention: a still-valid blocked capture publishes, case=%s",
+    (testCase) =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const finalized = yield* Deferred.make<void>();
+        const failure = yield* Deferred.make<void>();
+        const threadId = ThreadId.make("thread-1");
+        const retainedTurn = asTurnId("extension-retained-turn");
+        const removedTurn = asTurnId("extension-removed-turn");
+        const newerRetained = asTurnId("extension-newer-retained-turn");
+        const capturedTurn = testCase === "failed-provider-rollback" ? removedTurn : retainedTurn;
+        const count = testCase === "failed-provider-rollback" ? 2 : 1;
+        yield* Effect.gen(function* () {
+          const harness = yield* Effect.promise(() =>
+            createHarness({
+              seedFilesystemCheckpoints: false,
+              beforeCheckpointCapture: (input) =>
+                input.checkpointRef !== checkpointRefForThreadTurn(threadId, count)
+                  ? Effect.void
+                  : Effect.gen(function* () {
+                      yield* Deferred.succeed(entered, undefined);
+                      yield* Deferred.await(release);
+                    }),
+              onCheckpointReceipt: (receipt) =>
+                receipt.type === "checkpoint.diff.finalized" && receipt.turnId === capturedTurn
+                  ? Deferred.succeed(finalized, undefined).pipe(Effect.asVoid)
+                  : Effect.void,
+            }),
+          );
+          yield* seedExtensionHistory(harness.engine, threadId);
+          harness.provider.emit({
+            type: "turn.started",
+            eventId: EventId.make("extension-valid-start"),
+            provider: ProviderDriverKind.make("codex"),
+            threadId,
+            turnId: capturedTurn,
+            createdAt: "2026-01-01T01:01:00.000Z",
+          });
+          expect(yield* harness.nextReceipt).toMatchObject({
+            type: "checkpoint.baseline.captured",
+          });
+          yield* seedExtensionTurn(
+            harness.engine,
+            threadId,
+            retainedTurn,
+            1,
+            "2026-01-01T01:01:00.000Z",
+          );
+          if (testCase === "older-retained-completion")
+            yield* seedExtensionTurn(
+              harness.engine,
+              threadId,
+              newerRetained,
+              2,
+              "2026-01-01T01:01:30.000Z",
+            );
+          yield* seedExtensionTurn(
+            harness.engine,
+            threadId,
+            removedTurn,
+            testCase === "older-retained-completion" ? 3 : 2,
+            "2026-01-01T01:03:00.000Z",
+          );
+          const events = yield* harness.engine.subscribeDomainEvents.pipe(Scope.provide(scope!));
+          yield* Stream.runForEach(events, (event) =>
+            event.type === "thread.activity-appended" &&
+            event.payload.activity.kind === "checkpoint.revert.failed"
+              ? Deferred.succeed(failure, undefined).pipe(Effect.asVoid)
+              : Effect.void,
+          ).pipe(Effect.forkIn(scope!, { startImmediately: true }));
+          if (testCase === "failed-provider-rollback")
+            harness.provider.rollbackConversation.mockImplementationOnce(() =>
+              Effect.fail(
+                new ProviderValidationError({
+                  operation: "rollbackConversation",
+                  issue: "intentional provider failure",
+                }),
+              ),
+            );
+          const reverted = yield* observeExactRevert(
+            harness.engine,
+            threadId,
+            MessageId.make("extension-boundary"),
+          );
+          harness.provider.emit({
+            type: "turn.completed",
+            eventId: EventId.make("extension-valid-complete"),
+            provider: ProviderDriverKind.make("codex"),
+            threadId,
+            turnId: capturedTurn,
+            createdAt: "2026-01-01T01:05:00.000Z",
+            payload: { state: "completed" },
+          });
+          yield* Deferred.await(entered);
+          yield* harness.engine.dispatch({
+            type: "thread.conversation.revert-to-message",
+            commandId: CommandId.make("extension-valid-rewind"),
+            threadId,
+            messageId: MessageId.make("extension-boundary"),
+            createdAt: "2026-01-01T02:00:00.000Z",
+          });
+          const acknowledged = yield* Deferred.await(
+            testCase === "failed-provider-rollback" ? failure : reverted,
+          ).pipe(
+            Effect.as(true),
+            Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.succeed(false) }),
+          );
+          expect(acknowledged, "Revert/failure must be witnessed while capture is held").toBe(true);
+          const interim = (yield* Effect.promise(harness.readModel)).threads.find(
+            (thread) => thread.id === threadId,
+          );
+          expect(interim?.messages.map((message) => message.id)).toEqual(
+            testCase !== "failed-provider-rollback"
+              ? ["extension-kept"]
+              : ["extension-kept", "extension-boundary", "extension-after"],
+          );
+          expect(
+            interim?.checkpoints.some((checkpoint) => checkpoint.turnId === capturedTurn),
+          ).toBe(true);
+          if (testCase === "older-retained-completion") {
+            expect(
+              interim?.checkpoints.some((checkpoint) => checkpoint.turnId === newerRetained),
+            ).toBe(true);
+            expect(
+              interim?.checkpoints.some((checkpoint) => checkpoint.turnId === removedTurn),
+            ).toBe(false);
+            yield* Effect.logInfo("OLDER_RETAINED_BEFORE_RELEASE", {
+              latestTurn: interim?.latestTurn?.turnId ?? null,
+              retained: interim?.checkpoints.map((checkpoint) => checkpoint.turnId),
+            });
+          }
+          yield* Deferred.succeed(release, undefined);
+          expect(
+            yield* Deferred.await(finalized).pipe(
+              Effect.as(true),
+              Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.succeed(false) }),
+            ),
+            "A retained or rollback-failure capture must remain publishable",
+          ).toBe(true);
+          yield* Effect.promise(harness.drain);
+          const after = (yield* Effect.promise(harness.readModel)).threads.find(
+            (thread) => thread.id === threadId,
+          );
+          expect(
+            after?.checkpoints.find((checkpoint) => checkpoint.turnId === capturedTurn)?.status,
+          ).toBe("ready");
+          expect(
+            after?.activities.some(
+              (activity) =>
+                activity.kind === "checkpoint.captured" && activity.turnId === capturedTurn,
+            ),
+          ).toBe(true);
+          if (testCase === "older-retained-completion") {
+            yield* Effect.logInfo("OLDER_RETAINED_AFTER_RELEASE", {
+              latestTurn: after?.latestTurn?.turnId ?? null,
+              retained: after?.checkpoints.map((checkpoint) => checkpoint.turnId),
+            });
+            // Exact cut resets current-turn state to null. Later retained-capture metadata is observed for baseline classification, not redesigned here.
+          }
+        }).pipe(Effect.ensuring(Deferred.succeed(release, undefined)));
+      }),
+  );
+
+  effectIt.live(
+    "checkpoint-contention: already-queued removed completion cannot publish after a cut",
+    () =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>(),
+          release = yield* Deferred.make<void>(),
+          queued = yield* Deferred.make<void>();
+        const heldThread = ThreadId.make("thread-1"),
+          rewindThread = ThreadId.make("thread-2"),
+          removedTurn = asTurnId("extension-queued-removed");
+        yield* Effect.gen(function* () {
+          const harness = yield* Effect.promise(() =>
+            createHarness({
+              seedFilesystemCheckpoints: false,
+              secondThreadSharingWorktree: true,
+              beforeCheckpointCapture: (input) =>
+                input.checkpointRef === checkpointRefForThreadTurn(heldThread, 0)
+                  ? Effect.gen(function* () {
+                      yield* Deferred.succeed(entered, undefined);
+                      yield* Deferred.await(release);
+                    })
+                  : Effect.void,
+              afterRuntimeEvent: (event) =>
+                event.eventId === EventId.make("extension-queued-complete")
+                  ? Deferred.succeed(queued, undefined).pipe(Effect.asVoid)
+                  : Effect.void,
+            }),
+          );
+          yield* seedExtensionHistory(harness.engine, rewindThread);
+          yield* seedExtensionTurn(
+            harness.engine,
+            rewindThread,
+            removedTurn,
+            1,
+            "2026-01-01T01:03:00.000Z",
+          );
+          harness.provider.emit({
+            type: "turn.started",
+            eventId: EventId.make("extension-hold-queue"),
+            provider: ProviderDriverKind.make("codex"),
+            threadId: heldThread,
+            turnId: asTurnId("unrelated-held-turn"),
+            createdAt: "2026-01-01T01:00:00.000Z",
+          });
+          yield* Deferred.await(entered);
+          harness.provider.emit({
+            type: "turn.completed",
+            eventId: EventId.make("extension-queued-complete"),
+            provider: ProviderDriverKind.make("codex"),
+            threadId: rewindThread,
+            turnId: removedTurn,
+            createdAt: "2026-01-01T01:05:00.000Z",
+            payload: { state: "completed" },
+          });
+          yield* Deferred.await(queued);
+          const reverted = yield* observeExactRevert(
+            harness.engine,
+            rewindThread,
+            MessageId.make("extension-boundary"),
+          );
+          yield* harness.engine.dispatch({
+            type: "thread.conversation.revert-to-message",
+            commandId: CommandId.make("extension-queued-cut"),
+            threadId: rewindThread,
+            messageId: MessageId.make("extension-boundary"),
+            createdAt: "2026-01-01T02:00:00.000Z",
+          });
+          expect(
+            yield* Deferred.await(reverted).pipe(
+              Effect.as(true),
+              Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.succeed(false) }),
+            ),
+          ).toBe(true);
+          const cut = (yield* Effect.promise(harness.readModel)).threads.find(
+            (thread) => thread.id === rewindThread,
+          );
+          expect(cut?.messages.map((message) => message.id)).toEqual(["extension-kept"]);
+          expect(cut?.checkpoints).toEqual([]);
+          yield* Deferred.succeed(release, undefined);
+          yield* Effect.promise(harness.drain);
+          const after = (yield* Effect.promise(harness.readModel)).threads.find(
+            (thread) => thread.id === rewindThread,
+          );
+          expect({
+            checkpoint: after?.checkpoints.some((checkpoint) => checkpoint.turnId === removedTurn),
+            latest: after?.latestTurn?.turnId === removedTurn,
+            receipts: harness.receiptPublications.filter(
+              (receipt) =>
+                receipt.type === "checkpoint.diff.finalized" && receipt.turnId === removedTurn,
+            ).length,
+            activities: after?.activities.filter(
+              (activity) =>
+                activity.kind === "checkpoint.captured" && activity.turnId === removedTurn,
+            ).length,
+          }).toEqual({ checkpoint: false, latest: false, receipts: 0, activities: 0 });
+        }).pipe(Effect.ensuring(Deferred.succeed(release, undefined)));
+      }),
+  );
+
+  effectIt.live(
+    "checkpoint-contention: genuinely new unprojected post-cut turn captures normally",
+    () =>
+      Effect.gen(function* () {
+        const finalized = yield* Deferred.make<void>(),
+          threadId = ThreadId.make("thread-1"),
+          newTurn = asTurnId("extension-brand-new-after-cut");
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            seedFilesystemCheckpoints: false,
+            onCheckpointReceipt: (receipt) =>
+              receipt.type === "checkpoint.diff.finalized" && receipt.turnId === newTurn
+                ? Deferred.succeed(finalized, undefined).pipe(Effect.asVoid)
+                : Effect.void,
+          }),
+        );
+        yield* seedExtensionHistory(harness.engine, threadId);
+        const reverted = yield* observeExactRevert(
+          harness.engine,
+          threadId,
+          MessageId.make("extension-boundary"),
+        );
+        yield* harness.engine.dispatch({
+          type: "thread.conversation.revert-to-message",
+          commandId: CommandId.make("extension-future-cut"),
+          threadId,
+          messageId: MessageId.make("extension-boundary"),
+          createdAt: "2026-01-01T02:00:00.000Z",
+        });
+        yield* Deferred.await(reverted);
+        const cut = (yield* Effect.promise(harness.readModel)).threads.find(
+          (thread) => thread.id === threadId,
+        );
+        expect(cut?.checkpoints.some((checkpoint) => checkpoint.turnId === newTurn)).toBe(false);
+        // No command projected this new ID before its real provider events.
+        harness.provider.emit({
+          type: "turn.started",
+          eventId: EventId.make("extension-future-start"),
+          provider: ProviderDriverKind.make("codex"),
+          threadId,
+          turnId: newTurn,
+          createdAt: "2026-01-01T02:01:00.000Z",
+        });
+        harness.provider.emit({
+          type: "turn.completed",
+          eventId: EventId.make("extension-future-complete"),
+          provider: ProviderDriverKind.make("codex"),
+          threadId,
+          turnId: newTurn,
+          createdAt: "2026-01-01T02:02:00.000Z",
+          payload: { state: "completed" },
+        });
+        expect(
+          yield* Deferred.await(finalized).pipe(
+            Effect.as(true),
+            Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.succeed(false) }),
+          ),
+          "A new unprojected turn must not be suppressed merely because this thread was rewound",
+        ).toBe(true);
+        yield* Effect.promise(harness.drain);
+        const after = (yield* Effect.promise(harness.readModel)).threads.find(
+          (thread) => thread.id === threadId,
+        );
+        expect(after?.checkpoints.find((checkpoint) => checkpoint.turnId === newTurn)?.status).toBe(
+          "ready",
+        );
+        expect(after?.latestTurn?.turnId).toBe(newTurn);
+        expect(
+          after?.activities.some(
+            (activity) => activity.kind === "checkpoint.captured" && activity.turnId === newTurn,
+          ),
+        ).toBe(true);
+        expect(after?.messages.map((message) => message.id)).toEqual(["extension-kept"]);
+      }),
+  );
+
+  effectIt.live(
+    "checkpoint-contention: retention admission query failure is loud and later provider event still captures",
+    () =>
+      Effect.gen(function* () {
+        const failed = yield* Deferred.make<void>(),
+          finalized = yield* Deferred.make<void>();
+        const threadId = ThreadId.make("thread-1"),
+          badTurn = asTurnId("extension-query-failed-turn"),
+          goodTurn = asTurnId("extension-query-next-turn");
+        let failures = 0;
+        const log = vi.spyOn(console, "log");
+        yield* Effect.gen(function* () {
+          const harness = yield* Effect.promise(() =>
+            createHarness({
+              seedFilesystemCheckpoints: false,
+              retentionQueryFailure: (_threadId, turnId) => {
+                if (turnId !== badTurn) return undefined;
+                failures++;
+                return new PersistenceSqlError({
+                  operation: "getThreadTurnRetentionContext",
+                  detail: "intentional retention admission failure",
+                });
+              },
+              afterRuntimeEvent: (event) =>
+                event.eventId === EventId.make("extension-query-fail-event")
+                  ? Deferred.succeed(failed, undefined).pipe(Effect.asVoid)
+                  : Effect.void,
+              onCheckpointReceipt: (receipt) =>
+                receipt.type === "checkpoint.diff.finalized" && receipt.turnId === goodTurn
+                  ? Deferred.succeed(finalized, undefined).pipe(Effect.asVoid)
+                  : Effect.void,
+            }),
+          );
+          harness.provider.emit({
+            type: "turn.completed",
+            eventId: EventId.make("extension-query-fail-event"),
+            provider: ProviderDriverKind.make("codex"),
+            threadId,
+            turnId: badTurn,
+            createdAt: "2026-01-01T02:00:00.000Z",
+            payload: { state: "completed" },
+          });
+          expect(
+            yield* Deferred.await(failed).pipe(
+              Effect.as(true),
+              Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.succeed(false) }),
+            ),
+            "Admission failure must be handled per event instead of killing provider consumption",
+          ).toBe(true);
+          harness.provider.emit({
+            type: "turn.started",
+            eventId: EventId.make("extension-query-next-start"),
+            provider: ProviderDriverKind.make("codex"),
+            threadId,
+            turnId: goodTurn,
+            createdAt: "2026-01-01T02:01:00.000Z",
+          });
+          harness.provider.emit({
+            type: "turn.completed",
+            eventId: EventId.make("extension-query-next-complete"),
+            provider: ProviderDriverKind.make("codex"),
+            threadId,
+            turnId: goodTurn,
+            createdAt: "2026-01-01T02:02:00.000Z",
+            payload: { state: "completed" },
+          });
+          expect(
+            yield* Deferred.await(finalized).pipe(
+              Effect.as(true),
+              Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.succeed(false) }),
+            ),
+            "Later valid provider work must still be consumed after the failed query",
+          ).toBe(true);
+          yield* Effect.promise(harness.drain);
+          expect(failures).toBe(1);
+          const after = (yield* Effect.promise(harness.readModel)).threads.find(
+            (thread) => thread.id === threadId,
+          );
+          expect(after?.checkpoints.some((checkpoint) => checkpoint.turnId === badTurn)).toBe(
+            false,
+          );
+          expect(
+            after?.checkpoints.find((checkpoint) => checkpoint.turnId === goodTurn)?.status,
+          ).toBe("ready");
+          expect(log.mock.calls.map((args) => NodeUtil.inspect(args)).join("\n")).toContain(
+            "intentional retention admission failure",
+          );
+        }).pipe(Effect.ensuring(Effect.sync(() => log.mockRestore())));
+      }),
+  );
+
+  effectIt.live.each(["files", "legacy-conversation"] as const)(
+    "checkpoint-contention: exact conversation rewind completes before blocked capture, queued=%s",
+    (queuedMode) =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const reverted = yield* Deferred.make<void>();
+        let held = false;
+        let restoreEntered = false;
+        let secondCwd = "";
+        const completedBoundaries: Array<string | undefined> = [];
+        yield* Effect.gen(function* () {
+          const harness = yield* Effect.promise(() =>
+            createHarness({
+              seedFilesystemCheckpoints: false,
+              secondThreadSharingWorktree: true,
+              secondThreadWorktreePath: () => {
+                secondCwd = createGitRepository();
+                tempDirs.push(secondCwd);
+                return secondCwd;
+              },
+              beforeCheckpointCapture: (input) =>
+                input.cwd === secondCwd
+                  ? Effect.void
+                  : Effect.gen(function* () {
+                      held = true;
+                      yield* Deferred.succeed(entered, undefined);
+                      yield* Deferred.await(release);
+                      held = false;
+                    }),
+              beforeCheckpointRestore: () =>
+                Effect.sync(() => {
+                  restoreEntered = true;
+                }),
+            }),
+          );
+          const captureThread = ThreadId.make("thread-1");
+          const rewindThread = ThreadId.make("thread-2");
+          const boundaryId = MessageId.make("contention-boundary");
+          yield* harness.engine.dispatch({
+            type: "thread.history.import",
+            commandId: CommandId.make(`contention-import-${queuedMode}`),
+            threadId: rewindThread,
+            messages: ["contention-kept", "contention-boundary", "contention-after"].map(
+              (id, index) => ({
+                messageId: MessageId.make(id),
+                role: "user" as const,
+                text: id,
+                createdAt: `2026-01-01T01:0${index}:00.000Z`,
+              }),
+            ),
+          });
+          const events = yield* harness.engine.subscribeDomainEvents.pipe(Scope.provide(scope!));
+          yield* Stream.runForEach(events, (event) => {
+            if (event.type !== "thread.reverted" || event.payload.threadId !== rewindThread) {
+              return Effect.void;
+            }
+            const messageId = event.payload.conversationBoundary?.messageId;
+            completedBoundaries.push(messageId);
+            return messageId === boundaryId
+              ? Deferred.succeed(reverted, undefined).pipe(Effect.asVoid)
+              : Effect.void;
+          }).pipe(Effect.forkIn(scope!, { startImmediately: true }));
+          NodeFS.writeFileSync(NodePath.join(secondCwd, "README.md"), "unsaved sibling bytes\n");
+          const bytesBefore = NodeFS.readFileSync(NodePath.join(secondCwd, "README.md"));
+          const captureBytesBefore = NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"));
+          harness.provider.emit({
+            type: "turn.started",
+            eventId: EventId.make(`contention-capture-${queuedMode}`),
+            provider: ProviderDriverKind.make("codex"),
+            threadId: captureThread,
+            turnId: asTurnId("contention-capture-turn"),
+            createdAt: "2026-01-01T02:00:00.000Z",
+          });
+          yield* Deferred.await(entered);
+          yield* harness.engine.dispatch({
+            type:
+              queuedMode === "files" ? "thread.checkpoint.revert" : "thread.conversation.revert",
+            commandId: CommandId.make(`contention-queued-${queuedMode}`),
+            threadId: rewindThread,
+            turnCount: 0,
+            createdAt: "2026-01-01T02:01:00.000Z",
+          });
+          yield* harness.engine.dispatch({
+            type: "thread.conversation.revert-to-message",
+            commandId: CommandId.make(`contention-exact-${queuedMode}`),
+            threadId: rewindThread,
+            messageId: boundaryId,
+            createdAt: "2026-01-01T02:02:00.000Z",
+          });
+          // The watchdog only bounds the red deadlock. Green requires thread.reverted
+          // for this exact boundary and the real projected retained-message IDs.
+          const completed = yield* Deferred.await(reverted).pipe(
+            Effect.as(true),
+            Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.succeed(false) }),
+          );
+          expect(
+            completed,
+            "Conversation-only rewind did not emit its exact thread.reverted event while checkpoint capture was blocked",
+          ).toBe(true);
+          expect(held).toBe(true);
+          expect(restoreEntered).toBe(false);
+          expect(completedBoundaries).toEqual([boundaryId]);
+          const projected = (yield* Effect.promise(harness.readModel)).threads.find(
+            (thread) => thread.id === rewindThread,
+          );
+          expect(projected?.messages.map((message) => message.id)).toEqual(["contention-kept"]);
+          expect(harness.provider.rollbackConversation).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+              threadId: rewindThread,
+              numTurns: 0,
+              beforeMessageId: boundaryId,
+            }),
+          );
+          expect(NodeFS.readFileSync(NodePath.join(secondCwd, "README.md"))).toEqual(bytesBefore);
+          expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"))).toEqual(
+            captureBytesBefore,
+          );
+          yield* Deferred.succeed(release, undefined);
+          // Only cleanup/control completion may drain every worker after release.
+          yield* Effect.promise(harness.drain);
+          expect(held).toBe(false);
+          expect(completedBoundaries).toEqual([boundaryId, undefined]);
+          expect(restoreEntered).toBe(queuedMode === "files");
+          expect(NodeFS.readFileSync(NodePath.join(secondCwd, "README.md"), "utf8")).toBe(
+            queuedMode === "files" ? "v1\n" : "unsaved sibling bytes\n",
+          );
+        }).pipe(Effect.ensuring(Deferred.succeed(release, undefined)));
+      }),
+  );
+
+  effectIt.live(
+    "checkpoint-contention: released capture cannot resurrect a same-thread rewound turn",
+    () =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const reverted = yield* Deferred.make<void>();
+        const threadId = ThreadId.make("thread-1");
+        const cutTurn = asTurnId("contention-cut-turn");
+        const boundaryId = MessageId.make("same-thread-boundary");
+        let held = false;
+        yield* Effect.gen(function* () {
+          const harness = yield* Effect.promise(() =>
+            createHarness({
+              seedFilesystemCheckpoints: false,
+              beforeCheckpointCapture: (input) =>
+                input.checkpointRef !== checkpointRefForThreadTurn(threadId, 1)
+                  ? Effect.void
+                  : Effect.gen(function* () {
+                      held = true;
+                      yield* Deferred.succeed(entered, undefined);
+                      yield* Deferred.await(release);
+                      held = false;
+                    }),
+            }),
+          );
+          yield* harness.engine.dispatch({
+            type: "thread.history.import",
+            commandId: CommandId.make("contention-same-thread-import"),
+            threadId,
+            messages: [
+              {
+                messageId: MessageId.make("same-thread-kept"),
+                role: "user",
+                text: "kept",
+                createdAt: "2026-01-01T01:00:00.000Z",
+              },
+              {
+                messageId: boundaryId,
+                role: "user",
+                text: "boundary",
+                createdAt: "2026-01-01T01:02:00.000Z",
+              },
+              {
+                messageId: MessageId.make("same-thread-after"),
+                role: "user",
+                text: "after",
+                createdAt: "2026-01-01T01:04:00.000Z",
+              },
+            ],
+          });
+          yield* harness.engine.dispatch({
+            type: "thread.session.set",
+            commandId: CommandId.make("contention-same-thread-ready"),
+            threadId,
+            session: {
+              threadId,
+              status: "ready",
+              providerName: "codex",
+              runtimeMode: "approval-required",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: "2026-01-01T01:01:00.000Z",
+            },
+            createdAt: "2026-01-01T01:01:00.000Z",
+          });
+          harness.provider.emit({
+            type: "turn.started",
+            eventId: EventId.make("contention-same-thread-start"),
+            provider: ProviderDriverKind.make("codex"),
+            threadId,
+            turnId: cutTurn,
+            createdAt: "2026-01-01T01:01:00.000Z",
+          });
+          expect(yield* harness.nextReceipt).toMatchObject({
+            type: "checkpoint.baseline.captured",
+            checkpointTurnCount: 0,
+          });
+          yield* harness.engine.dispatch({
+            type: "thread.turn.diff.complete",
+            commandId: CommandId.make("contention-same-thread-placeholder"),
+            threadId,
+            turnId: cutTurn,
+            completedAt: "2026-01-01T01:03:00.000Z",
+            checkpointRef: CheckpointRef.make("provider-diff:contention-cut-turn"),
+            status: "missing",
+            files: [],
+            checkpointTurnCount: 1,
+            createdAt: "2026-01-01T01:03:00.000Z",
+          });
+          const before = (yield* Effect.promise(harness.readModel)).threads.find(
+            (thread) => thread.id === threadId,
+          );
+          expect(before?.checkpoints.some((checkpoint) => checkpoint.turnId === cutTurn)).toBe(
+            true,
+          );
+          expect(before?.latestTurn?.turnId).toBe(cutTurn);
+          const events = yield* harness.engine.subscribeDomainEvents.pipe(Scope.provide(scope!));
+          yield* Stream.runForEach(events, (event) =>
+            event.type === "thread.reverted" &&
+            event.payload.threadId === threadId &&
+            event.payload.conversationBoundary?.messageId === boundaryId
+              ? Deferred.succeed(reverted, undefined).pipe(Effect.asVoid)
+              : Effect.void,
+          ).pipe(Effect.forkIn(scope!, { startImmediately: true }));
+          NodeFS.writeFileSync(
+            NodePath.join(harness.cwd, "README.md"),
+            "same-thread unsaved bytes\n",
+          );
+          const bytesBefore = NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"));
+          harness.provider.emit({
+            type: "turn.completed",
+            eventId: EventId.make("contention-same-thread-complete"),
+            provider: ProviderDriverKind.make("codex"),
+            threadId,
+            turnId: cutTurn,
+            createdAt: "2026-01-01T01:05:00.000Z",
+            payload: { state: "completed" },
+          });
+          yield* Deferred.await(entered);
+          yield* harness.engine.dispatch({
+            type: "thread.conversation.revert-to-message",
+            commandId: CommandId.make("contention-same-thread-rewind"),
+            threadId,
+            messageId: boundaryId,
+            createdAt: "2026-01-01T02:00:00.000Z",
+          });
+          const completed = yield* Deferred.await(reverted).pipe(
+            Effect.as(true),
+            Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.succeed(false) }),
+          );
+          expect(
+            completed,
+            "Same-thread exact rewind did not complete while its old capture was blocked",
+          ).toBe(true);
+          expect(held).toBe(true);
+          const cut = (yield* Effect.promise(harness.readModel)).threads.find(
+            (thread) => thread.id === threadId,
+          );
+          expect(cut?.messages.map((message) => message.id)).toEqual(["same-thread-kept"]);
+          expect(cut?.checkpoints.some((checkpoint) => checkpoint.turnId === cutTurn)).toBe(false);
+          expect(cut?.latestTurn?.turnId).not.toBe(cutTurn);
+          expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"))).toEqual(bytesBefore);
+          yield* Deferred.succeed(release, undefined);
+          yield* Effect.promise(harness.drain);
+          const after = (yield* Effect.promise(harness.readModel)).threads.find(
+            (thread) => thread.id === threadId,
+          );
+          expect(after?.messages.map((message) => message.id)).toEqual(["same-thread-kept"]);
+          expect(
+            {
+              checkpointResurrected: after?.checkpoints.some(
+                (checkpoint) => checkpoint.turnId === cutTurn,
+              ),
+              latestTurnResurrected: after?.latestTurn?.turnId === cutTurn,
+              removedDiffReceipts: harness.receiptPublications.filter(
+                (receipt) =>
+                  receipt.type === "checkpoint.diff.finalized" && receipt.turnId === cutTurn,
+              ).length,
+              removedCapturedActivities: after?.activities.filter(
+                (activity) =>
+                  activity.kind === "checkpoint.captured" && activity.turnId === cutTurn,
+              ).length,
+            },
+            "Released old capture must not recreate removed state, diff receipt, or captured activity",
+          ).toEqual({
+            checkpointResurrected: false,
+            latestTurnResurrected: false,
+            removedDiffReceipts: 0,
+            removedCapturedActivities: 0,
+          });
+          expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"))).toEqual(bytesBefore);
+        }).pipe(Effect.ensuring(Deferred.succeed(release, undefined)));
+      }),
+  );
+
+  effectIt.live.each(["missing", "assistant", "starting", "running"] as const)(
+    "checkpoint-contention: exact rewind rejects invalid boundary or active session, guard=%s",
+    (guard) =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() =>
+          createHarness({ seedFilesystemCheckpoints: false }),
+        );
+        const threadId = ThreadId.make("thread-1");
+        yield* harness.engine.dispatch({
+          type: "thread.history.import",
+          commandId: CommandId.make(`contention-guard-import-${guard}`),
+          threadId,
+          messages: [
+            {
+              messageId: MessageId.make("guard-kept"),
+              role: "user",
+              text: "kept",
+              createdAt: "2026-01-01T01:00:00.000Z",
+            },
+            {
+              messageId: MessageId.make("guard-boundary"),
+              role: guard === "assistant" ? "assistant" : "user",
+              text: "boundary",
+              createdAt: "2026-01-01T01:01:00.000Z",
+            },
+          ],
+        });
+        if (guard === "starting" || guard === "running") {
+          yield* harness.engine.dispatch({
+            type: "thread.session.set",
+            commandId: CommandId.make(`contention-guard-session-${guard}`),
+            threadId,
+            session: {
+              threadId,
+              status: guard,
+              providerName: "codex",
+              runtimeMode: "approval-required",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: "2026-01-01T01:02:00.000Z",
+            },
+            createdAt: "2026-01-01T01:02:00.000Z",
+          });
+        }
+        const bytesBefore = NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"));
+        const result = yield* Effect.exit(
+          harness.engine.dispatch({
+            type: "thread.conversation.revert-to-message",
+            commandId: CommandId.make(`contention-guard-rewind-${guard}`),
+            threadId,
+            messageId: MessageId.make(guard === "missing" ? "guard-missing" : "guard-boundary"),
+            createdAt: "2026-01-01T02:00:00.000Z",
+          }),
+        );
+        yield* Effect.promise(harness.drain);
+        const projected = (yield* Effect.promise(harness.readModel)).threads.find(
+          (thread) => thread.id === threadId,
+        );
+        expect(
+          Exit.isFailure(result) ||
+            projected?.activities.some((activity) => activity.kind === "checkpoint.revert.failed"),
+        ).toBe(true);
+        expect(harness.provider.rollbackConversation).not.toHaveBeenCalled();
+        expect(projected?.messages.map((message) => message.id)).toEqual([
+          "guard-kept",
+          "guard-boundary",
+        ]);
+        expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"))).toEqual(bytesBefore);
+      }),
+  );
 
   effectIt.effect("conversation rewind preserves earlier history with zero checkpoint counts", () =>
     Effect.gen(function* () {

@@ -26,6 +26,7 @@ import type {
   OrchestrationThreadShell,
   ProjectId,
   ThreadId,
+  TurnId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Option from "effect/Option";
@@ -273,6 +274,15 @@ export interface ProjectionSnapshotQueryShape {
       readonly message: OrchestrationMessage;
       readonly hasOtherUserMessages: boolean;
     }>,
+    ProjectionRepositoryError
+  >;
+
+  /** Concrete turn provenance used to retain earlier work across an exact rewind. */
+  readonly getThreadTurnRetentionContext: (
+    threadId: ThreadId,
+    turnId?: TurnId,
+  ) => Effect.Effect<
+    ReadonlyArray<{ readonly turnId: TurnId; readonly requestedAt: string }>,
     ProjectionRepositoryError
   >;
 

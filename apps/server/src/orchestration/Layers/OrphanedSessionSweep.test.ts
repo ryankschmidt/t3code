@@ -120,6 +120,7 @@ function makeSnapshotQueryLayer(input: {
     getFullThreadDiffContext: () => Effect.die("unused"),
     getThreadShellById: () => Effect.die("unused"),
     getThreadDetailById: () => Effect.die("unused"),
+    getThreadTurnRetentionContext: () => Effect.die("unused retention query"),
     getUserInputActivity: () => Effect.die("unused"),
     getEventReplayStats: () => Effect.die("unused"),
     getImportedAgentSessionSources: () => Effect.die("unused"),

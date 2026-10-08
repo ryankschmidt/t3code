@@ -14,12 +14,14 @@ import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import type * as PlatformError from "effect/PlatformError";
 import * as Stream from "effect/Stream";
+import * as Semaphore from "effect/Semaphore";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 
@@ -43,10 +45,24 @@ import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
+interface CompletionAdmission {
+  readonly threadId: ThreadId;
+  readonly turnId: TurnId;
+  requestedAt: string;
+  invalidated: boolean;
+}
+
+interface ThreadCommitState {
+  readonly permit: Semaphore.Semaphore;
+  readonly completions: Set<CompletionAdmission>;
+  users: number;
+}
+
 type ReactorInput =
   | {
       readonly source: "runtime";
       readonly event: ProviderRuntimeEvent;
+      readonly completion?: CompletionAdmission;
     }
   | {
       readonly source: "domain";
@@ -114,6 +130,41 @@ const make = Effect.gen(function* () {
 
   const startedTurns = new Map<ThreadId, TurnId>();
   const pending = new Set<ThreadId>();
+  const threadCommits = new Map<ThreadId, ThreadCommitState>();
+  const threadCommitState = (threadId: ThreadId) => {
+    let state = threadCommits.get(threadId);
+    if (!state) {
+      state = { permit: Semaphore.makeUnsafe(1), completions: new Set(), users: 0 };
+      threadCommits.set(threadId, state);
+    }
+    return state;
+  };
+  const forgetIdleThreadCommit = (threadId: ThreadId, state: ThreadCommitState) => {
+    if (
+      state.users === 0 &&
+      state.completions.size === 0 &&
+      threadCommits.get(threadId) === state
+    ) {
+      threadCommits.delete(threadId);
+    }
+  };
+  // Serialize only final publications and admissions, never git capture or provider rollback.
+  const withThreadCommit = <A, E, R>(
+    threadId: ThreadId,
+    effect: (state: ThreadCommitState) => Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R> =>
+    Effect.suspend(() => {
+      const owned = threadCommitState(threadId);
+      owned.users++;
+      return owned.permit.withPermit(Effect.suspend(() => effect(owned))).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            owned.users--;
+            forgetIdleThreadCommit(threadId, owned);
+          }),
+        ),
+      );
+    });
 
   const appendRevertFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -152,30 +203,35 @@ const make = Effect.gen(function* () {
     readonly turnId: TurnId | null;
     readonly detail: string;
     readonly createdAt: string;
+    readonly completion?: CompletionAdmission;
   }) =>
-    Effect.all({
-      commandId: serverCommandId("checkpoint-capture-failure"),
-      activityId: serverEventId,
-    }).pipe(
-      Effect.flatMap(({ commandId, activityId }) =>
-        orchestrationEngine.dispatch({
-          type: "thread.activity.append",
-          commandId,
-          threadId: input.threadId,
-          activity: {
-            id: activityId,
-            tone: "error",
-            kind: "checkpoint.capture.failed",
-            summary: "Checkpoint capture failed",
-            payload: {
-              detail: input.detail,
-            },
-            turnId: input.turnId,
-            createdAt: input.createdAt,
-          },
-          createdAt: input.createdAt,
-        }),
-      ),
+    withThreadCommit(input.threadId, () =>
+      input.completion?.invalidated
+        ? Effect.void
+        : Effect.all({
+            commandId: serverCommandId("checkpoint-capture-failure"),
+            activityId: serverEventId,
+          }).pipe(
+            Effect.flatMap(({ commandId, activityId }) =>
+              orchestrationEngine.dispatch({
+                type: "thread.activity.append",
+                commandId,
+                threadId: input.threadId,
+                activity: {
+                  id: activityId,
+                  tone: "error",
+                  kind: "checkpoint.capture.failed",
+                  summary: "Checkpoint capture failed",
+                  payload: {
+                    detail: input.detail,
+                  },
+                  turnId: input.turnId,
+                  createdAt: input.createdAt,
+                },
+                createdAt: input.createdAt,
+              }),
+            ),
+          ),
     );
 
   const resolveSessionRuntimeForThread = Effect.fn("resolveSessionRuntimeForThread")(function* (
@@ -255,6 +311,7 @@ const make = Effect.gen(function* () {
     readonly status: "ready" | "missing" | "error";
     readonly assistantMessageId: MessageId | undefined;
     readonly createdAt: string;
+    readonly completion?: CompletionAdmission;
   }) {
     const fromTurnCount = Math.max(0, input.turnCount - 1);
     const fromCheckpointRef = checkpointRefForThreadTurn(input.threadId, fromTurnCount);
@@ -320,6 +377,7 @@ const make = Effect.gen(function* () {
           turnId: input.turnId,
           detail: `Checkpoint captured, but turn diff summary is unavailable: ${error.message}`,
           createdAt: input.createdAt,
+          ...(input.completion ? { completion: input.completion } : {}),
         }),
       ),
       Effect.catch((error) =>
@@ -339,59 +397,68 @@ const make = Effect.gen(function* () {
         .find((entry) => entry.role === "assistant" && entry.turnId === input.turnId)?.id ??
       MessageId.make(`assistant:${input.turnId}`);
 
-    yield* orchestrationEngine.dispatch({
-      type: "thread.turn.diff.complete",
-      commandId: yield* serverCommandId("checkpoint-turn-diff-complete"),
-      threadId: input.threadId,
-      turnId: input.turnId,
-      completedAt: input.createdAt,
-      checkpointRef: targetCheckpointRef,
-      status: input.status,
-      files,
-      assistantMessageId,
-      checkpointTurnCount: input.turnCount,
-      createdAt: input.createdAt,
-    });
-    yield* receiptBus.publish({
-      type: "checkpoint.diff.finalized",
-      threadId: input.threadId,
-      turnId: input.turnId,
-      checkpointTurnCount: input.turnCount,
-      checkpointRef: targetCheckpointRef,
-      status: input.status,
-      createdAt: input.createdAt,
-    });
-    yield* receiptBus.publish({
-      type: "turn.processing.quiesced",
-      threadId: input.threadId,
-      turnId: input.turnId,
-      checkpointTurnCount: input.turnCount,
-      createdAt: input.createdAt,
-    });
-
-    yield* orchestrationEngine.dispatch({
-      type: "thread.activity.append",
-      commandId: yield* serverCommandId("checkpoint-captured-activity"),
-      threadId: input.threadId,
-      activity: {
-        id: EventId.make(yield* randomUUID),
-        tone: "info",
-        kind: "checkpoint.captured",
-        summary: "Checkpoint captured",
-        payload: {
-          turnCount: input.turnCount,
+    yield* withThreadCommit(input.threadId, () =>
+      Effect.gen(function* () {
+        if (input.completion?.invalidated) return;
+        yield* orchestrationEngine.dispatch({
+          type: "thread.turn.diff.complete",
+          commandId: yield* serverCommandId("checkpoint-turn-diff-complete"),
+          threadId: input.threadId,
+          turnId: input.turnId,
+          completedAt: input.createdAt,
+          checkpointRef: targetCheckpointRef,
           status: input.status,
-        },
-        turnId: input.turnId,
-        createdAt: input.createdAt,
-      },
-      createdAt: input.createdAt,
-    });
+          files,
+          assistantMessageId,
+          checkpointTurnCount: input.turnCount,
+          createdAt: input.createdAt,
+        });
+        yield* receiptBus.publish({
+          type: "checkpoint.diff.finalized",
+          threadId: input.threadId,
+          turnId: input.turnId,
+          checkpointTurnCount: input.turnCount,
+          checkpointRef: targetCheckpointRef,
+          status: input.status,
+          createdAt: input.createdAt,
+        });
+        yield* receiptBus.publish({
+          type: "turn.processing.quiesced",
+          threadId: input.threadId,
+          turnId: input.turnId,
+          checkpointTurnCount: input.turnCount,
+          createdAt: input.createdAt,
+        });
+
+        yield* orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId: yield* serverCommandId("checkpoint-captured-activity"),
+          threadId: input.threadId,
+          activity: {
+            id: EventId.make(yield* randomUUID),
+            tone: "info",
+            kind: "checkpoint.captured",
+            summary: "Checkpoint captured",
+            payload: {
+              turnCount: input.turnCount,
+              status: input.status,
+            },
+            turnId: input.turnId,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        });
+      }),
+    );
   });
 
   // Capture the files left by a completed or interrupted turn.
   const captureCheckpointFromTurnCompletion = Effect.fn("captureCheckpointFromTurnCompletion")(
-    function* (event: Extract<ProviderRuntimeEvent, { type: "turn.completed" | "turn.aborted" }>) {
+    function* (
+      event: Extract<ProviderRuntimeEvent, { type: "turn.completed" | "turn.aborted" }>,
+      completion: CompletionAdmission | undefined,
+    ) {
+      if (completion?.invalidated) return;
       const turnId = toTurnId(event.turnId);
       if (!turnId) {
         return;
@@ -454,6 +521,7 @@ const make = Effect.gen(function* () {
             : checkpointStatusFromRuntime(event.payload.state),
         assistantMessageId: existingPlaceholder?.assistantMessageId ?? undefined,
         createdAt: event.createdAt,
+        ...(completion ? { completion } : {}),
       });
     },
   );
@@ -812,19 +880,32 @@ const make = Effect.gen(function* () {
         beforeMessageId: message.id,
         ...(firstInTurn && message.turnId ? { fallbackTurnId: message.turnId } : {}),
       });
-      yield* orchestrationEngine.dispatch({
-        type: "thread.revert.complete",
-        commandId: yield* serverCommandId("conversation-revert-complete"),
-        threadId: thread.id,
-        turnCount: 0,
-        createdAt: now,
-        conversationBoundary: {
-          messageId: message.id,
-          beforeCreatedAt: message.createdAt,
-          retainedMessageIds: retained.map((row) => row.id),
-          retainedTurnIds,
-        },
-      });
+      yield* withThreadCommit(thread.id, (state) =>
+        Effect.gen(function* () {
+          const turnRows = yield* projectionSnapshotQuery.getThreadTurnRetentionContext(thread.id);
+          const requestedByTurn = new Map(turnRows.map((row) => [row.turnId, row.requestedAt]));
+          yield* orchestrationEngine.dispatch({
+            type: "thread.revert.complete",
+            commandId: yield* serverCommandId("conversation-revert-complete"),
+            threadId: thread.id,
+            turnCount: 0,
+            createdAt: now,
+            conversationBoundary: {
+              messageId: message.id,
+              beforeCreatedAt: message.createdAt,
+              retainedMessageIds: retained.map((row) => row.id),
+              retainedTurnIds,
+            },
+          });
+          // The projection has now committed its cut. Match its retained-ID OR requestedAt rule.
+          for (const completion of state.completions) {
+            const requestedAt = requestedByTurn.get(completion.turnId) ?? completion.requestedAt;
+            if (!retainedTurnIds.includes(completion.turnId) && requestedAt >= message.createdAt) {
+              completion.invalidated = true;
+            }
+          }
+        }),
+      );
       return;
     }
 
@@ -984,6 +1065,7 @@ const make = Effect.gen(function* () {
 
   const processRuntimeEvent = Effect.fn("processRuntimeEvent")(function* (
     event: ProviderRuntimeEvent,
+    completion: CompletionAdmission | undefined,
   ) {
     if (event.type === "session.exited") {
       startedTurns.delete(event.threadId);
@@ -1031,7 +1113,7 @@ const make = Effect.gen(function* () {
       ) {
         return;
       }
-      yield* captureCheckpointFromTurnCompletion(event).pipe(
+      yield* captureCheckpointFromTurnCompletion(event, completion).pipe(
         Effect.catch((error) =>
           Effect.flatMap(nowIso, (createdAt) =>
             appendCaptureFailureActivity({
@@ -1039,6 +1121,7 @@ const make = Effect.gen(function* () {
               turnId,
               detail: error.message,
               createdAt,
+              ...(completion ? { completion } : {}),
             }).pipe(Effect.catch(() => Effect.void)),
           ),
         ),
@@ -1054,7 +1137,19 @@ const make = Effect.gen(function* () {
     CheckpointStoreError | OrchestrationDispatchError | PlatformError.PlatformError,
     never
   > =>
-    input.source === "domain" ? processDomainEvent(input.event) : processRuntimeEvent(input.event);
+    input.source === "domain"
+      ? processDomainEvent(input.event)
+      : processRuntimeEvent(input.event, input.completion).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (!input.completion) return;
+              const state = threadCommits.get(input.completion.threadId);
+              if (!state) return;
+              state.completions.delete(input.completion);
+              forgetIdleThreadCommit(input.completion.threadId, state);
+            }),
+          ),
+        );
 
   const processInputSafely = (input: ReactorInput) =>
     processInput(input).pipe(
@@ -1070,6 +1165,68 @@ const make = Effect.gen(function* () {
     );
 
   const worker = yield* makeDrainableWorker(processInputSafely);
+  // ThroughLine: a conversation-only rewind touches no files, so it must not queue behind
+  // checkpoint captures. In a large repository each capture can take its full VCS timeout,
+  // and a busy fleet kept rewinds waiting for minutes (Oct 7, 2026: about 13).
+  const conversationRevertWorker = yield* makeDrainableWorker(processInputSafely);
+
+  const enqueueRuntimeEvent = Effect.fn("enqueueRuntimeEvent")(function* (
+    event: ProviderRuntimeEvent,
+  ) {
+    if (event.type !== "turn.completed" && event.type !== "turn.aborted") {
+      yield* worker.enqueue({ source: "runtime", event });
+      return;
+    }
+    const turnId = toTurnId(event.turnId);
+    if (turnId === null) {
+      yield* worker.enqueue({ source: "runtime", event });
+      return;
+    }
+    const state = threadCommitState(event.threadId);
+    // Record arrival before waiting for a cut's commit permit, not after it has released.
+    const completion: CompletionAdmission = {
+      threadId: event.threadId,
+      turnId,
+      requestedAt: event.createdAt,
+      invalidated: false,
+    };
+    state.completions.add(completion);
+    yield* withThreadCommit(event.threadId, () =>
+      Effect.gen(function* () {
+        const turns = yield* projectionSnapshotQuery.getThreadTurnRetentionContext(
+          event.threadId,
+          turnId,
+        );
+        // Only a successful absent-row read uses the projection's completedAt fallback.
+        completion.requestedAt = turns[0]?.requestedAt ?? event.createdAt;
+        yield* worker.enqueue({ source: "runtime", event, completion }).pipe(
+          Effect.onExit((exit) =>
+            Effect.sync(() => {
+              if (Exit.isFailure(exit)) state.completions.delete(completion);
+            }),
+          ),
+        );
+      }),
+    ).pipe(
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          if (Exit.isFailure(exit)) {
+            state.completions.delete(completion);
+            forgetIdleThreadCommit(event.threadId, state);
+          }
+        }),
+      ),
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (cause) =>
+          Effect.logWarning("checkpoint reactor failed to admit completion", {
+            threadId: event.threadId,
+            turnId,
+            cause: Cause.pretty(cause),
+          }),
+      ),
+    );
+  });
 
   const start: CheckpointReactorShape["start"] = Effect.fn("start")(function* () {
     yield* forkParked(
@@ -1080,6 +1237,13 @@ const make = Effect.gen(function* () {
           event.type !== "thread.checkpoint-revert-requested"
         ) {
           return Effect.void;
+        }
+        if (
+          event.type === "thread.checkpoint-revert-requested" &&
+          event.payload.messageId !== undefined &&
+          event.payload.restoreFiles === false
+        ) {
+          return conversationRevertWorker.enqueue({ source: "domain", event });
         }
         return worker.enqueue({ source: "domain", event });
       }),
@@ -1095,7 +1259,7 @@ const make = Effect.gen(function* () {
         ) {
           return Effect.void;
         }
-        return worker.enqueue({ source: "runtime", event });
+        return enqueueRuntimeEvent(event);
       }),
     );
   });
@@ -1103,6 +1267,7 @@ const make = Effect.gen(function* () {
   return {
     start,
     drain: worker.drain.pipe(
+      Effect.andThen(conversationRevertWorker.drain),
       Effect.andThen(statusRefreshWorker.drain),
       Effect.andThen(entryRefreshWorker.drain),
     ),

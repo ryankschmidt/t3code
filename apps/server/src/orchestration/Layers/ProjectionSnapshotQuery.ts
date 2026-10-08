@@ -36,7 +36,7 @@ import {
   ThreadPullRequestStack,
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
-import * as os from "node:os";
+import * as NodeOS from "node:os";
 
 import { legacyLinkedPullRequestOf } from "@t3tools/shared/threadPullRequests";
 import * as Arr from "effect/Array";
@@ -448,7 +448,7 @@ function deriveNativeSessionIdentity(
     const projectKey = cwd.replace(/[/._]/g, "-");
     return {
       providerSessionId,
-      nativeTranscriptPath: `${os.homedir()}/.claude/projects/${projectKey}/${providerSessionId}.jsonl`,
+      nativeTranscriptPath: `${NodeOS.homedir()}/.claude/projects/${projectKey}/${providerSessionId}.jsonl`,
     };
   }
 
@@ -1416,6 +1416,23 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE threads.thread_id = ${threadId}
           AND threads.deleted_at IS NULL
         LIMIT 1
+      `,
+  });
+
+  const listThreadTurnRetentionRows = SqlSchema.findAll({
+    Request: Schema.Struct({ threadId: ThreadId, turnId: Schema.optional(TurnId) }),
+    Result: Schema.Struct({ turnId: TurnId, requestedAt: IsoDateTime }),
+    execute: ({ threadId, turnId }) =>
+      turnId === undefined
+        ? sql`
+        SELECT turn_id AS "turnId", requested_at AS "requestedAt"
+        FROM projection_turns
+        WHERE thread_id = ${threadId} AND turn_id IS NOT NULL
+      `
+        : sql`
+        SELECT turn_id AS "turnId", requested_at AS "requestedAt"
+        FROM projection_turns
+        WHERE thread_id = ${threadId} AND turn_id = ${turnId}
       `,
   });
 
@@ -3623,6 +3640,20 @@ pending_approval_requests AS (
     }));
   });
 
+  const getThreadTurnRetentionContext: ProjectionSnapshotQueryShape["getThreadTurnRetentionContext"] =
+    Effect.fn("ProjectionSnapshotQuery.getThreadTurnRetentionContext")(
+      function* (threadId, turnId) {
+        return yield* listThreadTurnRetentionRows({ threadId, ...(turnId ? { turnId } : {}) }).pipe(
+          Effect.mapError(
+            toPersistenceSqlOrDecodeError(
+              "ProjectionSnapshotQuery.getThreadTurnRetentionContext:query",
+              "ProjectionSnapshotQuery.getThreadTurnRetentionContext:decodeRow",
+            ),
+          ),
+        );
+      },
+    );
+
   // Contiguous turn range bounding a windowed detail read; undefined loads the
   // full thread. Resolved from a window request inside the snapshot
   // transaction (see getThreadDetailSnapshot).
@@ -4100,6 +4131,7 @@ pending_approval_requests AS (
     getThreadShellById,
     getThreadRuntimeContext,
     getTurnStartMessage,
+    getThreadTurnRetentionContext,
     getThreadDetailById,
     getThreadDetailSnapshot,
   } satisfies ProjectionSnapshotQueryShape;
