@@ -10,13 +10,14 @@ import {
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Context from "effect/Context";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
-import * as NodeFSP from "node:fs/promises";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import { ServerConfig } from "../../config.ts";
 import {
   SqlitePersistenceMemory,
@@ -38,6 +39,14 @@ import {
   type SettingsBindingRecord,
 } from "../../throughline/settings-intent/HostBindings.ts";
 import { OrchestrationCommandInvariantError } from "../Errors.ts";
+const decodeJsonEvidence = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+const SettingsAuthorizationFlag = Context.Reference<boolean>("test/settings-authorization-flag", {
+  defaultValue: () => true,
+});
+class SettingsAuthorizationDenied extends Schema.TaggedError<SettingsAuthorizationDenied>()(
+  "SettingsAuthorizationDenied",
+  {},
+) {}
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import {
@@ -271,7 +280,6 @@ const makeSettingsLayer = (databasePath?: string) =>
       Layer.provide(OrchestrationProjectionPipelineLive),
     ),
     ProjectionThreadRepositoryLive,
-    OrchestrationCommandReceiptRepositoryLive,
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("fixture-owner")),
     }),
@@ -279,7 +287,7 @@ const makeSettingsLayer = (databasePath?: string) =>
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
     Layer.provideMerge(OrchestrationEventStoreLive),
-    Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+    Layer.provideMerge(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
     Layer.provideMerge(
       databasePath ? makeSqlitePersistenceLive(databasePath) : SqlitePersistenceMemory,
@@ -316,6 +324,36 @@ const createSettingsThread = Effect.fnUntraced(function* (threadId = settingsCon
 });
 
 it.layer(makeSettingsLayer())("existing settings record owner", (it) => {
+  it.effect(
+    "keeps captured Effect authorization context and typed failures when called through the Promise adapter",
+    () =>
+      Effect.gen(function* () {
+        yield* createSettingsThread();
+        const contextual = yield* makeExistingSettingsConsumer({
+          context: settingsContext,
+          authorize: () => SettingsAuthorizationFlag,
+          mapActivity: activityMapping,
+        }).pipe(Effect.provideService(SettingsAuthorizationFlag, false));
+        expect(yield* Effect.promise(() => contextual.verifyExistingContext(settingsContext))).toBe(
+          false,
+        );
+        const failed = yield* makeExistingSettingsConsumer({
+          context: settingsContext,
+          authorize: () => Effect.fail(new SettingsAuthorizationDenied({})),
+          mapActivity: activityMapping,
+        });
+        expect(yield* Effect.promise(() => failed.verifyExistingContext(settingsContext))).toBe(
+          false,
+        );
+        expect(
+          Exit.isFailure(
+            yield* Effect.exit(
+              Effect.tryPromise(() => failed.append(settingsRecord, settingsContext)),
+            ),
+          ),
+        ).toBe(true);
+      }),
+  );
   it.effect(
     "refuses wrong environment, absent/deleted thread and expired authorization before appending",
     () =>
@@ -402,7 +440,7 @@ it.layer(makeSettingsLayer())("existing settings record owner", (it) => {
           payloadJson: string;
           sequence: number;
         }>`SELECT payload_json AS payloadJson, sequence FROM projection_thread_activities WHERE activity_id = 'settings-activity'`;
-        expect(JSON.parse(rows[0]!.payloadJson)).toEqual(settingsRecord);
+        expect(yield* decodeJsonEvidence(rows[0]!.payloadJson)).toEqual(settingsRecord);
         expect(
           yield* sql`SELECT sequence FROM orchestration_events WHERE command_id = 'settings-operation'`,
         ).toEqual([{ sequence: receipt.sequence }]);
@@ -419,7 +457,7 @@ it.layer(makeSettingsLayer())("existing settings record owner", (it) => {
           ),
         ).toBe(true);
         expect(
-          JSON.parse(
+          yield* decodeJsonEvidence(
             (yield* sql<{
               payloadJson: string;
             }>`SELECT payload_json AS payloadJson FROM projection_thread_activities WHERE activity_id = 'settings-activity'`)[0]!
@@ -561,10 +599,10 @@ it.effect(
   "reopens the existing SQLite owner and corroborates the same accepted operation without another event",
   () =>
     Effect.gen(function* () {
-      const directory = yield* Effect.promise(() =>
-        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-settings-owner-reopen-")),
-      );
-      const databasePath = NodePath.join(directory, "state.sqlite");
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectory({ prefix: "t3-settings-owner-reopen-" });
+      const databasePath = path.join(directory, "state.sqlite");
       yield* Effect.gen(function* () {
         const firstReceipt = yield* Effect.scoped(
           Effect.gen(function* () {
@@ -600,7 +638,7 @@ it.effect(
               payloadJson: string;
             }>`SELECT payload_json AS payloadJson FROM projection_thread_activities WHERE activity_id = 'settings-activity'`;
             expect(persisted).toHaveLength(1);
-            expect(JSON.parse(persisted[0]!.payloadJson)).toEqual(settingsRecord);
+            expect(yield* decodeJsonEvidence(persisted[0]!.payloadJson)).toEqual(settingsRecord);
             expect(
               yield* sql`SELECT COUNT(*) AS count FROM orchestration_events WHERE command_id = 'settings-operation'`,
             ).toEqual([{ count: 1 }]);
@@ -608,11 +646,10 @@ it.effect(
         );
       }).pipe(
         Effect.ensuring(
-          Effect.promise(async () => {
-            await NodeFSP.unlink(databasePath);
-            await NodeFSP.rmdir(directory);
-          }),
+          fs
+            .remove(databasePath)
+            .pipe(Effect.andThen(fs.remove(directory, { recursive: true })), Effect.orDie),
         ),
       );
-    }),
+    }).pipe(Effect.provide(NodeServices.layer)),
 );
