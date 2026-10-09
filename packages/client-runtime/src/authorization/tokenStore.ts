@@ -16,6 +16,8 @@ export class RemoteDpopAccessToken extends Schema.Class<RemoteDpopAccessToken>(
   label: Schema.String,
   endpoint: RelayManagedEndpoint,
   accessToken: Schema.String,
+  // Optional for existing persisted grants. Newly exchanged grants retain their measured lifetime.
+  issuedAtEpochMs: Schema.optionalKey(Schema.Number),
   expiresAtEpochMs: Schema.Number,
   dpopThumbprint: Schema.String,
 }) {}

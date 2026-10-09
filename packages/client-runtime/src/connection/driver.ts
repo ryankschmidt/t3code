@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Fiber from "effect/Fiber";
 import type * as Scope from "effect/Scope";
 
 import type { ConnectionCatalogEntry } from "./catalog.ts";
@@ -11,6 +12,7 @@ import type {
 } from "./model.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import * as RpcSession from "../rpc/session.ts";
+import * as Authorization from "../authorization/service.ts";
 
 export type ConnectionDriverProgress =
   | {
@@ -40,6 +42,7 @@ export class ConnectionDriver extends Context.Service<
 export const make = Effect.gen(function* () {
   const resolver = yield* ConnectionResolver.ConnectionResolver;
   const sessions = yield* RpcSession.RpcSessionFactory;
+  const maintainDpopLease = yield* Authorization.makeDpopLeaseMaintainer;
 
   const connect = Effect.fn("ConnectionDriver.connect")(function* (
     entry: ConnectionCatalogEntry,
@@ -56,6 +59,13 @@ export const make = Effect.gen(function* () {
     const session = yield* sessions.connect(prepared);
     yield* reportProgress({ stage: "synchronizing", prepared });
     yield* session.ready;
+    if (prepared.httpAuthorization?._tag === "Dpop") {
+      const renewal = yield* maintainDpopLease(prepared.environmentId).pipe(Effect.forkScoped);
+      return {
+        prepared,
+        session: { ...session, closed: Effect.raceFirst(session.closed, Fiber.join(renewal)) },
+      } satisfies EnvironmentConnectionLease;
+    }
     return { prepared, session } satisfies EnvironmentConnectionLease;
   });
 
