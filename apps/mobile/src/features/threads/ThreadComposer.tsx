@@ -1,5 +1,10 @@
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
-import { parseClaudeComposerMenu } from "@t3tools/shared/claudeComposerMenus";
+import {
+  composerReturnBehavior,
+  resolveCarriedComposerSubmission,
+  sendWithComposerGuard,
+  type ComposerSubmissionSource,
+} from "./composerCarriedBehavior";
 import { ClaudeRewindMenu } from "./ClaudeRewindMenu";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useAtomValue } from "@effect/atom-react";
@@ -482,32 +487,38 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
     onEditorFocusChange?.(false);
   }, [onEditorFocusChange, onExpandedChange, settingsSheetPresentation.keepsComposerExpanded]);
-  const handleSend = useCallback(async () => {
-    if (voiceInput.blocksSubmission || pendingPastedTextAttachmentCountRef.current > 0) return;
-    const localMenu =
-      selectedProviderStatus?.driver === "claudeAgent"
-        ? parseClaudeComposerMenu(props.draftMessage)
-        : null;
-    if (localMenu) {
-      onChangeDraftMessage("");
-      openLocalMenu(localMenu);
-      return;
-    }
-    // Typed out in full rather than picked from the menu. Attachments mean the
-    // user is sending a prompt, so those go through as usual.
-    if (
-      usageLimitsOffered &&
-      isUsageLimitsCommand(props.draftMessage) &&
-      props.draftAttachments.length === 0
-    ) {
-      if (openUsageLimits()) onChangeDraftMessage("");
-      return;
-    }
-    const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
-    if (inFlightThreadIdsRef.current.has(threadKey)) return;
-    inFlightThreadIdsRef.current.add(threadKey);
-    try {
-      const messageId = await onSendMessage();
+  const handleSend = useCallback(
+    async (source: ComposerSubmissionSource = "send-arrow") => {
+      const submission = resolveCarriedComposerSubmission({
+        platform: Platform.OS,
+        source,
+        draftMessage: props.draftMessage,
+        attachmentCount: props.draftAttachments.length,
+        driver: selectedProviderStatus?.driver,
+        blocked: voiceInput.blocksSubmission || pendingPastedTextAttachmentCountRef.current > 0,
+      });
+      if (submission.kind === "blocked") return;
+      if (submission.kind === "local-menu") {
+        onChangeDraftMessage("");
+        openLocalMenu(submission.menu);
+        return;
+      }
+      // Typed out in full rather than picked from the menu. Attachments mean the
+      // user is sending a prompt, so those go through as usual.
+      if (
+        usageLimitsOffered &&
+        isUsageLimitsCommand(props.draftMessage) &&
+        props.draftAttachments.length === 0
+      ) {
+        if (openUsageLimits()) onChangeDraftMessage("");
+        return;
+      }
+      const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+      const messageId = await sendWithComposerGuard(
+        inFlightThreadIdsRef.current,
+        threadKey,
+        onSendMessage,
+      );
       if (messageId === null) {
         return;
       }
@@ -521,24 +532,23 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         // ThroughLine: the fallback display title is product identity, not a protocol name.
         projectTitle: props.environmentLabel ?? "ThroughLine",
       });
-    } finally {
-      inFlightThreadIdsRef.current.delete(threadKey);
-    }
-  }, [
-    props.draftMessage,
-    props.draftAttachments.length,
-    onChangeDraftMessage,
-    openUsageLimits,
-    usageLimitsOffered,
-    onSendMessage,
-    props.environmentId,
-    props.environmentLabel,
-    props.selectedThread.id,
-    props.selectedThread.title,
-    voiceInput.blocksSubmission,
-    selectedProviderStatus?.driver,
-    openLocalMenu,
-  ]);
+    },
+    [
+      props.draftMessage,
+      props.draftAttachments.length,
+      onChangeDraftMessage,
+      openUsageLimits,
+      usageLimitsOffered,
+      onSendMessage,
+      props.environmentId,
+      props.environmentLabel,
+      props.selectedThread.id,
+      props.selectedThread.title,
+      voiceInput.blocksSubmission,
+      selectedProviderStatus?.driver,
+      openLocalMenu,
+    ],
+  );
 
   // ── Model menu ───────────────────────────────────────────
   const modelOptions = useMemo(
@@ -788,6 +798,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 onInertChipPress={() => inputRef.current?.focus()}
                 ref={inputRef}
                 multiline
+                enterBehavior={composerReturnBehavior(Platform.OS)}
                 value={props.draftMessage}
                 readOnly={voiceInput.freezesEditor}
                 skills={composerMenu.skills}
@@ -868,7 +879,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 placeholder={props.placeholder}
                 onFocus={handleFocus}
                 onBlur={handleBlur}
-                onSubmit={handleSend}
+                onSubmit={
+                  Platform.OS === "ios" ? undefined : () => void handleSend("keyboard-submit")
+                }
                 scrollEnabled={isExpanded}
                 // Android: collapsed single line centers natively (gravity) in
                 // a pill-height box matching the send button; iOS keeps insets.
@@ -935,7 +948,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     icon="arrow.up"
                     variant="primary"
                     disabled={!canSend}
-                    onPress={handleSend}
+                    onPress={() => void handleSend("send-arrow")}
                   />
                 )}
               </View>
@@ -1027,7 +1040,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                       icon="arrow.up"
                       variant="primary"
                       disabled={!canSend}
-                      onPress={handleSend}
+                      onPress={() => void handleSend("send-arrow")}
                     />
                   ) : null}
                 </View>
