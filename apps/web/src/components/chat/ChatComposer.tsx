@@ -4,6 +4,7 @@ import {
 } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { ComposerOptimizeControl } from "../../throughline/composer-optimize/ComposerOptimizeControl";
+import { resolveCarriedComposerMenu } from "../../throughline/composer/carriedComposerPolicy";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -966,6 +967,7 @@ import {
   type AppModelOption,
   buildInstanceCatalogueParity,
   getAppModelOptionsForInstance,
+  resolveThreadAnsweringModel,
 } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import {
@@ -1497,6 +1499,35 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 // Component
 // --------------------------------------------------------------------------
+
+export function ChatComposerAnsweringModelNotice({
+  observation,
+}: {
+  observation: ReturnType<typeof resolveThreadAnsweringModel>;
+}) {
+  return (
+    <span className="text-xs text-muted-foreground" data-chat-answering-model="true">
+      Answered: {observation.answeringModel ?? "unknown"}
+      {observation.verdict === "mismatch" ? (
+        <>
+          {" "}
+          · Substitution: {observation.requestedModel} → {observation.answeringModel}
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+export function resolveChatComposerLocalMenu(
+  input: Parameters<typeof resolveCarriedComposerMenu>[0] & {
+    routeKind: string;
+    hasPendingProgress: boolean;
+  },
+): "rewind" | "config" | null {
+  return input.routeKind === "server" && !input.hasPendingProgress
+    ? resolveCarriedComposerMenu(input)
+    : null;
+}
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
@@ -3862,10 +3893,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }, intent: ComposerSubmissionIntent = "foreground") => {
-      const localMenu =
-        selectedProvider === "claudeAgent" && routeKind === "server" && !activePendingProgress
-          ? parseClaudeComposerMenu(promptRef.current)
-          : null;
+      const localMenu = resolveChatComposerLocalMenu({
+        driver: selectedProvider,
+        routeKind,
+        hasPendingProgress: Boolean(activePendingProgress),
+        text: promptRef.current,
+        attachmentCount: composerImages.length + composerFiles.length,
+        hasPendingAttachments:
+          (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0 ||
+          pendingDraftWork.has(attachmentTargetKey),
+      });
       if (localMenu) {
         event?.preventDefault();
         setPromptFromTraits("");
@@ -3927,6 +3964,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activePendingProgress,
       attachmentTargetKey,
       blurMobileComposerAfterSend,
+      composerImages.length,
+      composerFiles.length,
       isSendDisabled,
       noProviderAvailable,
       onSend,
@@ -5190,6 +5229,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }}
         onOpenProviderSetup={onOpenProviderSetup}
       />
+      <ChatComposerAnsweringModelNotice observation={resolveThreadAnsweringModel(activeThread)} />
 
       <>
         {restingBlockDefs.map((def, index) => {
