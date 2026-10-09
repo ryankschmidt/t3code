@@ -1,6 +1,10 @@
 import * as Schema from "effect/Schema";
 import { ModelSelection } from "./orchestration.ts";
-import { modelIdentity } from "./model.ts";
+import {
+  CATALOGUE_SOURCE_DRIVER_KINDS,
+  DEFAULT_MODEL_BY_PROVIDER,
+  normalizeModelIdentityForComparison,
+} from "./model.ts";
 
 /**
  * ThroughLine: the one model list, owned by the server.
@@ -29,8 +33,8 @@ export type ModelOffering = typeof ModelOffering.Type;
 
 export const DEFAULT_MODEL_OFFERING: ModelOffering = {
   offeredModels: {
-    claudeAgent: ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5"],
-    codex: ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.3-codex-spark", "gpt-5.6-terra"],
+    claudeAgent: ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"],
+    codex: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.3-codex-spark", "gpt-5.6-terra"],
   },
   retiredModels: [
     "claude-opus-5",
@@ -40,6 +44,8 @@ export const DEFAULT_MODEL_OFFERING: ModelOffering = {
     "gpt-5.5",
     "gpt-5.6-sol",
     "gpt-5.6-luna",
+    "gpt-6-sol",
+    "claude-sonnet-5",
   ],
 };
 
@@ -73,10 +79,7 @@ const MIRROR_ROUTE_PREFERENCE: ReadonlyArray<string> = [
  * comparison on purpose: `claude-opus-5` never matches `claude-opus-5-5`.
  */
 export function offeringModelId(slug: string): string {
-  return modelIdentity(slug)
-    .replace(/\[[^\]]*\]$/, "")
-    .replace(/-\d{8}$/, "")
-    .trim();
+  return normalizeModelIdentityForComparison(slug);
 }
 
 export function isRetiredModel(slug: string, offering: ModelOffering): boolean {
@@ -142,7 +145,7 @@ export function applyModelOffering<M extends OfferableModel, P extends Offerable
   );
 
   const union: Array<string> = [];
-  for (const driver of Object.keys(offering.offeredModels)) {
+  for (const driver of CATALOGUE_SOURCE_DRIVER_KINDS) {
     for (const provider of sourced) {
       if (provider.driver !== driver) continue;
       for (const model of provider.models) {
@@ -179,11 +182,11 @@ export function applyModelOffering<M extends OfferableModel, P extends Offerable
 }
 
 /**
- * A new-thread default naming a retired model moves to the first offered model
- * of the same provider (Claude to Opus 5.5 with the 1M window), so a stored
+ * A new-thread default naming a retired model moves to the declared default
+ * when offered, otherwise the first non-retired model of the same provider, so a stored
  * setting never starts a thread on a retired model and never switches
- * provider behind the user's back. A provider with no offered list falls back
- * to the Claude default.
+ * provider behind the user's back. Without an offered successor the selection
+ * is left unchanged; this contract has no authority to choose another provider.
  */
 export function retireModelSelection(
   selection: ModelSelection | null,
@@ -191,13 +194,25 @@ export function retireModelSelection(
 ): ModelSelection | null {
   if (selection === null) return null;
   if (!isRetiredModel(selection.model, offering)) return selection;
-  if (selection.instanceId === DEFAULT_CLAUDE_NEW_THREAD_SELECTION.instanceId) {
-    return DEFAULT_CLAUDE_NEW_THREAD_SELECTION;
-  }
-  const successor = offering.offeredModels[selection.instanceId]?.[0];
-  if (successor === undefined) return DEFAULT_CLAUDE_NEW_THREAD_SELECTION;
+  const offered = offering.offeredModels[selection.instanceId]?.filter(
+    (model) => !isRetiredModel(model, offering),
+  );
+  const declared = (DEFAULT_MODEL_BY_PROVIDER as Record<string, string | undefined>)[
+    selection.instanceId
+  ];
+  const successor =
+    offered?.find(
+      (model) => declared !== undefined && offeringModelId(model) === offeringModelId(declared),
+    ) ?? offered?.[0];
+  if (successor === undefined) return selection;
+  const options =
+    selection.options ??
+    (selection.instanceId === DEFAULT_CLAUDE_NEW_THREAD_SELECTION.instanceId
+      ? DEFAULT_CLAUDE_NEW_THREAD_SELECTION.options
+      : undefined);
   return Schema.decodeUnknownSync(ModelSelection)({
-    instanceId: selection.instanceId,
+    ...selection,
     model: successor,
+    ...(options === undefined ? {} : { options }),
   });
 }
