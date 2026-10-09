@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./release-identity": {
+      "types": "./src/releaseIdentity/index.ts",
+      "default": "./src/releaseIdentity/index.ts"
+    },
     "./context-window": {
       "types": "./src/contextWindow.ts",
       "default": "./src/contextWindow.ts"

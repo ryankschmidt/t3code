@@ -1,6 +1,7 @@
 import { Connection } from "@t3tools/client-runtime/connection";
 import { ClientPresentation } from "@t3tools/client-runtime/platform";
 import { clientHelloFromMetadata } from "@t3tools/client-runtime/rpc";
+import { readExpoReleaseIdentity } from "@t3tools/client-runtime/release-identity";
 import { shellSnapshotLoaderLayer } from "@t3tools/client-runtime/state/shell";
 import { threadSnapshotLoaderLayer } from "@t3tools/client-runtime/state/threads";
 import * as Layer from "effect/Layer";
@@ -29,11 +30,12 @@ const snapshotLoaderLayer = Layer.merge(threadSnapshotLoaderLayer, shellSnapshot
 const negotiatedConnectionLayer = Layer.unwrap(
   Effect.gen(function* () {
     const { metadata } = yield* ClientPresentation;
+    const identity = readExpoReleaseIdentity(Constants.expoConfig);
     const hello = clientHelloFromMetadata(
       {
-        release: Constants.expoConfig?.version,
+        release: identity.release ?? undefined,
         platform: metadata.os ?? metadata.surface,
-        commit: null,
+        commit: identity.fullCommit,
       },
       ["usageLimitSources", "usageLimitsCommand"],
     );

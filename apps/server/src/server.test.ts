@@ -44,6 +44,7 @@ import {
   UsageLimitSourceId,
   WS_METHODS,
   OrchestrationGetSnapshotError,
+  OrchestrationDispatchCommandError,
   EnvironmentAuthorizationError,
   WsRpcGroup,
   EditorId,
@@ -96,6 +97,10 @@ import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import { helloFixtures } from "./throughline/compat-tests/hello-fixtures.ts";
 import * as ClientRpcSession from "../../../packages/client-runtime/src/rpc/session.ts";
+import {
+  CurrentAuthenticatedSender,
+  type AuthenticatedSender,
+} from "./throughline/identity/sender-stamp.ts";
 import { PrimaryConnectionTarget } from "../../../packages/client-runtime/src/connection/model.ts";
 import * as NetAddress from "effect/unstable/net/NetAddress";
 import * as Socket from "effect/unstable/socket/Socket";
@@ -1799,6 +1804,53 @@ const EMPTY_DEVICE_STATE: DeviceServiceState = {
 };
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it.effect("provisional app ingress binds authenticated sender rather than payload claims", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "sender-ws-ingress-" });
+      let captured: AuthenticatedSender | undefined;
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: () =>
+              Effect.gen(function* () {
+                captured = yield* CurrentAuthenticatedSender;
+                return { sequence: 17 };
+              }),
+          },
+        },
+      });
+      const group = RpcGroup.make(
+        Rpc.make(ORCHESTRATION_WS_METHODS.dispatchCommand, {
+          payload: Schema.Unknown,
+          success: Schema.Struct({ sequence: Schema.Number }),
+          error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+        }),
+      );
+      yield* Effect.scoped(
+        RpcClient.make(group).pipe(
+          Effect.flatMap((client) =>
+            client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+              type: "project.create",
+              commandId: "sender-ingress-command",
+              projectId: "sender-ingress-project",
+              title: "Sender ingress fixture",
+              workspaceRoot,
+              defaultModelSelection: { instanceId: "codex", model: "gpt-5-codex" },
+              createdAt: "2026-01-01T00:00:00.000Z",
+              senderPublicId: "forged",
+              senderGeneration: "forged",
+            }),
+          ),
+          Effect.provide(wsRpcProtocolLayer(yield* getWsServerUrl("/ws"))),
+        ),
+      );
+      assert.equal(captured?.publicAgentId, "desktop-bootstrap");
+      assert.equal(captured?.nativeKind, "app-session");
+      assert.isTrue(typeof captured?.generation === "string" && captured.generation !== "forged");
+      assert.equal(captured?.nativeId, captured?.generation);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
   for (const authorized of [true, false]) {
     it.effect(
       `launcher family read gate: ${authorized ? "authorized reads serving-host record" : "unauthorized refuses first"}`,

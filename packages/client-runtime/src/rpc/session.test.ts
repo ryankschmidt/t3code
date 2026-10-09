@@ -288,6 +288,60 @@ const publishConfigEvents = Effect.fn("TestRpcSessionFactory.publishConfigEvents
 });
 
 describe("RpcSessionFactory", () => {
+  it.effect("projects only field-only diagnostics and retains environment mismatch refusal", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const events: unknown[] = [];
+        const { factory, sockets } = yield* makeFactory({
+          onDiagnostic: (event) => {
+            events.push(event);
+          },
+        });
+        const session = yield* factory.connect(PREPARED);
+        const ready = yield* Effect.forkChild(Effect.exit(session.ready));
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket, {
+          ...ENCODED_SERVER_CONFIG,
+          environment: { ...ENCODED_SERVER_CONFIG.environment, environmentId: "other-environment" },
+          futureSecret: "diagnostic-must-not-copy-config",
+        });
+        const exit = yield* Fiber.join(ready);
+        expect(Exit.isFailure(exit)).toBe(true);
+        expect(events).toContainEqual({
+          phase: "config-received",
+          expectedEnvironmentId: TARGET.environmentId,
+          actualEnvironmentId: "other-environment",
+        });
+        expect(events).toContainEqual({
+          phase: "ready-failed",
+          expectedEnvironmentId: TARGET.environmentId,
+        });
+        expect(JSON.stringify(events)).not.toContain("diagnostic-must-not-copy-config");
+        expect(JSON.stringify(events)).not.toContain("wsTicket");
+        expect(JSON.stringify(events)).not.toContain("httpAuthorization");
+      }),
+    ),
+  );
+
+  it.effect("diagnostic callback failure cannot change legacy readiness", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory({
+          onDiagnostic: () => {
+            throw new Error("diagnostic observer failed");
+          },
+        });
+        const session = yield* factory.connect(PREPARED);
+        const ready = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        yield* Fiber.join(ready);
+      }),
+    ),
+  );
+
   it.effect("negotiating config decoder preserves the existing asQueue consumer contract", () =>
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory({

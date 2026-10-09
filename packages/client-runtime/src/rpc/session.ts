@@ -64,7 +64,25 @@ export interface RpcSession {
   readonly closed: Effect.Effect<never, ConnectionAttemptError>;
 }
 
+export interface RpcSessionDiagnostic {
+  readonly phase:
+    | "connecting"
+    | "socket-open"
+    | "config-received"
+    | "config-failed"
+    | "hello-pending"
+    | "hello-result"
+    | "ready"
+    | "ready-failed";
+  readonly expectedEnvironmentId: string;
+  readonly actualEnvironmentId?: string;
+  readonly helloKind?: HelloCompatibility["kind"];
+  readonly helloOutcome?: "compatible" | "degraded" | "update-required";
+}
+
 export interface RpcSessionOptions {
+  /** Field-only observation; never receives URLs, credentials, raw events or causes. */
+  readonly onDiagnostic?: (event: RpcSessionDiagnostic) => void;
   /** The app supplies its actual release/platform metadata; absence stays legacy. */
   readonly hello?: Parameters<WsRpcProtocolClient[typeof WS_METHODS.throughlineHello]>[0];
   readonly environmentThemes?: boolean;
@@ -181,6 +199,14 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
   };
 
   const connect = Effect.fnUntraced(function* (connection: PreparedConnection) {
+    const diagnose = (event: Omit<RpcSessionDiagnostic, "expectedEnvironmentId">) =>
+      Effect.sync(() =>
+        options.onDiagnostic?.({
+          ...event,
+          expectedEnvironmentId: connection.environmentId,
+        }),
+      ).pipe(Effect.catchDefect(() => Effect.void));
+    yield* diagnose({ phase: "connecting" });
     const networkHint =
       connection.target._tag === "RelayConnectionTarget" ? ` ${NETWORK_BLOCKING_HINT}` : "";
     const mapRpcError = (error: Parameters<typeof mapSessionRpcError>[0]) =>
@@ -192,7 +218,10 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     const connected = yield* Deferred.make<void>();
     const disconnected = yield* Deferred.make<never, ConnectionTransientError>();
     const hooks = RpcClient.ConnectionHooks.of({
-      onConnect: Deferred.succeed(connected, undefined).pipe(Effect.asVoid),
+      onConnect: Deferred.succeed(connected, undefined).pipe(
+        Effect.andThen(diagnose({ phase: "socket-open" })),
+        Effect.asVoid,
+      ),
       onDisconnect: Deferred.isDone(connected).pipe(
         Effect.flatMap((wasConnected) =>
           Deferred.fail(
@@ -291,6 +320,10 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
             yield* PubSub.publish(serverConfigUpdates, buffered.value);
           }
           if (event.type === "snapshot") {
+            yield* diagnose({
+              phase: "config-received",
+              actualEnvironmentId: event.config.environment.environmentId,
+            });
             yield* Deferred.succeed(initialConfigDeferred, event.config);
           }
         }),
@@ -306,6 +339,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
           return Effect.void;
         }
         return Effect.all([
+          diagnose({ phase: "config-failed" }),
           Deferred.failCause(serverConfigExit, exit.cause),
           Deferred.failCause(configSubscriptionClosed, Cause.map(exit.cause, mapRpcError)),
         ]).pipe(Effect.asVoid);
@@ -339,6 +373,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       options.hello === undefined
         ? Effect.succeed<HelloCompatibility>({ kind: "not-requested" })
         : initialConfig.pipe(
+            Effect.tap(() => diagnose({ phase: "hello-pending" })),
             Effect.andThen(
               protocolClient[WS_METHODS.throughlineHello](options.hello).pipe(
                 Effect.map((hello): HelloCompatibility => ({ kind: "negotiated", hello })),
@@ -441,6 +476,13 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       ready: Deferred.await(connected).pipe(
         Effect.andThen(initialConfig),
         Effect.andThen(compatibility),
+        Effect.tap((result) =>
+          diagnose({
+            phase: "hello-result",
+            helloKind: result.kind,
+            ...(result.kind === "negotiated" ? { helloOutcome: result.hello.outcome } : {}),
+          }),
+        ),
         Effect.flatMap((result) =>
           result.kind === "negotiated" && result.hello.outcome === "update-required"
             ? Effect.fail(
@@ -453,6 +495,9 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
         ),
         Effect.asVoid,
         Effect.raceFirst(Deferred.await(disconnected)),
+        Effect.onExit((exit) =>
+          diagnose({ phase: Exit.isSuccess(exit) ? "ready" : "ready-failed" }),
+        ),
       ),
       probe,
       closed: Effect.raceFirst(

@@ -578,6 +578,8 @@ export const OrchestrationMessage = Schema.Struct({
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   context: Schema.optional(OrchestrationMessageContext),
+  senderPublicId: Schema.optional(TrimmedNonEmptyString),
+  senderGeneration: Schema.optional(TrimmedNonEmptyString),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -1334,6 +1336,11 @@ export const ThreadTurnStartCommand = Schema.Struct({
     text: Schema.String,
     attachments: Schema.Array(ChatAttachment),
     context: Schema.optional(OrchestrationMessageContext),
+    // Validation-only claims: the server stamps from authenticated context.
+    senderPublicId: Schema.optional(Schema.String),
+    senderGeneration: Schema.optional(Schema.String),
+    sender_public_id: Schema.optional(Schema.String),
+    sender_generation: Schema.optional(Schema.String),
   }),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
@@ -2054,6 +2061,8 @@ export const OrchestrationClientOrigin = Schema.Struct({
 export type OrchestrationClientOrigin = typeof OrchestrationClientOrigin.Type;
 
 export const OrchestrationEventMetadata = Schema.Struct({
+  senderPublicId: Schema.optional(TrimmedNonEmptyString),
+  senderGeneration: Schema.optional(TrimmedNonEmptyString),
   providerTurnId: Schema.optional(TrimmedNonEmptyString),
   providerItemId: Schema.optional(ProviderItemId),
   adapterKey: Schema.optional(TrimmedNonEmptyString),

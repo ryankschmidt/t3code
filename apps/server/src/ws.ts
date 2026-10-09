@@ -95,6 +95,11 @@ import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import { readLauncherThreadFamily } from "./throughline/identity/launcher-lineage.ts";
 import {
+  senderFromAppSession,
+  withAuthenticatedSender,
+  captureSenderClaims,
+} from "./throughline/identity/sender-stamp.ts";
+import {
   existingTransportPolicy,
   negotiateHello,
 } from "../../../packages/throughline-protocol/src/hello.ts";
@@ -605,12 +610,17 @@ const makeWsRpcLayer = (
       // the client's request caused them.
       const hasClientOrigin =
         clientOrigin.surface !== undefined || clientOrigin.appVersion !== undefined;
+      const authenticatedSender = senderFromAppSession(currentSession);
       const dispatchFromClient: OrchestrationEngine.OrchestrationEngineShape["dispatch"] = (
         command,
       ) =>
-        orchestrationEngine.dispatch(
+        withAuthenticatedSender(
+          orchestrationEngine.dispatch(
+            command,
+            hasClientOrigin ? { origin: clientOrigin } : undefined,
+          ),
+          authenticatedSender,
           command,
-          hasClientOrigin ? { origin: clientOrigin } : undefined,
         );
       const recordClientCommandAnalytics = (command: OrchestrationCommand) => {
         switch (command.type) {
@@ -1955,6 +1965,10 @@ const makeWsRpcLayer = (
                   prompt: command.message.text,
                   threadId: command.threadId,
                   turnCommand: encoded as Record<string, unknown>,
+                  trustedSenderContext: {
+                    sender: authenticatedSender,
+                    claims: captureSenderClaims(command),
+                  },
                   holdMs: TURN_RUN_HOLD_MS,
                   completionMode: "dispatch-only",
                 },
