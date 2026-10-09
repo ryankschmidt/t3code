@@ -86,6 +86,11 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import {
+  readHeadroom,
+  type ConfiguredIdentity,
+  type ObserverSnapshot,
+} from "../../throughline/headroom/observer.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const encodePromptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -256,6 +261,15 @@ export interface ProviderServiceLiveOptions {
    * test see whether a credential was requested at all.
    */
   readonly issueMcpCredential?: typeof McpSessionRegistry.issueActiveMcpCredential;
+  /** Read an existing cached observer/configured snapshot for this routed instance.
+   * No reader means unknown/admit; this consumer never measures quota or fetches it. */
+  readonly readHeadroomSnapshot?: (instanceId: ProviderInstanceId) =>
+    | {
+        readonly configured: readonly ConfiguredIdentity[];
+        readonly snapshot?: ObserverSnapshot;
+        readonly freshnessMs: number;
+      }
+    | undefined;
 }
 
 interface TurnAnalyticsMetadata {
@@ -512,6 +526,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     completedOrder: [],
   });
   let turnAnalyticsRequestId = 0;
+  let headroomWaitSequence = 0;
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
   const finishTurnAnalytics = (
@@ -1717,6 +1732,59 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "ProviderService.sendTurn",
           `Provider '${routed.adapter.provider}' requires an explicit continuation prompt`,
         );
+      }
+      // Keep the current send effect pending using the existing native waiting state.
+      // A missing/failed/stale observation (including a missing reset) never withholds a turn.
+      if (options?.readHeadroomSnapshot) {
+        let announcedWait = false;
+        while (true) {
+          // This is a synchronous cache read, not an asynchronous usage request.
+          // A reader failure is unknown, without leaking its payload into logs.
+          let observation: ReturnType<
+            NonNullable<ProviderServiceLiveOptions["readHeadroomSnapshot"]>
+          >;
+          try {
+            observation = options.readHeadroomSnapshot(routed.instanceId);
+          } catch {
+            observation = undefined;
+          }
+          if (observation === undefined) break;
+          const now = DateTime.toEpochMillis(yield* DateTime.now);
+          const rows = readHeadroom({ ...observation, now });
+          if (
+            rows.length === 0 ||
+            rows.some((row) => row.admit || !Number.isFinite(Date.parse(row.reset_at ?? "")))
+          )
+            break;
+          let nextChange = Infinity;
+          for (const row of rows) {
+            nextChange = Math.min(
+              nextChange,
+              Date.parse(row.reset_at!),
+              Date.parse(row.observed_at!) + observation.freshnessMs,
+            );
+          }
+          if (!Number.isFinite(nextChange) || nextChange <= now) break;
+          if (!announcedWait) {
+            yield* publishRuntimeEvent({
+              type: "session.state.changed",
+              eventId: EventId.make(
+                `headroom-wait:${routed.instanceId}:${input.threadId}:${++headroomWaitSequence}`,
+              ),
+              provider: routed.adapter.provider,
+              providerInstanceId: routed.instanceId,
+              threadId: input.threadId,
+              createdAt: yield* nowIso,
+              payload: {
+                state: "waiting",
+                reason: "The observer reports no headroom until reset.",
+              },
+            });
+            announcedWait = true;
+          }
+          // Wake at the first actual reset or when the observation becomes stale, then re-read.
+          yield* Effect.sleep(`${nextChange - now} millis`);
+        }
       }
       if (!routed.isActive) {
         routed = yield* resolveRoutableSession({
