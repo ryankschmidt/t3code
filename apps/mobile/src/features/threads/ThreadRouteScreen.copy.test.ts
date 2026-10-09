@@ -1,7 +1,66 @@
 import { describe, expect, it } from "vite-plus/test";
 import { copyThreadValue, type ThreadCopyIdentity, type ThreadCopyRef } from "./copy/threadCopy";
+import { launcherFamilyRows, validateLauncherFamilyRead } from "./copy/launcherFamily";
 
 describe("copy sheet's route-scoped operation", () => {
+  it("consumes recorded launcher lineage only for the owning public route", () => {
+    const family = validateLauncherFamilyRead(
+      { threadId: "thread" },
+      {
+        threadId: "thread",
+        source: "agent-instruments.thread-lineage.v1",
+        status: "recorded",
+        parentThreadId: "parent",
+        creatorResolution: "provided-parent",
+        launcherSeat: "source-seat",
+        purpose: "bounded child task",
+        handle: "visible-child",
+        host: "twr",
+        family: { status: "recorded", rootThreadId: "root", ancestorThreadIds: ["parent", "root"] },
+      },
+    );
+    const rows = launcherFamilyRows(
+      { environmentId: "environment-twr", threadId: "thread" },
+      { environmentId: "environment-twr", family },
+    );
+    expect(rows.find((row) => row.label === "Family root")?.value).toBe("root");
+    expect(rows.find((row) => row.label === "Parent thread")?.value).toBe("parent");
+  });
+
+  it("refuses lineage returned for another owning environment or public thread", () => {
+    const family = {
+      threadId: "thread",
+      source: "agent-instruments.thread-lineage.v1" as const,
+      status: "unknown" as const,
+      reason: "no recorded creation",
+    };
+    expect(() =>
+      launcherFamilyRows(
+        { environmentId: "mac", threadId: "thread" },
+        { environmentId: "twr", family },
+      ),
+    ).toThrow("owning environment");
+    expect(() => validateLauncherFamilyRead({ threadId: "another-thread" }, family)).toThrow(
+      "another public thread",
+    );
+  });
+
+  it("keeps an unknown root unknown without substituting a native or requested identity", () => {
+    const family = {
+      threadId: "thread",
+      source: "agent-instruments.thread-lineage.v1" as const,
+      status: "unknown" as const,
+      reason: "no recorded creation",
+    };
+    const rows = launcherFamilyRows(
+      { environmentId: "twr", threadId: "thread" },
+      { environmentId: "twr", family },
+    );
+    expect(rows.find((row) => row.label === "Family root")?.value).toBe(
+      "Unknown · no recorded creation",
+    );
+  });
+
   it("copies identity from the current owning route, not another host with the same thread id", async () => {
     const routes = new Map<string, ThreadCopyIdentity>([
       [

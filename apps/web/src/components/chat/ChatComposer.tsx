@@ -3,6 +3,8 @@ import {
   requestDesktopPasteAsTextForChord,
 } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
+import { ComposerOptimizeControl } from "../../throughline/composer-optimize/ComposerOptimizeControl";
+import { resolveCarriedComposerMenu } from "../../throughline/composer/carriedComposerPolicy";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -965,6 +967,7 @@ import {
   type AppModelOption,
   buildInstanceCatalogueParity,
   getAppModelOptionsForInstance,
+  resolveThreadAnsweringModel,
 } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import {
@@ -1496,6 +1499,35 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 // Component
 // --------------------------------------------------------------------------
+
+export function ChatComposerAnsweringModelNotice({
+  observation,
+}: {
+  observation: ReturnType<typeof resolveThreadAnsweringModel>;
+}) {
+  return (
+    <span className="text-xs text-muted-foreground" data-chat-answering-model="true">
+      Answered: {observation.answeringModel ?? "unknown"}
+      {observation.verdict === "mismatch" ? (
+        <>
+          {" "}
+          · Substitution: {observation.requestedModel} → {observation.answeringModel}
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+export function resolveChatComposerLocalMenu(
+  input: Parameters<typeof resolveCarriedComposerMenu>[0] & {
+    routeKind: string;
+    hasPendingProgress: boolean;
+  },
+): "rewind" | "config" | null {
+  return input.routeKind === "server" && !input.hasPendingProgress
+    ? resolveCarriedComposerMenu(input)
+    : null;
+}
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
@@ -2167,6 +2199,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Refs
   // ------------------------------------------------------------------
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
+  const optimizationOwner = JSON.stringify(composerDraftTarget);
+  const optimizationRevisionRef = useRef(0);
+  const optimizationObservedRef = useRef({ owner: optimizationOwner, text: prompt });
+  useLayoutEffect(() => {
+    if (
+      optimizationObservedRef.current.owner !== optimizationOwner ||
+      optimizationObservedRef.current.text !== prompt
+    ) {
+      optimizationRevisionRef.current += 1;
+      optimizationObservedRef.current = { owner: optimizationOwner, text: prompt };
+    }
+  }, [optimizationOwner, prompt]);
   const pasteAsTextShortcutUntilRef = useRef(0);
   const pastedTextFileNamesRef = useRef<{ targetKey: string; names: Set<string> }>({
     targetKey: "",
@@ -3849,10 +3893,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }, intent: ComposerSubmissionIntent = "foreground") => {
-      const localMenu =
-        selectedProvider === "claudeAgent" && routeKind === "server" && !activePendingProgress
-          ? parseClaudeComposerMenu(promptRef.current)
-          : null;
+      const localMenu = resolveChatComposerLocalMenu({
+        driver: selectedProvider,
+        routeKind,
+        hasPendingProgress: Boolean(activePendingProgress),
+        text: promptRef.current,
+        attachmentCount: composerImages.length + composerFiles.length,
+        hasPendingAttachments:
+          (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0 ||
+          pendingDraftWork.has(attachmentTargetKey),
+      });
       if (localMenu) {
         event?.preventDefault();
         setPromptFromTraits("");
@@ -3914,6 +3964,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activePendingProgress,
       attachmentTargetKey,
       blurMobileComposerAfterSend,
+      composerImages.length,
+      composerFiles.length,
       isSendDisabled,
       noProviderAvailable,
       onSend,
@@ -5177,6 +5229,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }}
         onOpenProviderSetup={onOpenProviderSetup}
       />
+      <ChatComposerAnsweringModelNotice observation={resolveThreadAnsweringModel(activeThread)} />
 
       <>
         {restingBlockDefs.map((def, index) => {
@@ -6984,7 +7037,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isComposerResting &&
                         "flex items-center overflow-hidden whitespace-nowrap leading-8",
                     )}
-                    onChange={onPromptChange}
+                    onChange={(...args) => {
+                      optimizationRevisionRef.current += 1;
+                      onPromptChange(...args);
+                      optimizationObservedRef.current = {
+                        owner: optimizationOwner,
+                        text: promptRef.current,
+                      };
+                    }}
                     onVisibleSelectionChange={expandComposerForEditorChange}
                     onCommandKeyDown={onComposerCommandKey}
                     onPageScrollKeyDown={onPageScrollKeyDown}
@@ -7089,6 +7149,36 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  {!isComposerResting && !activePendingProgress && !isComposerApprovalState ? (
+                    <ComposerOptimizeControl
+                      key={optimizationOwner}
+                      ownerKey={optimizationOwner}
+                      disabled={
+                        isSendBusy || !prompt.trim() || collectInlineContextIds(prompt).length > 0
+                      }
+                      readDraft={() => ({
+                        owner: optimizationOwner,
+                        text: promptRef.current,
+                        revision: optimizationRevisionRef.current,
+                      })}
+                      readSelection={() =>
+                        composerEditorRef.current?.readSelectionRange() ?? { start: 0, end: 0 }
+                      }
+                      writeDraft={(text, expandedCursor) => {
+                        optimizationRevisionRef.current += 1;
+                        optimizationObservedRef.current = { owner: optimizationOwner, text };
+                        promptRef.current = text;
+                        setPrompt(text);
+                        const cursor = collapseExpandedComposerCursor(text, expandedCursor);
+                        setComposerCursor(cursor);
+                        setComposerTrigger(detectComposerTrigger(text, expandedCursor));
+                        window.requestAnimationFrame(() => {
+                          if (optimizationObservedRef.current.owner === optimizationOwner)
+                            composerEditorRef.current?.focusAt(cursor);
+                        });
+                      }}
+                    />
+                  ) : null}
                   {showComposerAttachAction ? (
                     <>
                       <input

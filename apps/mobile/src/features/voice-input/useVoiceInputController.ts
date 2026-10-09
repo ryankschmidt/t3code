@@ -33,6 +33,7 @@ import {
   type VoiceInputState,
 } from "@t3tools/client-runtime/voice-input";
 import { normalizeVoiceInputDecibels, VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
+import { createVoiceUndo, restoreVoiceUndo, type VoiceUndo } from "./voiceOptimizationUndo";
 
 const INITIAL_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
 const VOICE_METERING_INTERVAL_MS = 80;
@@ -83,6 +84,9 @@ export function useVoiceInputController(input: {
     null,
   );
   const pendingOptimizationRef = useRef<VoiceOptimizationResult | null>(null);
+  const pendingRawTranscriptRef = useRef<string | null>(null);
+  const [rawTranscript, setRawTranscript] = useState<string | null>(null);
+  const [voiceUndo, setVoiceUndo] = useState<VoiceUndo | null>(null);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const optimizationProviderRef = useRef<VoiceOptimizationProvider>("off");
   // Do not send a dictation while a saved Off choice is still loading.
@@ -132,6 +136,9 @@ export function useVoiceInputController(input: {
               (result) => {
                 pendingOptimizationRef.current = result;
               },
+              (raw) => {
+                pendingRawTranscriptRef.current = raw;
+              },
             )
           : null;
       },
@@ -154,12 +161,30 @@ export function useVoiceInputController(input: {
       },
       commitDraft: (text, selection) => {
         const current = latestInputRef.current;
+        if (!current.ownerKey) return;
+        const raw = pendingRawTranscriptRef.current;
+        setVoiceUndo(
+          raw === null
+            ? null
+            : createVoiceUndo(
+                {
+                  ownerKey: current.ownerKey,
+                  text: current.draftMessage,
+                  selection: current.selection,
+                  revision: revisionRef.current,
+                },
+                text,
+                raw,
+              ),
+        );
+        setRawTranscript(raw);
         current.onChangeSelection(selection);
         current.onChangeDraftMessage(text);
         // Only committed dictation receives feedback. Cancellation, a changed
         // owner, or a rejected draft revision must not claim optimization succeeded.
         setOptimizationResult(pendingOptimizationRef.current);
         pendingOptimizationRef.current = null;
+        pendingRawTranscriptRef.current = null;
       },
       onStateChange: setState,
     });
@@ -171,7 +196,10 @@ export function useVoiceInputController(input: {
     if (previousOwnerRef.current === input.ownerKey) return;
     previousOwnerRef.current = input.ownerKey;
     pendingOptimizationRef.current = null;
+    pendingRawTranscriptRef.current = null;
     setOptimizationResult(null);
+    setRawTranscript(null);
+    setVoiceUndo(null);
     controller.ownerChanged();
   }, [controller, input.ownerKey]);
 
@@ -256,6 +284,7 @@ export function useVoiceInputController(input: {
   const start = useCallback(() => {
     if (!latestInputRef.current.disabled) {
       pendingOptimizationRef.current = null;
+      pendingRawTranscriptRef.current = null;
       setOptimizationResult(null);
       void controller.start();
     }
@@ -263,9 +292,45 @@ export function useVoiceInputController(input: {
   const stop = useCallback(() => controller.stop(), [controller]);
   const cancel = useCallback(() => {
     pendingOptimizationRef.current = null;
+    pendingRawTranscriptRef.current = null;
     setOptimizationResult(null);
     return controller.cancel();
   }, [controller]);
+
+  const undoOptimization = useCallback(() => {
+    if (voiceInputBlocksSubmission(state)) return false;
+    const current = latestInputRef.current;
+    const restored = restoreVoiceUndo(
+      voiceUndo,
+      current.ownerKey
+        ? {
+            ownerKey: current.ownerKey,
+            text: current.draftMessage,
+            selection: current.selection,
+            revision: revisionRef.current,
+          }
+        : null,
+    );
+    if (!restored) return false;
+    current.onChangeSelection(restored.selection);
+    current.onChangeDraftMessage(restored.text);
+    setVoiceUndo(null);
+    setOptimizationResult(null);
+    return true;
+  }, [state, voiceUndo]);
+  const canUndoOptimization =
+    !voiceInputBlocksSubmission(state) &&
+    restoreVoiceUndo(
+      voiceUndo,
+      input.ownerKey
+        ? {
+            ownerKey: input.ownerKey,
+            text: input.draftMessage,
+            selection: input.selection,
+            revision: revisionRef.current,
+          }
+        : null,
+    ) !== null;
 
   return {
     // Store screenshots show the dictation button even on simulators, whose
@@ -273,6 +338,9 @@ export function useVoiceInputController(input: {
     isAvailable: getLocalVoiceTranscriber() !== null || getNativeShowcaseScene() !== null,
     state,
     optimizationResult,
+    rawTranscript,
+    canUndoOptimization,
+    undoOptimization,
     audioLevels,
     elapsedSeconds,
     isBusy: voiceInputBlocksSubmission(state),
