@@ -2047,7 +2047,94 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           ...filePaths,
         ]);
       } else {
-        yield* runGit("GitVcsDriver.prepareCommitContext.addAll", cwd, ["add", "-A"]);
+        const head = yield* executeGit(
+          "GitVcsDriver.prepareCommitContext.resolveHead",
+          cwd,
+          ["rev-parse", "--verify", "HEAD"],
+          { allowNonZeroExit: true },
+        );
+        const base = head.exitCode === 0 ? "HEAD" : "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+        const tracked = yield* executeGit(
+          "GitVcsDriver.prepareCommitContext.workingTreeSummary",
+          cwd,
+          ["diff", "--name-status", "-z", base],
+        );
+        const untracked = yield* executeGit(
+          "GitVcsDriver.prepareCommitContext.untrackedList",
+          cwd,
+          ["ls-files", "--others", "--exclude-standard", "-z"],
+        );
+        const fields = splitNullSeparatedGitStdoutPaths(tracked);
+        const rows: string[] = [];
+        for (let i = 0; i < fields.length;) {
+          const status = fields[i++]!;
+          const oldPath = fields[i++]!;
+          rows.push(
+            /^[RC]/.test(status)
+              ? [status, oldPath, fields[i++]!].join("\t")
+              : [status, oldPath].join("\t"),
+          );
+        }
+        const untrackedPaths = splitNullSeparatedGitStdoutPaths(untracked);
+        rows.push(...untrackedPaths.map((path) => "A\t" + path));
+        const stagedSummary = rows.join("\n");
+        let stagedPatch = "",
+          patchBytes = 0,
+          truncated = false;
+        const encoder = new TextEncoder();
+        const appendPatch = (result: GitVcsDriver.ExecuteGitResult) => {
+          const remaining = PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES - patchBytes;
+          const bytes = encoder.encode(result.stdout);
+          let accepted = Math.min(bytes.length, remaining);
+          let chunk = new TextDecoder().decode(bytes.subarray(0, accepted));
+          while (encoder.encode(chunk).length > remaining && accepted > 0) {
+            chunk = new TextDecoder().decode(bytes.subarray(0, --accepted));
+          }
+          stagedPatch += chunk;
+          patchBytes += encoder.encode(chunk).length;
+          truncated = result.stdoutTruncated || accepted < bytes.length;
+        };
+        appendPatch(
+          yield* executeGit(
+            "GitVcsDriver.prepareCommitContext.workingTreePatch",
+            cwd,
+            ["diff", "--no-ext-diff", "--patch", "--minimal", base],
+            {
+              maxOutputBytes: PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES,
+              appendTruncationMarker: true,
+            },
+          ),
+        );
+        for (const path of untrackedPaths) {
+          if (truncated) break;
+          const args = ["diff", "--no-index", "--no-ext-diff", "--", "/dev/null", path];
+          const result = yield* executeGit(
+            "GitVcsDriver.prepareCommitContext.untrackedPatch",
+            cwd,
+            args,
+            {
+              allowNonZeroExit: true,
+              maxOutputBytes: Math.max(1, PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES - patchBytes),
+              appendTruncationMarker: true,
+            },
+          );
+          if (result.exitCode !== 0 && result.exitCode !== 1) {
+            return yield* new GitCommandError({
+              ...gitCommandContext({
+                operation: "GitVcsDriver.prepareCommitContext.untrackedPatch",
+                cwd,
+                args,
+              }),
+              detail: "Failed to read an untracked working-tree patch.",
+              ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
+            });
+          }
+          appendPatch(result);
+        }
+        if (truncated) stagedPatch += OUTPUT_TRUNCATED_MARKER;
+        return stagedSummary.length === 0 && stagedPatch.length === 0
+          ? null
+          : { stagedSummary, stagedPatch };
       }
 
       const stagedSummary = yield* runGitStdout(
@@ -2081,6 +2168,53 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     body,
     options?: GitVcsDriver.GitCommitOptions,
   ) {
+    const selectedPaths = [
+      ...new Set((options?.filePaths ?? []).filter((path) => path.length > 0)),
+    ];
+    if (selectedPaths.length > 0) {
+      yield* assertWorkspaceNotProtected("GitVcsDriver.commit.protectedGuard", cwd);
+      yield* runGit("GitVcsDriver.commit.stageSelected", cwd, [
+        "--literal-pathspecs",
+        "add",
+        "-A",
+        "--",
+        ...selectedPaths,
+      ]);
+    } else {
+      const head = yield* executeGit(
+        "GitVcsDriver.commit.resolveHead",
+        cwd,
+        ["rev-parse", "--verify", "HEAD"],
+        { allowNonZeroExit: true },
+      );
+      const tracked = yield* executeGit(
+        "GitVcsDriver.commit.workingTreePaths",
+        cwd,
+        head.exitCode === 0 ? ["diff", "--name-only", "-z", "HEAD"] : ["ls-files", "-z"],
+      );
+      const untracked = yield* executeGit("GitVcsDriver.commit.untrackedPaths", cwd, [
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+      ]);
+      const paths = [
+        ...new Set([
+          ...splitNullSeparatedGitStdoutPaths(tracked),
+          ...splitNullSeparatedGitStdoutPaths(untracked),
+        ]),
+      ];
+      if (paths.length > 0) {
+        yield* assertWorkspaceNotProtected("GitVcsDriver.commit.protectedGuard", cwd);
+        yield* runGit(
+          "GitVcsDriver.commit.stageWorkingTree",
+          cwd,
+          ["--literal-pathspecs", "add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"],
+          { stdin: paths.join("\0") + "\0" },
+        );
+      }
+    }
+
     const args = ["commit", "-m", subject];
     const trimmedBody = body.trim();
     if (trimmedBody.length > 0) {

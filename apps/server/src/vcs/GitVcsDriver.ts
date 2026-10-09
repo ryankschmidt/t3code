@@ -164,6 +164,7 @@ export interface GitCommitProgress {
 }
 
 export interface GitCommitOptions {
+  readonly filePaths?: readonly string[];
   readonly timeoutMs?: number;
   readonly progress?: GitCommitProgress;
 }
