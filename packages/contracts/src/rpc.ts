@@ -288,6 +288,7 @@ import {
 import { VcsError } from "./vcs.ts";
 
 export const WS_METHODS = {
+  throughlineHello: "throughline.hello",
   // Project registry methods
   projectsList: "projects.list",
   projectsAdd: "projects.add",
@@ -473,6 +474,28 @@ const WsServerRemoveKeybindingRpc = Rpc.make(WS_METHODS.serverRemoveKeybinding, 
 const WsServerProbeRpc = Rpc.make(WS_METHODS.serverProbe, {
   payload: Schema.Struct({}),
   success: Schema.Struct({}),
+  error: EnvironmentAuthorizationError,
+});
+
+// Optional, request/reply negotiation. Legacy clients never call this method;
+// no new event is injected into their strict subscription event unions.
+export const WsThroughlineHelloRpc = Rpc.make(WS_METHODS.throughlineHello, {
+  payload: Schema.Struct({
+    protocol_version: NonNegativeInt,
+    release: TrimmedNonEmptyString,
+    commit: Schema.String,
+    platform: TrimmedNonEmptyString,
+    capabilities: Schema.Array(TrimmedNonEmptyString),
+    last_cursor: Schema.NullOr(NonNegativeInt),
+  }),
+  success: Schema.Struct({
+    protocol_version: NonNegativeInt,
+    outcome: Schema.Literals(["compatible", "degraded", "update-required"]),
+    server_release: Schema.String,
+    server_commit: Schema.NullOr(Schema.String),
+    min_supported_client: Schema.String,
+    capabilities: Schema.Array(Schema.String),
+  }),
   error: EnvironmentAuthorizationError,
 });
 
@@ -1437,6 +1460,7 @@ export const WsSymphonyTaskStatusRpc = Rpc.make(SYMPHONY_WS_METHODS.taskStatus, 
 });
 
 export const WsRpcGroup = RpcGroup.make(
+  WsThroughlineHelloRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
