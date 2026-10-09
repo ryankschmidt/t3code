@@ -1,3 +1,6 @@
+import { ORCHESTRATION_WS_METHODS as launcherFamilyRpcMethods } from "@t3tools/contracts";
+import { request as requestLauncherFamily } from "@t3tools/client-runtime/rpc";
+import { createLauncherFamilyQuery } from "./copy/launcherFamilyQuery";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
 import {
@@ -249,6 +252,10 @@ function ThreadUnavailableScreen(props: {
     </ScrollView>
   );
 }
+
+const launcherFamilyQuery = createLauncherFamilyQuery((input) =>
+  requestLauncherFamily(launcherFamilyRpcMethods.getLauncherThreadFamily, input),
+);
 
 export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
   const { state: workspaceState } = useWorkspaceState();
@@ -862,6 +869,15 @@ function ThreadRouteContent(
       input: { threadId: selectedThread.id },
     });
   }, [cancelWorktreeSetup, selectedThread]);
+  const launcherFamily = useEnvironmentQuery(
+    environmentId &&
+      selectedThread &&
+      selectedThread.environmentId === environmentId &&
+      selectedThreadDetail?.id === selectedThread.id
+      ? launcherFamilyQuery({ environmentId, input: { threadId: selectedThread.id } })
+      : null,
+  );
+
   const [localResendMessageId, setLocalResendMessageId] = useState<string | null>(null);
   const [copyIdentityOpen, setCopyIdentityOpen] = useState(false);
   const handleWorkLocally = useCallback(async () => {
@@ -1077,6 +1093,13 @@ function ThreadRouteContent(
       />
 
       <ThreadCopySheet
+        launcherFamilyResult={
+          launcherFamily.data && environmentId
+            ? { environmentId, family: launcherFamily.data }
+            : null
+        }
+        launcherFamilyPending={launcherFamily.isPending}
+        launcherFamilyError={launcherFamily.error}
         key={`${environmentId}:${threadId}`}
         environmentId={environmentId}
         threadId={selectedThread.id}
