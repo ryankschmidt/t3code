@@ -10,6 +10,7 @@ import { ScreenHeader } from "../../components/ScreenHeader";
 import { ScreenHeaderButton } from "../../components/ScreenHeaderButton";
 import type { ScreenHeaderAction } from "../../components/ScreenHeader.types";
 import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
+import { ThreadCopySheet } from "./copy/ThreadCopySheet";
 import {
   StackActions,
   useFocusEffect,
@@ -847,6 +848,7 @@ function ThreadRouteContent(
     });
   }, [cancelWorktreeSetup, selectedThread]);
   const [localResendMessageId, setLocalResendMessageId] = useState<string | null>(null);
+  const [copyIdentityOpen, setCopyIdentityOpen] = useState(false);
   const handleWorkLocally = useCallback(async () => {
     if (!selectedThread || !selectedThreadCreation) return;
     const result = await cancelWorktreeSetup({
@@ -1056,8 +1058,16 @@ function ThreadRouteContent(
         onOpenGitInspector={handleOpenGitInspector}
         onOpenFilesInspector={handleOpenFilesInspector}
         onReturnToThread={props.onReturnToThread}
+        onCopyThreadIdentity={() => setCopyIdentityOpen(true)}
       />
 
+      <ThreadCopySheet
+        key={`${environmentId}:${threadId}`}
+        environmentId={environmentId}
+        threadId={selectedThread.id}
+        open={copyIdentityOpen}
+        onClose={() => setCopyIdentityOpen(false)}
+      />
       {renderThreadRouteBody()}
     </>
   );
