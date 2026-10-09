@@ -22,6 +22,19 @@ function harness(text = "before um fix this after") {
 }
 
 describe("reversible composer optimization", () => {
+  it("publishes undo availability and clears prior raw text when rebound to another owner", async () => {
+    const h = harness();
+    expect(typeof h.controller.subscribe).toBe("function");
+    const listener = vi.fn();
+    const unsubscribe = h.controller.subscribe(listener);
+    await h.controller.optimize("claude");
+    expect(h.controller.state.canUndo).toBe(true);
+    expect(listener).toHaveBeenCalled();
+    h.change("other draft", "mac:other-thread");
+    h.controller.rebind({ read: h.read, write: h.write, request: h.request });
+    expect(h.controller.state).toMatchObject({ phase: "idle", raw: "", canUndo: false });
+    unsubscribe();
+  });
   it("optimizes only the selection, retains raw text, and undoes the whole edit", async () => {
     const h = harness();
     await h.controller.optimize("claude", { start: 7, end: 18 });

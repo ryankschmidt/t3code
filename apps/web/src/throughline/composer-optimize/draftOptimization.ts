@@ -4,6 +4,7 @@ export type OptimizationState = {
   phase: "idle" | "optimizing" | "optimized" | "original-kept" | "stale" | "cancelled" | "undone";
   raw: string;
   reason: string | null;
+  canUndo: boolean;
 };
 type Ports = {
   read: () => DraftSnapshot;
@@ -13,19 +14,41 @@ type Ports = {
 };
 
 export class ComposerOptimization {
-  state: OptimizationState = { phase: "idle", raw: "", reason: null };
+  state: OptimizationState = { phase: "idle", raw: "", reason: null, canUndo: false };
+  private readonly listeners = new Set<() => void>();
+  private activeOwner: string | null = null;
   private pending: AbortController | null = null;
   private generation = 0;
   private reversal: { original: DraftSnapshot; applied: DraftSnapshot } | null = null;
-  constructor(private readonly ports: Ports) {}
+  constructor(private ports: Ports) {}
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  rebind(ports: Ports): void {
+    this.ports = ports;
+    const owner = ports.read().owner;
+    if (this.activeOwner !== null && this.activeOwner !== owner) {
+      this.cancel();
+      this.publish("idle", "");
+    } else if (this.state.canUndo !== this.canUndo()) {
+      this.publish("stale", this.state.raw, "Draft changed; original kept");
+    }
+    this.activeOwner = owner;
+  }
 
   private publish(
     phase: OptimizationState["phase"],
     raw: string,
     reason: string | null = null,
   ): void {
-    this.state = { phase, raw, reason };
+    this.state = { phase, raw, reason, canUndo: this.canUndo() };
     this.ports.onState?.(this.state);
+    for (const listener of this.listeners) listener();
   }
 
   async optimize(
@@ -36,6 +59,7 @@ export class ComposerOptimization {
     const generation = ++this.generation;
     this.reversal = null;
     const original = { ...this.ports.read() };
+    this.activeOwner = original.owner;
     const range =
       selection && selection.start !== selection.end
         ? selection

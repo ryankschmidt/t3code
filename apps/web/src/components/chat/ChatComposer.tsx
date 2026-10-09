@@ -3,6 +3,7 @@ import {
   requestDesktopPasteAsTextForChord,
 } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
+import { ComposerOptimizeControl } from "../../throughline/composer-optimize/ComposerOptimizeControl";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -2167,6 +2168,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Refs
   // ------------------------------------------------------------------
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
+  const optimizationOwner = JSON.stringify(composerDraftTarget);
+  const optimizationRevisionRef = useRef(0);
+  const optimizationObservedRef = useRef({ owner: optimizationOwner, text: prompt });
+  useLayoutEffect(() => {
+    if (
+      optimizationObservedRef.current.owner !== optimizationOwner ||
+      optimizationObservedRef.current.text !== prompt
+    ) {
+      optimizationRevisionRef.current += 1;
+      optimizationObservedRef.current = { owner: optimizationOwner, text: prompt };
+    }
+  }, [optimizationOwner, prompt]);
   const pasteAsTextShortcutUntilRef = useRef(0);
   const pastedTextFileNamesRef = useRef<{ targetKey: string; names: Set<string> }>({
     targetKey: "",
@@ -6984,7 +6997,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isComposerResting &&
                         "flex items-center overflow-hidden whitespace-nowrap leading-8",
                     )}
-                    onChange={onPromptChange}
+                    onChange={(...args) => {
+                      optimizationRevisionRef.current += 1;
+                      onPromptChange(...args);
+                      optimizationObservedRef.current = {
+                        owner: optimizationOwner,
+                        text: promptRef.current,
+                      };
+                    }}
                     onVisibleSelectionChange={expandComposerForEditorChange}
                     onCommandKeyDown={onComposerCommandKey}
                     onPageScrollKeyDown={onPageScrollKeyDown}
@@ -7089,6 +7109,36 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  {!isComposerResting && !activePendingProgress && !isComposerApprovalState ? (
+                    <ComposerOptimizeControl
+                      key={optimizationOwner}
+                      ownerKey={optimizationOwner}
+                      disabled={
+                        isSendBusy || !prompt.trim() || collectInlineContextIds(prompt).length > 0
+                      }
+                      readDraft={() => ({
+                        owner: optimizationOwner,
+                        text: promptRef.current,
+                        revision: optimizationRevisionRef.current,
+                      })}
+                      readSelection={() =>
+                        composerEditorRef.current?.readSelectionRange() ?? { start: 0, end: 0 }
+                      }
+                      writeDraft={(text, expandedCursor) => {
+                        optimizationRevisionRef.current += 1;
+                        optimizationObservedRef.current = { owner: optimizationOwner, text };
+                        promptRef.current = text;
+                        setPrompt(text);
+                        const cursor = collapseExpandedComposerCursor(text, expandedCursor);
+                        setComposerCursor(cursor);
+                        setComposerTrigger(detectComposerTrigger(text, expandedCursor));
+                        window.requestAnimationFrame(() => {
+                          if (optimizationObservedRef.current.owner === optimizationOwner)
+                            composerEditorRef.current?.focusAt(cursor);
+                        });
+                      }}
+                    />
+                  ) : null}
                   {showComposerAttachAction ? (
                     <>
                       <input
