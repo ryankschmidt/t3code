@@ -18,9 +18,11 @@ export interface AuthenticatedContinuationPort {
 }
 export interface ExistingRecordContext {
   readonly owner: "OrchestrationEngine";
+  readonly environmentId: string;
   readonly threadId: string;
 }
 export interface DurableSettingsReceipt {
+  readonly environmentId: string;
   readonly commandId: string;
   readonly sequence: number;
   readonly threadId: string;
@@ -116,11 +118,18 @@ export function createHostBindings(options: HostBindingOptions) {
     ) {
       throw new Error("DURABLE_CONSUMER_UNBOUND");
     }
+    if (
+      !nonempty(consumer.context?.environmentId) ||
+      !map.hosts.some((host) => host.environmentId === consumer.context.environmentId)
+    ) {
+      throw new Error("DURABLE_CONTEXT_INVALID");
+    }
     if (consumer.context?.owner !== "OrchestrationEngine" || !nonempty(consumer.context.threadId)) {
       throw new Error("DURABLE_CONTEXT_INVALID");
     }
     const context = Object.freeze({
       owner: consumer.context.owner,
+      environmentId: consumer.context.environmentId,
       threadId: consumer.context.threadId,
     });
     const ports = options.ports;
@@ -187,6 +196,7 @@ export function createHostBindings(options: HostBindingOptions) {
       if (
         !receipt ||
         receipt.threadId !== prepared.context.threadId ||
+        receipt.environmentId !== prepared.context.environmentId ||
         !nonempty(receipt.commandId) ||
         !Number.isSafeInteger(receipt.sequence) ||
         receipt.sequence < 1
@@ -195,6 +205,7 @@ export function createHostBindings(options: HostBindingOptions) {
       }
       return Object.freeze({
         threadId: receipt.threadId,
+        environmentId: receipt.environmentId,
         commandId: receipt.commandId,
         sequence: receipt.sequence,
       });
@@ -233,6 +244,9 @@ export function createHostBindings(options: HostBindingOptions) {
       serialize(async () => {
         const prepared = await prepare();
         const original = snapshotMap(result.bindings);
+        if (result.receipt.environmentId !== prepared.context.environmentId) {
+          throw new Error("HOST_BINDING_CHANGED");
+        }
         if (
           original.source !== prepared.map.source ||
           original.revision !== prepared.map.revision ||

@@ -35,7 +35,11 @@ function fixture() {
       },
     })),
     consumer: {
-      context: { owner: "OrchestrationEngine", threadId: "existing-thread" },
+      context: {
+        owner: "OrchestrationEngine",
+        environmentId: "environment-mac",
+        threadId: "existing-thread",
+      },
       verifyExistingContext: async (context) => {
         calls.push("record:verify");
         return existingThreads.has(context.threadId);
@@ -46,6 +50,7 @@ function fixture() {
           commandId: `fixture-command-${records.length}`,
           sequence: records.length,
           threadId: context.threadId,
+          environmentId: context.environmentId,
         };
       },
     },
@@ -69,6 +74,7 @@ describe("explicit host bindings (fixture ports, not real transport proof)", () 
       commandId: "fixture-command-1",
       sequence: 1,
       threadId: "existing-thread",
+      environmentId: "environment-mac",
     });
     expect(result.event.hosts.map((host) => host.host)).toEqual(["mac", "twr", "rpi"]);
   });
@@ -98,7 +104,11 @@ describe("explicit host bindings (fixture ports, not real transport proof)", () 
         ...options,
         consumer: {
           ...options.consumer!,
-          context: { owner: "new-store" as "OrchestrationEngine", threadId: "existing-thread" },
+          context: {
+            owner: "new-store" as "OrchestrationEngine",
+            environmentId: "environment-mac",
+            threadId: "existing-thread",
+          },
         },
       };
     if (scenario === "missing-port") options = { ...options, ports: options.ports!.slice(1) };
@@ -220,7 +230,12 @@ describe("explicit host bindings (fixture ports, not real transport proof)", () 
       ...state.options,
       consumer: {
         ...state.options.consumer!,
-        append: async () => ({ commandId: "command", sequence: 1, threadId: "other-thread" }),
+        append: async () => ({
+          commandId: "command",
+          sequence: 1,
+          threadId: "other-thread",
+          environmentId: "environment-mac",
+        }),
       },
     };
     await expect(
@@ -242,6 +257,43 @@ describe("explicit host bindings (fixture ports, not real transport proof)", () 
     await expect(
       createHostBindings(options).applyIntent("continueThreadsAfterServerUpdate", true),
     ).rejects.toMatchObject({ message: "DURABLE_RECEIPT_UNCONFIRMED" });
+  });
+
+  it.each(["", "environment-not-admitted"])(
+    "refuses an unbound durable record environment (%s) before writes",
+    async (environmentId) => {
+      const state = fixture();
+      const options = {
+        ...state.options,
+        consumer: {
+          ...state.options.consumer!,
+          context: { ...state.options.consumer!.context, environmentId },
+        },
+      };
+      await expect(
+        createHostBindings(options).applyIntent("continueThreadsAfterServerUpdate", true),
+      ).rejects.toThrow("DURABLE_CONTEXT_INVALID");
+      expect(state.calls.filter((call) => call.startsWith("write:"))).toEqual([]);
+    },
+  );
+
+  it("rejects another environment's durable acknowledgement even when the thread id matches", async () => {
+    const state = fixture();
+    const options = {
+      ...state.options,
+      consumer: {
+        ...state.options.consumer!,
+        append: async () => ({
+          commandId: "command",
+          sequence: 1,
+          threadId: "existing-thread",
+          environmentId: "environment-twr",
+        }),
+      },
+    };
+    await expect(
+      createHostBindings(options).applyIntent("continueThreadsAfterServerUpdate", true),
+    ).rejects.toThrow("DURABLE_RECEIPT_UNCONFIRMED");
   });
 
   it("rolls back only against the same admitted binding and records the existing core result", async () => {
