@@ -3,9 +3,8 @@ import type {
   OrchestrationEvent,
   OrchestrationReadModel,
   ProjectId,
-  ThreadId,
 } from "@t3tools/contracts";
-import { OrchestrationCommand } from "@t3tools/contracts";
+import { OrchestrationCommand, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -22,6 +21,14 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
+import {
+  UnconfirmedSettingsRecordError,
+  type ExistingRecordContext,
+  type ExistingSettingsConsumer,
+  type SettingsBindingRecord,
+} from "../../throughline/settings-intent/HostBindings.ts";
 import {
   CurrentAuthenticatedSender,
   CurrentSenderClaims,
@@ -62,6 +69,7 @@ const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
   OrchestrationCommandPreviouslyRejectedError,
 );
 const isOrchestrationCommandIdConflictError = Schema.is(OrchestrationCommandIdConflictError);
+const decodeSettingsActivityCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 
 interface CommandEnvelope {
   command: OrchestrationCommand;
@@ -544,3 +552,177 @@ export const OrchestrationEngineLive = Layer.effect(
   OrchestrationEngineService,
   makeOrchestrationEngine,
 );
+
+type SettingsActivityCommand = Extract<OrchestrationCommand, { type: "thread.activity.append" }>;
+
+export interface ExistingSettingsConsumerOptions {
+  readonly context: ExistingRecordContext;
+  /** Current caller authorization, captured by the owning authenticated ingress. */
+  readonly authorize: (context: ExistingRecordContext) => Effect.Effect<boolean, unknown>;
+  /** The owner supplies its admitted activity mapping and stable operation IDs.
+   * This adapter does not invent a settings event kind or infer a record. */
+  readonly mapActivity: (
+    record: SettingsBindingRecord,
+    context: ExistingRecordContext,
+  ) => Pick<SettingsActivityCommand, "commandId" | "createdAt"> & {
+    readonly activity: Pick<
+      SettingsActivityCommand["activity"],
+      "id" | "tone" | "kind" | "summary" | "createdAt"
+    >;
+  };
+}
+
+// Keep only the reviewed field-limited core's data, not arbitrary settings or
+// transport properties. Fixed key order also makes persisted comparison immune
+// to JSON property-order differences.
+function copySettingsRecord(record: SettingsBindingRecord): SettingsBindingRecord {
+  const common = {
+    bindings: {
+      source: record.bindings.source,
+      revision: record.bindings.revision,
+      hosts: record.bindings.hosts.map(({ role, environmentId }) => ({ role, environmentId })),
+    },
+    event: {
+      setting: record.event.setting,
+      value: record.event.value,
+      hosts: record.event.hosts.map(({ host, before, effective, status }) => ({
+        host,
+        before,
+        effective,
+        status,
+      })),
+    },
+  };
+  return record.operation === "apply"
+    ? { operation: "apply", ...common }
+    : {
+        operation: "rollback",
+        ...common,
+        hosts: record.hosts.map(({ host, effective, status }) => ({ host, effective, status })),
+      };
+}
+
+/** Promise adapter for the reviewed HostBindings core. All durable operations
+ * still belong to the existing engine, event store and command receipt lane.
+ * Captured services must share the same server environment/database lifetime. */
+export const makeExistingSettingsConsumer = Effect.fn("makeExistingSettingsConsumer")(function* (
+  options: ExistingSettingsConsumerOptions,
+) {
+  const identity = yield* ServerEnvironmentIdentity;
+  const threads = yield* ProjectionThreadRepository;
+  const engine = yield* OrchestrationEngineService;
+  const receipts = yield* OrchestrationCommandReceiptRepository;
+  const events = yield* OrchestrationEventStore;
+  const context = Object.freeze({ ...options.context });
+  const authorize = options.authorize;
+  const mapActivity = options.mapActivity;
+
+  const verify = Effect.fnUntraced(function* (candidate: ExistingRecordContext) {
+    const environmentId = yield* identity.getEnvironmentId;
+    if (
+      candidate.owner !== "OrchestrationEngine" ||
+      candidate.environmentId !== environmentId ||
+      candidate.environmentId !== context.environmentId ||
+      candidate.threadId !== context.threadId ||
+      context.owner !== "OrchestrationEngine" ||
+      !(yield* authorize(context))
+    ) {
+      return false;
+    }
+    const thread = yield* threads.getById({ threadId: ThreadId.make(context.threadId) });
+    return (
+      Option.isSome(thread) &&
+      thread.value.threadId === context.threadId &&
+      thread.value.deletedAt === null
+    );
+  });
+
+  return {
+    context,
+    verifyExistingContext: (candidate) =>
+      Effect.runPromise(verify(candidate).pipe(Effect.catchCause(() => Effect.succeed(false)))),
+    append: async (input, candidate) => {
+      const record = copySettingsRecord(input);
+      try {
+        return await Effect.runPromise(
+          Effect.gen(function* () {
+            if (!(yield* verify(candidate))) throw new Error("DURABLE_CONTEXT_UNAVAILABLE");
+            const mapped = mapActivity(record, context);
+            const command: SettingsActivityCommand = {
+              type: "thread.activity.append",
+              commandId: mapped.commandId,
+              threadId: ThreadId.make(context.threadId),
+              createdAt: mapped.createdAt,
+              activity: {
+                id: mapped.activity.id,
+                tone: mapped.activity.tone,
+                kind: mapped.activity.kind,
+                summary: mapped.activity.summary,
+                createdAt: mapped.activity.createdAt,
+                payload: record,
+                turnId: null,
+              },
+            };
+            yield* decodeSettingsActivityCommand(command);
+            const { sequence } = yield* engine.dispatch(command);
+            const persisted = yield* receipts.getByCommandId({ commandId: command.commandId });
+            if (
+              !Number.isSafeInteger(sequence) ||
+              sequence < 1 ||
+              Option.isNone(persisted) ||
+              persisted.value.status !== "accepted" ||
+              persisted.value.aggregateKind !== "thread" ||
+              persisted.value.aggregateId !== context.threadId ||
+              persisted.value.resultSequence !== sequence
+            ) {
+              throw new Error("DURABLE_RECEIPT_UNCONFIRMED");
+            }
+            const saved = yield* Stream.runCollect(
+              events.readAggregateRange({
+                aggregateKind: "thread",
+                aggregateId: context.threadId,
+                fromSequenceExclusive: sequence - 1,
+                toSequenceInclusive: sequence,
+                limit: 1,
+              }),
+            );
+            const event = saved[0];
+            if (
+              saved.length !== 1 ||
+              !event ||
+              event.type !== "thread.activity-appended" ||
+              event.commandId !== command.commandId ||
+              event.sequence !== sequence ||
+              event.payload.threadId !== context.threadId ||
+              event.payload.activity.id !== command.activity.id ||
+              event.payload.activity.kind !== command.activity.kind ||
+              event.payload.activity.tone !== command.activity.tone ||
+              event.payload.activity.summary !== command.activity.summary ||
+              event.payload.activity.turnId !== null ||
+              event.payload.activity.createdAt !== command.activity.createdAt ||
+              event.occurredAt !== command.createdAt ||
+              JSON.stringify(
+                copySettingsRecord(event.payload.activity.payload as SettingsBindingRecord),
+              ) !== JSON.stringify(record)
+            ) {
+              throw new Error("DURABLE_RECEIPT_UNCONFIRMED");
+            }
+            // Environment is read from the actual owner, never echoed from a request.
+            const environmentId = yield* identity.getEnvironmentId;
+            if (environmentId !== context.environmentId)
+              throw new Error("DURABLE_CONTEXT_UNAVAILABLE");
+            return {
+              environmentId,
+              threadId: event.payload.threadId,
+              commandId: event.commandId,
+              sequence: event.sequence,
+            };
+          }),
+        );
+      } catch {
+        // Host writes may already have happened. Do not retry or assert absence.
+        throw new UnconfirmedSettingsRecordError(record);
+      }
+    },
+  } satisfies ExistingSettingsConsumer;
+});
