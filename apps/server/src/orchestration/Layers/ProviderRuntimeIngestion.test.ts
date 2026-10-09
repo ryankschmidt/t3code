@@ -10,6 +10,8 @@ import {
   ProviderRuntimeEvent,
   ProviderSession,
   ProviderInstanceId,
+  resolveMainTurnModelObservation,
+  resolveThreadModelObservation,
 } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
@@ -61,6 +63,7 @@ import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
 import {
   ProviderRuntimeIngestionLive,
   splitBufferedAssistantText,
+  runtimeEventToActivities,
 } from "./ProviderRuntimeIngestion.ts";
 import { DEFAULT_THREAD_TITLE } from "../threadTitles.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -81,6 +84,50 @@ const asEventId = (value: string): EventId => EventId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
+
+describe("answering-model observation projection", () => {
+  const event = (provider = "claudeAgent"): ProviderRuntimeEvent => ({
+    type: "turn.model.observed",
+    eventId: asEventId("answering-model"),
+    provider: ProviderDriverKind.make(provider),
+    threadId: asThreadId("thread-1"),
+    turnId: asTurnId("turn-1"),
+    createdAt: "2026-10-09T00:00:00.000Z",
+    payload: {
+      source: "claude.assistant.message.model",
+      scope: "main-turn",
+      requestedModel: "claude-fable-5-1",
+      answeringModel: "claude-opus-5-5",
+    },
+  });
+  it("projects verbatim request/answer identity into a reloadable turn-scoped activity", () => {
+    const activities = runtimeEventToActivities(event());
+    expect(activities).toHaveLength(1);
+    expect(activities[0]).toMatchObject({
+      kind: "turn.model.observed",
+      turnId: "turn-1",
+      payload: { requestedModel: "claude-fable-5-1", answeringModel: "claude-opus-5-5" },
+    });
+    expect(
+      resolveMainTurnModelObservation("turn-1", JSON.parse(JSON.stringify(activities))),
+    ).toMatchObject({ answeringModel: "claude-opus-5-5", verdict: "mismatch" });
+  });
+  it("does not certify Codex/Pi state or absent/subagent identities as responses", () => {
+    expect(runtimeEventToActivities(event("codex"))).toEqual([]);
+    expect(runtimeEventToActivities(event("pi"))).toEqual([]);
+    for (const payload of [
+      {
+        scope: "subagent",
+        source: "claude.assistant.message.model",
+        answeringModel: "claude-opus-5-5",
+      },
+      { scope: "main-turn", source: "claude.assistant.message.model" },
+    ])
+      expect(
+        runtimeEventToActivities({ ...event(), payload } as unknown as ProviderRuntimeEvent),
+      ).toEqual([]);
+  });
+});
 
 type LegacyProviderRuntimeEvent = {
   readonly type: string;
@@ -439,6 +486,49 @@ describe("ProviderRuntimeIngestion", () => {
       drain,
     };
   }
+
+  it("persists an answering-model observation through the drained event store and snapshot", async () => {
+    const harness = await createHarness();
+    const threadId = asThreadId("thread-1");
+    const turnId = asTurnId("turn-observed");
+    const before = (await harness.readModel()).threads.find((thread) => thread.id === threadId)!;
+    await harness.emitAndDrain([
+      {
+        type: "turn.started",
+        eventId: asEventId("observed-start"),
+        provider: ProviderDriverKind.make("claudeAgent"),
+        threadId,
+        turnId,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        payload: {},
+      },
+      {
+        type: "turn.model.observed",
+        eventId: asEventId("observed-answer"),
+        provider: ProviderDriverKind.make("claudeAgent"),
+        threadId,
+        turnId,
+        createdAt: "2026-01-01T00:00:01.000Z",
+        payload: {
+          source: "claude.assistant.message.model",
+          scope: "main-turn",
+          requestedModel: "claude-fable-5-1",
+          answeringModel: "claude-opus-5-5",
+        },
+      },
+    ]);
+    const persisted = (await harness.readModel()).threads.find((thread) => thread.id === threadId)!;
+    expect(persisted.activities.some((activity) => activity.kind === "turn.model.observed")).toBe(
+      true,
+    );
+    expect(resolveThreadModelObservation(JSON.parse(JSON.stringify(persisted)))).toMatchObject({
+      turnId,
+      answeringModel: "claude-opus-5-5",
+      requestedModel: "claude-fable-5-1",
+      verdict: "mismatch",
+    });
+    expect(persisted.modelSelection).toEqual(before.modelSelection);
+  });
 
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();

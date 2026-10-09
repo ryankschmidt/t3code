@@ -18,6 +18,7 @@ import {
   type ProviderRuntimeEvent,
   type ResponseStreamingMode,
   RuntimeRequestId,
+  resolveMainTurnModelObservation,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -500,6 +501,31 @@ export function runtimeEventToActivities(
       : {};
   })();
   switch (event.type) {
+    case "turn.model.observed": {
+      // Only the Claude main-assistant response currently has attributable identity.
+      // The typed event alone must not certify a Codex/Pi requested/state model.
+      if (event.provider !== "claudeAgent" || !event.turnId) return [];
+      const observation = resolveMainTurnModelObservation(event.turnId, [
+        {
+          kind: event.type,
+          turnId: event.turnId,
+          payload: event.payload,
+        },
+      ]);
+      if (observation.answeringModel === null) return [];
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "info",
+          kind: event.type,
+          summary: `Answered: ${observation.answeringModel}`,
+          payload: event.payload,
+          turnId: event.turnId,
+          ...maybeSequence,
+        },
+      ];
+    }
     case "request.opened": {
       if (event.payload.requestType === "tool_user_input") {
         return [];
