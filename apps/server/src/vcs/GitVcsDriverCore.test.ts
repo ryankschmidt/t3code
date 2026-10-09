@@ -2804,6 +2804,134 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
   });
 
   describe("commit context", () => {
+    it.effect(
+      "working-tree and untracked patches share one byte budget and truncation marker",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          yield* writeTextFile(cwd, "README.md", "tracked".repeat(5_000) + "\n");
+          yield* writeTextFile(cwd, "large untracked.txt", "untracked".repeat(5_000) + "\n");
+          const context = yield* (yield* GitVcsDriver.GitVcsDriver).prepareCommitContext(cwd);
+          const patch = context?.stagedPatch ?? "";
+          assert.equal(patch.split("\n\n[truncated]").length - 1, 1);
+          assert.isAtMost(
+            new TextEncoder().encode(patch.replace("\n\n[truncated]", "")).length,
+            49_000,
+          );
+        }),
+    );
+
+    it.effect(
+      "prepareCommitContext without file paths leaves the index untouched and reports working-tree changes",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          for (const name of ["partial.txt", "unrelated.txt"])
+            yield* writeTextFile(cwd, name, "base\n");
+          yield* git(cwd, ["add", "--", "partial.txt", "unrelated.txt"]);
+          yield* git(cwd, ["commit", "-qm", "Fixture base"]);
+          yield* writeTextFile(cwd, "README.md", "working tracked\n");
+          yield* writeTextFile(cwd, "new file\nname.txt", "fresh untracked\n");
+          yield* writeTextFile(cwd, "partial.txt", "staged partial\n");
+          yield* writeTextFile(cwd, "unrelated.txt", "staged unrelated\n");
+          yield* git(cwd, ["add", "--", "partial.txt", "unrelated.txt"]);
+          yield* writeTextFile(cwd, "partial.txt", "working partial\n");
+          const snapshot = (args: readonly string[]) =>
+            driver
+              .execute({ operation: "GitVcsDriver.test.indexSnapshot", cwd, args })
+              .pipe(Effect.map((r) => r.stdout));
+          const entries = yield* snapshot(["ls-files", "--stage", "-z"]);
+          const patch = yield* snapshot(["diff", "--cached", "--patch"]);
+          for (const paths of [undefined, []] as const) {
+            const context = yield* driver.prepareCommitContext(cwd, paths);
+            assert.equal(yield* snapshot(["ls-files", "--stage", "-z"]), entries);
+            assert.equal(yield* snapshot(["diff", "--cached", "--patch"]), patch);
+            assert.include(context?.stagedSummary ?? "", "README.md");
+            assert.include(context?.stagedSummary ?? "", "new file\nname.txt");
+            assert.include(context?.stagedPatch ?? "", "working tracked");
+            assert.include(context?.stagedPatch ?? "", "fresh untracked");
+          }
+        }),
+    );
+
+    it.effect(
+      "commit without file paths stages the working-tree set by explicit pathspec at commit time",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          yield* writeTextFile(cwd, "README.md", "changed tracked\n");
+          yield* writeTextFile(cwd, "new file\nname.txt", "fresh untracked\n");
+          const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const commands: Array<readonly string[]> = [];
+          const spawner = ChildProcessSpawner.make((command) => {
+            if (ChildProcess.isStandardCommand(command)) commands.push([...command.args]);
+            return delegate.spawn(command);
+          });
+          const driver = yield* makeGitVcsDriverCore().pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Effect.provide(ServerConfigLayer),
+          );
+          yield* driver.commit(cwd, "Commit working tree", "");
+          assert.equal(yield* git(cwd, ["show", "HEAD:README.md"]), "changed tracked");
+          assert.equal(yield* git(cwd, ["show", "HEAD:new file\nname.txt"]), "fresh untracked");
+          const adds = commands.filter((args) => args.includes("add"));
+          assert.equal(adds.length, 1);
+          assert.deepEqual(adds[0], [
+            "--literal-pathspecs",
+            "add",
+            "-A",
+            "--pathspec-from-file=-",
+            "--pathspec-file-nul",
+          ]);
+        }),
+    );
+
+    it.effect("unborn preparation preserves the index and initial commit stages NUL paths", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.initRepo({ cwd });
+        yield* git(cwd, ["config", "user.email", "fixture@example.invalid"]);
+        yield* git(cwd, ["config", "user.name", "Fixture"]);
+        yield* writeTextFile(cwd, "staged first.txt", "first staged\n");
+        yield* writeTextFile(cwd, "new\nfile.txt", "first untracked\n");
+        yield* git(cwd, ["add", "--", "staged first.txt"]);
+        const before = yield* driver.execute({
+          operation: "GitVcsDriver.test.unbornIndex",
+          cwd,
+          args: ["ls-files", "--stage", "-z"],
+        });
+        const context = yield* driver.prepareCommitContext(cwd, []);
+        const after = yield* driver.execute({
+          operation: "GitVcsDriver.test.unbornIndex",
+          cwd,
+          args: ["ls-files", "--stage", "-z"],
+        });
+        assert.equal(after.stdout, before.stdout);
+        assert.include(context?.stagedPatch ?? "", "first staged");
+        assert.include(context?.stagedPatch ?? "", "first untracked");
+        yield* driver.commit(cwd, "Initial exact set", "", { filePaths: [] });
+        assert.equal(yield* git(cwd, ["show", "HEAD:new\nfile.txt"]), "first untracked");
+      }),
+    );
+
+    it.effect("empty working-tree set does not restage a pre-existing staged blob", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* writeTextFile(cwd, "README.md", "staged change\n");
+        yield* git(cwd, ["add", "--", "README.md"]);
+        yield* writeTextFile(cwd, "README.md", "# test\n");
+        yield* driver.commit(cwd, "Keep staged bytes", "", { filePaths: [] });
+        assert.equal(yield* git(cwd, ["show", "HEAD:README.md"]), "staged change");
+      }),
+    );
+
     it.effect("stages selected files and commits only those files", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
@@ -2817,7 +2945,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         assert.include(context?.stagedSummary ?? "", "a.txt");
         assert.notInclude(context?.stagedSummary ?? "", "b.txt");
 
-        const commit = yield* driver.commit(cwd, "Add a", "");
+        const commit = yield* driver.commit(cwd, "Add a", "", { filePaths: ["a.txt"] });
         assert.match(commit.commitSha, /^[a-f0-9]{40}$/);
         assert.equal(yield* git(cwd, ["log", "-1", "--pretty=%s"]), "Add a");
 

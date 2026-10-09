@@ -2803,6 +2803,43 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect(
+    "commit-all through GitManager commits the working-tree changes without staging during preparation",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t109-manager-");
+        yield* initRepo(repoDir);
+        const beforeIndex = (yield* runGit(repoDir, ["ls-files", "--stage", "-z"])).stdout;
+        NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "working tracked\n");
+        NodeFS.writeFileSync(NodePath.join(repoDir, "new file\nname.txt"), "working untracked\n");
+        let preparations = 0;
+        const { manager } = yield* makeManager({
+          textGeneration: {
+            generateCommitMessage: () =>
+              Effect.gen(function* () {
+                preparations++;
+                expect((yield* runGit(repoDir, ["ls-files", "--stage", "-z"])).stdout).toBe(
+                  beforeIndex,
+                );
+                expect((yield* runGit(repoDir, ["diff", "--cached", "--name-only"])).stdout).toBe(
+                  "",
+                );
+                return { subject: "Commit working-tree set", body: "" };
+              }),
+          },
+        });
+        const result = yield* runStackedAction(manager, { cwd: repoDir, action: "commit" });
+        expect(preparations).toBe(1);
+        expect(result.commit.status).toBe("created");
+        expect((yield* runGit(repoDir, ["show", "HEAD:README.md"])).stdout.trim()).toBe(
+          "working tracked",
+        );
+        expect((yield* runGit(repoDir, ["show", "HEAD:new file\nname.txt"])).stdout.trim()).toBe(
+          "working untracked",
+        );
+      }),
+  );
+
   it.effect("creates a commit when working tree is dirty", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
