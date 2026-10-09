@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { readHeadroom } from "./observer";
+import { readHeadroom } from "./observer.ts";
 
 const now = Date.parse("2026-10-09T15:00:00Z");
 const configured = [
