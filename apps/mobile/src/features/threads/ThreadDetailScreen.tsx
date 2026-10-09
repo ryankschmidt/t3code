@@ -22,6 +22,7 @@ import type {
   MessageId,
   ModelSelection,
   OrchestrationThreadShell,
+  ModelObservationActivity,
   ProviderApprovalDecision,
   ProviderInteractionMode,
   RuntimeMode,
@@ -118,7 +119,9 @@ import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-live-follow";
 export interface ThreadDetailScreenProps {
   readonly worktreeSetup?: WorktreeSetupCardProps | null;
   readonly setupWorkingStartedAt?: string | null;
-  readonly selectedThread: OrchestrationThreadShell;
+  readonly selectedThread: OrchestrationThreadShell & {
+    readonly activities?: readonly ModelObservationActivity[];
+  };
   /** The context-window reading for this thread, or null before the first report. */
   readonly contextWindowUsage: ContextWindowSnapshot | null;
   readonly contentPresentation: ThreadContentPresentation;
