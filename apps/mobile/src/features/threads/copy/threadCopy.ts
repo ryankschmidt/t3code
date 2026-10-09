@@ -1,9 +1,9 @@
 export type ThreadCopyRef = { readonly environmentId: string; readonly threadId: string };
 export type ThreadCopyIdentity = ThreadCopyRef & {
   readonly session?: {
-    readonly providerSessionId?: string | null;
-    readonly nativeSessionId?: string | null;
-    readonly nativeTranscriptPath?: string | null;
+    readonly providerSessionId?: string | null | undefined;
+    readonly nativeSessionId?: string | null | undefined;
+    readonly nativeTranscriptPath?: string | null | undefined;
   } | null;
 };
 export type ThreadCopyField = "thread" | "provider-session" | "native-session" | "transcript";
