@@ -1311,6 +1311,20 @@ const WsSubscribeDeviceStateRpc = Rpc.make(WS_METHODS.subscribeDeviceState, {
   stream: true,
 });
 
+import {
+  LauncherThreadFamily,
+  LauncherThreadFamilyInput,
+} from "./throughline/launcherThreadFamily.ts";
+
+const WsOrchestrationGetLauncherThreadFamilyRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getLauncherThreadFamily,
+  {
+    payload: LauncherThreadFamilyInput,
+    success: LauncherThreadFamily,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 const WsOrchestrationDispatchCommandRpc = Rpc.make(ORCHESTRATION_WS_METHODS.dispatchCommand, {
   payload: ClientOrchestrationCommand,
   success: OrchestrationRpcSchemas.dispatchCommand.output,
@@ -1605,6 +1619,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetTurnDiffRpc,
   WsOrchestrationGetFullThreadDiffRpc,
   WsOrchestrationSearchThreadsRpc,
+  WsOrchestrationGetLauncherThreadFamilyRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,

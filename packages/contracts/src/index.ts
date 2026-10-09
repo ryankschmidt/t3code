@@ -29,6 +29,7 @@ export * from "./sourceControl.ts";
 export * from "./projectClone.ts";
 export * from "./pullRequest.ts";
 export * from "./orchestration.ts";
+export * from "./throughline/launcherThreadFamily.ts";
 // ThroughLine: fork-owned contract module. symphony.ts is a fork addition (agent orchestration
 // over the WS RPC surface); upstream's barrel does not export it.
 export * from "./symphony.ts";

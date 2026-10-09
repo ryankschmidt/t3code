@@ -4,6 +4,7 @@ import {
   AuthRelayReadScope,
   AuthRelayWriteScope,
   WS_METHODS,
+  ORCHESTRATION_WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
@@ -15,6 +16,11 @@ import {
 } from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it("reads launcher family under the existing thread-read scope", () => {
+    expect(requiredScopeForRpcMethod(ORCHESTRATION_WS_METHODS.getLauncherThreadFamily)).toBe(
+      AuthOrchestrationReadScope,
+    );
+  });
   it("negotiates ThroughLine hello under the existing read scope only", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.throughlineHello)).toBe(AuthOrchestrationReadScope);
   });
