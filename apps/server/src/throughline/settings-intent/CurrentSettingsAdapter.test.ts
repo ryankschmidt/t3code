@@ -18,7 +18,8 @@ const settingsJson = Schema.fromJsonString(
     deviceSupport: Schema.String,
   }),
 );
-const decodeSettings = Schema.decodeUnknownSync(settingsJson);
+// Whole-file assertions must not hide an unexpected persisted key.
+const decodeSettings = Schema.decodeUnknownSync(settingsJson, { onExcessProperty: "error" });
 const encodeSettings = Schema.encodeSync(settingsJson);
 
 effectIt.layer(Layer.merge(NodeFileSystem.layer, Path.layer))(
@@ -73,6 +74,21 @@ effectIt.layer(Layer.merge(NodeFileSystem.layer, Path.layer))(
           for (const { file } of files)
             expect(decodeSettings(yield* fs.readFileString(file))).toEqual(initial);
         }).pipe(Effect.scoped),
+    );
+
+    it.effect("rejects unexpected persisted keys before whole-file comparisons", () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const dir = yield* fs.makeTempDirectoryScoped({ prefix: "settings-intent-excess-" });
+        const file = path.join(dir, "settings.json");
+        yield* fs.writeFileString(
+          file,
+          '{"continueThreadsAfterServerUpdate":false,"enableAgentDeviceAccess":false,"deviceSupport":"local","unexpectedSetting":"MUST_NOT_BE_HIDDEN"}',
+        );
+        const persisted = yield* fs.readFileString(file);
+        expect(() => decodeSettings(persisted)).toThrow("unexpectedSetting");
+      }).pipe(Effect.scoped),
     );
   },
 );
