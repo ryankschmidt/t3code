@@ -483,19 +483,22 @@ export const WsThroughlineHelloRpc = Rpc.make(WS_METHODS.throughlineHello, {
   payload: Schema.Struct({
     protocol_version: NonNegativeInt,
     release: TrimmedNonEmptyString,
-    commit: Schema.String,
+    commit: Schema.NullOr(Schema.String),
     platform: TrimmedNonEmptyString,
     capabilities: Schema.Array(TrimmedNonEmptyString),
     last_cursor: Schema.NullOr(NonNegativeInt),
   }),
-  success: Schema.Struct({
-    protocol_version: NonNegativeInt,
-    outcome: Schema.Literals(["compatible", "degraded", "update-required"]),
-    server_release: Schema.String,
-    server_commit: Schema.NullOr(Schema.String),
-    min_supported_client: Schema.String,
-    capabilities: Schema.Array(Schema.String),
-  }),
+  success: Schema.StructWithRest(
+    Schema.Struct({
+      protocol_version: NonNegativeInt,
+      outcome: Schema.Literals(["compatible", "degraded", "update-required"]),
+      server_release: Schema.String,
+      server_commit: Schema.NullOr(Schema.String),
+      min_supported_client: Schema.String,
+      capabilities: Schema.Array(Schema.String),
+    }),
+    [Schema.Record(Schema.String, Schema.Unknown)],
+  ),
   error: EnvironmentAuthorizationError,
 });
 

@@ -90,6 +90,8 @@ import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import { helloFixtures } from "./throughline/compat-tests/hello-fixtures.ts";
+import * as ClientRpcSession from "../../../packages/client-runtime/src/rpc/session.ts";
+import { PrimaryConnectionTarget } from "../../../packages/client-runtime/src/connection/model.ts";
 import * as NetAddress from "effect/unstable/net/NetAddress";
 import * as Socket from "effect/unstable/socket/Socket";
 import { vi } from "vite-plus/test";
@@ -1792,6 +1794,50 @@ const EMPTY_DEVICE_STATE: DeviceServiceState = {
 };
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it.effect(
+    "ThroughLine hello compatibility: shared client session negotiates against the real server route",
+    () =>
+      Effect.gen(function* () {
+        yield* buildAppUnderTest();
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const config = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({})),
+        );
+        const { cookie, url } = parseSessionCookieFromWsUrl(wsUrl);
+        const constructor = (socketUrl: string, protocols?: string | ReadonlyArray<string>) =>
+          new NodeSocket.NodeWS.WebSocket(
+            socketUrl,
+            protocols as string | string[] | undefined,
+            cookie ? { headers: { cookie } } : undefined,
+          ) as unknown as globalThis.WebSocket;
+        const factory = yield* ClientRpcSession.make({ hello: helloFixtures[0].client }).pipe(
+          Effect.provideService(Socket.WebSocketConstructor, constructor),
+        );
+        const target = new PrimaryConnectionTarget({
+          environmentId: config.environment.environmentId,
+          label: "real compatibility fixture",
+          httpBaseUrl: url.replace(/^ws:/, "http:"),
+          wsBaseUrl: url,
+        });
+        const session = yield* factory.connect({
+          environmentId: target.environmentId,
+          label: target.label,
+          httpBaseUrl: target.httpBaseUrl,
+          socketUrl: url,
+          httpAuthorization: null,
+          target,
+        });
+        yield* session.ready;
+        const compatibilityEffect = session.compatibility;
+        if (compatibilityEffect === undefined)
+          return yield* Effect.die("Hello compatibility API missing");
+        const compatibility = yield* compatibilityEffect;
+        assert.equal(compatibility.kind, "negotiated");
+        if (compatibility.kind === "negotiated")
+          assert.equal(compatibility.hello.outcome, "compatible");
+        yield* session.probe;
+      }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
+  );
   for (const fixture of helloFixtures) {
     it.effect(`ThroughLine hello compatibility: ${fixture.name}`, () =>
       Effect.gen(function* () {
