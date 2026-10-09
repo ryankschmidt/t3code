@@ -4,7 +4,7 @@ import {
   type HostBindingOptions,
   type PublicHostMap,
   type SettingsBindingRecord,
-} from "./HostBindings";
+} from "./HostBindings.ts";
 
 function fixture() {
   const map: PublicHostMap = {
@@ -68,7 +68,7 @@ describe("explicit host bindings (fixture ports, not real transport proof)", () 
     expect([...state.values.values()]).toEqual([true, true, true]);
     expect(state.calls[0]).toBe("record:verify");
     expect(state.records).toHaveLength(1);
-    expect(state.records[0].operation).toBe("apply");
+    expect(state.records[0]?.operation).toBe("apply");
     expect(result.effectiveMatch).toBe(true);
     expect(result.receipt).toEqual({
       commandId: "fixture-command-1",

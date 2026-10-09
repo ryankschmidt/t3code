@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { createSettingsIntent, type SettingsHostAdapter } from "./SettingsIntent";
+import { createSettingsIntent, type SettingsHostAdapter } from "./SettingsIntent.ts";
 
 function hosts() {
   const values = { mac: true, twr: false, rpi: false };
@@ -100,7 +100,7 @@ describe("settings intent on existing settings adapters", () => {
       effective: false,
       status: "drift",
     });
-    expect(event.hosts[2].status).toBe("applied");
+    expect(event.hosts[2]?.status).toBe("applied");
   });
 
   it("rolls back changed hosts to their own prior values, leaving unchanged hosts alone", async () => {
@@ -121,7 +121,7 @@ describe("settings intent on existing settings adapters", () => {
     state.values.twr = false;
     state.writes.length = 0;
     const rollback = await intent.rollbackIntent(event);
-    expect(rollback[1].status).toBe("rollback-conflict");
+    expect(rollback[1]?.status).toBe("rollback-conflict");
     expect(state.writes).toEqual(["rpi"]);
   });
 
@@ -130,9 +130,9 @@ describe("settings intent on existing settings adapters", () => {
     const intent = createSettingsIntent(state.adapters);
     const event = await intent.applyIntent("continueThreadsAfterServerUpdate", true);
     state.writes.length = 0;
-    await expect(
-      intent.rollbackIntent({ ...event, setting: "enableAgentDeviceAccess" } as typeof event),
-    ).rejects.toThrow("SETTING_EXCLUDED");
+    const forgedEvent = { ...event };
+    Reflect.set(forgedEvent, "setting", "enableAgentDeviceAccess");
+    await expect(intent.rollbackIntent(forgedEvent)).rejects.toThrow("SETTING_EXCLUDED");
     expect(state.writes).toEqual([]);
   });
 });
