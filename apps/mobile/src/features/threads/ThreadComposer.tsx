@@ -1,6 +1,7 @@
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import {
   composerReturnBehavior,
+  formatComposerAnswerObservation,
   resolveCarriedComposerSubmission,
   sendWithComposerGuard,
   type ComposerSubmissionSource,
@@ -16,6 +17,7 @@ import {
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
+  type ModelObservationActivity,
   type OrchestrationThreadShell,
   type ProviderInteractionMode,
   type RuntimeMode,
@@ -92,6 +94,7 @@ import {
   buildModelOptions,
   groupByProvider,
   isModelSelectionUnavailable,
+  resolveThreadAnsweringModel,
 } from "../../lib/modelOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import type { RemoteClientConnectionState } from "../../lib/connection";
@@ -138,7 +141,9 @@ export interface ThreadComposerProps {
   readonly bottomInset?: number;
   readonly connectionState: RemoteClientConnectionState;
   readonly environmentLabel: string | null;
-  readonly selectedThread: OrchestrationThreadShell;
+  readonly selectedThread: OrchestrationThreadShell & {
+    readonly activities?: readonly ModelObservationActivity[];
+  };
   readonly hasCompactableConversation: boolean;
   readonly serverConfig: T3ServerConfig | null;
   readonly queueCount: number;
@@ -326,6 +331,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       ? "Queue"
       : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
+  const answeringModelLabel = useMemo(
+    () => formatComposerAnswerObservation(resolveThreadAnsweringModel(props.selectedThread)),
+    [props.selectedThread],
+  );
   const currentRuntimeMode = props.selectedThread.runtimeMode;
   const modelUnavailable =
     props.connectionState === "connected" &&
@@ -1015,6 +1024,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                         maxWidth="100%"
                         onPress={openSettings}
                       />
+                      <Text
+                        accessibilityLabel={answeringModelLabel}
+                        numberOfLines={2}
+                        className="px-2 text-2xs text-foreground-secondary"
+                      >
+                        {answeringModelLabel}
+                      </Text>
                     </View>
                   </View>
                 )}

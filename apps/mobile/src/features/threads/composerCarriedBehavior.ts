@@ -1,6 +1,30 @@
 import { parseClaudeComposerMenu } from "@t3tools/shared/claudeComposerMenus";
+import type { ModelObservationActivity } from "@t3tools/contracts";
 
 export type ComposerSubmissionSource = "send-arrow" | "keyboard-submit";
+
+export function withThreadModelActivities<T extends { readonly id: string }>(
+  thread: T,
+  detail: {
+    readonly id: string;
+    readonly activities: readonly ModelObservationActivity[];
+  } | null,
+): T & { readonly activities: readonly ModelObservationActivity[] } {
+  return { ...thread, activities: detail?.id === thread.id ? detail.activities : [] };
+}
+
+export function formatComposerAnswerObservation(observation: {
+  readonly requestedModel: string | null;
+  readonly answeringModel: string | null;
+  readonly verdict: "match" | "mismatch" | "unknown";
+}): string {
+  const answered = observation.answeringModel;
+  if (answered === null) return "Answered: unknown";
+  const label = `Answered: ${answered}`;
+  return observation.verdict === "mismatch" && observation.requestedModel !== null
+    ? `${label} · Substituted: ${observation.requestedModel} → ${answered}`
+    : label;
+}
 
 export function composerReturnBehavior(platform: string): "newline" | undefined {
   return platform === "ios" ? "newline" : undefined;

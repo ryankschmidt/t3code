@@ -11,6 +11,7 @@ import { ScreenHeaderButton } from "../../components/ScreenHeaderButton";
 import type { ScreenHeaderAction } from "../../components/ScreenHeader.types";
 import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
 import { ThreadCopySheet } from "./copy/ThreadCopySheet";
+import { withThreadModelActivities } from "./composerCarriedBehavior";
 import {
   StackActions,
   useFocusEffect,
@@ -426,17 +427,31 @@ function ThreadRouteContent(
   const routeConnectionState =
     routeEnvironmentRuntime?.connectionState ?? (environmentId ? "available" : connectionState);
   const routeConnectionError = routeEnvironmentRuntime?.connectionError ?? null;
+  const selectedThreadDetailId = selectedThreadDetail?.id ?? null;
+  const selectedThreadActivities = selectedThreadDetail?.activities ?? null;
   const selectedThreadWithDraftSettings = useMemo(
     () =>
       selectedThread
-        ? {
-            ...selectedThread,
-            modelSelection: composer.modelSelection ?? selectedThread.modelSelection,
-            runtimeMode: composer.runtimeMode ?? selectedThread.runtimeMode,
-            interactionMode: composer.interactionMode ?? selectedThread.interactionMode,
-          }
+        ? withThreadModelActivities(
+            {
+              ...selectedThread,
+              modelSelection: composer.modelSelection ?? selectedThread.modelSelection,
+              runtimeMode: composer.runtimeMode ?? selectedThread.runtimeMode,
+              interactionMode: composer.interactionMode ?? selectedThread.interactionMode,
+            },
+            selectedThreadDetailId !== null && selectedThreadActivities !== null
+              ? { id: selectedThreadDetailId, activities: selectedThreadActivities }
+              : null,
+          )
         : null,
-    [composer.interactionMode, composer.modelSelection, composer.runtimeMode, selectedThread],
+    [
+      composer.interactionMode,
+      composer.modelSelection,
+      composer.runtimeMode,
+      selectedThread,
+      selectedThreadDetailId,
+      selectedThreadActivities,
+    ],
   );
 
   /* ─── Native header theming ──────────────────────────────────────── */

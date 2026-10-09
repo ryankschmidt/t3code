@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { resolveThreadAnsweringModel } from "../../lib/modelOptions";
 import {
   composerReturnBehavior,
   resolveCarriedComposerSubmission,
   sendWithComposerGuard,
+  formatComposerAnswerObservation,
+  withThreadModelActivities,
 } from "./composerCarriedBehavior";
 
 const base = {
@@ -108,5 +112,186 @@ describe("carried composer submission behavior", () => {
     ).rejects.toThrow("refused");
     expect(inFlight.size).toBe(0);
     expect(await sendWithComposerGuard(inFlight, "thread", async () => draft)).toBe(draft);
+  });
+});
+
+describe("answer observation beside requested model control", () => {
+  it("preserves the owning environment/thread brands through the readonly carrier", () => {
+    const environmentId = EnvironmentId.make("environment-mac");
+    const threadId = ThreadId.make("thread-1");
+    const shell = { environmentId, id: threadId, session: { activeTurnId: "turn-1" } };
+    const carried = withThreadModelActivities(shell, { id: threadId, activities: [] });
+    const scoped: { environmentId: EnvironmentId; threadId: ThreadId } = {
+      environmentId: carried.environmentId,
+      threadId: carried.id,
+    };
+    expect(scoped).toEqual({ environmentId, threadId });
+    expect(formatComposerAnswerObservation(resolveThreadAnsweringModel(carried))).toBe(
+      "Answered: unknown",
+    );
+  });
+  it("carries actual detail activities through a shell prop while preserving next-dispatch intent", () => {
+    const shell = {
+      id: "thread-1",
+      modelSelection: { model: "C" },
+      session: { activeTurnId: "turn-1" },
+    };
+    const detail = {
+      id: "thread-1",
+      activities: [
+        {
+          kind: "turn.model.observed",
+          turnId: "turn-1",
+          payload: {
+            source: "claude.assistant.message.model",
+            scope: "main-turn",
+            requestedModel: "A",
+            answeringModel: "B",
+          },
+        },
+      ],
+    };
+    const carried = withThreadModelActivities(shell, detail);
+    expect(formatComposerAnswerObservation(resolveThreadAnsweringModel(carried))).toBe(
+      "Answered: B · Substituted: A → B",
+    );
+    expect(carried.modelSelection).toBe(shell.modelSelection);
+    expect(carried.activities).toBe(detail.activities);
+    expect(shell).not.toHaveProperty("activities");
+  });
+
+  it.each([
+    null,
+    {
+      id: "another-thread",
+      activities: [
+        {
+          kind: "turn.model.observed",
+          turnId: "turn-1",
+          payload: {
+            source: "claude.assistant.message.model",
+            scope: "main-turn",
+            requestedModel: "A",
+            answeringModel: "B",
+          },
+        },
+      ],
+    },
+  ])("does not borrow missing or another-thread detail (%j)", (detail) => {
+    const shell = {
+      id: "thread-1",
+      modelSelection: { model: "known-request" },
+      session: { activeTurnId: "turn-1" },
+    };
+    const carried = withThreadModelActivities(shell, detail);
+    expect(formatComposerAnswerObservation(resolveThreadAnsweringModel(carried))).toBe(
+      "Answered: unknown",
+    );
+    expect(carried.modelSelection.model).toBe("known-request");
+  });
+
+  it("consumes the pinned reader's main-turn A-to-B evidence without changing future selection C", () => {
+    const thread = {
+      modelSelection: { model: "C" },
+      session: { activeTurnId: "turn-1" },
+      activities: [
+        {
+          kind: "turn.model.observed",
+          turnId: "turn-1",
+          payload: {
+            source: "claude.assistant.message.model",
+            scope: "main-turn",
+            requestedModel: "A",
+            answeringModel: "B",
+          },
+        },
+      ],
+    };
+    expect(formatComposerAnswerObservation(resolveThreadAnsweringModel(thread))).toBe(
+      "Answered: B · Substituted: A → B",
+    );
+    expect(
+      formatComposerAnswerObservation(
+        resolveThreadAnsweringModel(JSON.parse(JSON.stringify(thread))),
+      ),
+    ).toBe("Answered: B · Substituted: A → B");
+    expect(thread.modelSelection.model).toBe("C");
+  });
+
+  it.each([
+    { turnId: "another-turn", source: "claude.assistant.message.model", scope: "main-turn" },
+    { turnId: "turn-1", source: "claude.assistant.message.model", scope: "subagent" },
+    { turnId: "turn-1", source: "codex.initial-model", scope: "main-turn" },
+  ])("reader ignores non-attributable evidence (%j) despite a known request", (evidence) => {
+    const thread = {
+      modelSelection: { model: "known-request" },
+      session: { activeTurnId: "turn-1" },
+      activities: [
+        {
+          kind: "turn.model.observed",
+          turnId: evidence.turnId,
+          payload: {
+            source: evidence.source,
+            scope: evidence.scope,
+            requestedModel: "A",
+            answeringModel: "B",
+          },
+        },
+      ],
+    };
+    expect(formatComposerAnswerObservation(resolveThreadAnsweringModel(thread))).toBe(
+      "Answered: unknown",
+    );
+    expect(thread.modelSelection.model).toBe("known-request");
+  });
+
+  it("displays the observed answer and the recorded substitution, not the next requested model", () => {
+    const observation = {
+      requestedModel: "requested-A",
+      answeringModel: "answered-B",
+      verdict: "mismatch" as const,
+      currentModelSelection: { model: "next-C" },
+    };
+    expect(formatComposerAnswerObservation(observation)).toBe(
+      "Answered: answered-B · Substituted: requested-A → answered-B",
+    );
+    expect(observation.currentModelSelection.model).toBe("next-C");
+  });
+
+  it("shows a matching observed answer without claiming substitution", () => {
+    expect(
+      formatComposerAnswerObservation({
+        requestedModel: "A",
+        answeringModel: "A",
+        verdict: "match",
+      }),
+    ).toBe("Answered: A");
+  });
+
+  it("does not fill an unknown answer from a known requested model", () => {
+    expect(
+      formatComposerAnswerObservation({
+        requestedModel: "known-request",
+        answeringModel: null,
+        verdict: "unknown",
+      }),
+    ).toBe("Answered: unknown");
+  });
+
+  it("preserves response evidence when the original request is unknown", () => {
+    expect(
+      formatComposerAnswerObservation({
+        requestedModel: null,
+        answeringModel: "B",
+        verdict: "unknown",
+      }),
+    ).toBe("Answered: B");
+  });
+
+  it("keeps the exact observed identity after JSON snapshot reload", () => {
+    const observation = JSON.parse(
+      JSON.stringify({ requestedModel: "A", answeringModel: "B", verdict: "mismatch" }),
+    );
+    expect(formatComposerAnswerObservation(observation)).toBe("Answered: B · Substituted: A → B");
   });
 });
