@@ -154,6 +154,10 @@ class FakePiRuntime implements PiSessionRuntimeShape {
 
   readThread = Effect.sync(() => ({ threadId: this.options.threadId, turns: [] }));
 
+  rollbackThread(_numTurns: number) {
+    return this.readThread;
+  }
+
   listAvailableModels() {
     return Effect.succeed({ defaultModel: null, models: [] });
   }

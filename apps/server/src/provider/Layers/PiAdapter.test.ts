@@ -47,6 +47,7 @@ import {
 } from "./PiSessionRuntime.ts";
 
 const decodePiSettings = Schema.decodeSync(PiSettings);
+const encodeFixtureJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 // Test-local service tag so suites can `yield* PiAdapter`.
 class PiAdapter extends Context.Service<PiAdapter, ProviderAdapterShape<ProviderAdapterError>>()(
@@ -97,11 +98,31 @@ class FakePiRuntime implements PiSessionRuntimeShape {
     },
   );
 
-  public readonly interruptTurnImpl = vi.fn(
-    (_turnId?: TurnId): Promise<void> => Promise.resolve(undefined),
+  public readonly interruptTurnImpl = vi.fn((_turnId?: TurnId): Promise<void> =>
+    Promise.resolve(undefined),
   );
 
   public readonly closeImpl = vi.fn(() => Promise.resolve(undefined));
+
+  public readonly rollbackThreadImpl = vi.fn((_numTurns: number) =>
+    Promise.resolve({
+      threadId: this.options.threadId,
+      turns: [{ id: asTurnId("retained-turn"), items: [] }],
+    }),
+  );
+
+  rollbackThread(numTurns: number) {
+    return Effect.tryPromise({
+      try: () => this.rollbackThreadImpl(numTurns),
+      catch: (cause) =>
+        new PiSessionRuntimeError({
+          operation: "rpc/throughline_rewind",
+          threadId: this.options.threadId,
+          detail: String(cause),
+          cause,
+        }),
+    });
+  }
 
   readonly options: PiSessionRuntimeOptions;
   readonly failStart: boolean;
@@ -299,14 +320,10 @@ validationLayer("PiAdapter validation", (it) => {
     }),
   );
 
-  it.effect("fails rollback and approval surfaces as unsupported", () =>
+  it.effect("fails approval surfaces as unsupported", () =>
     Effect.gen(function* () {
       const adapter = yield* PiAdapter;
       const threadId = asThreadId("pi-unsupported");
-
-      const rollback = yield* adapter.rollbackThread(threadId, 1).pipe(Effect.result);
-      NodeAssert.equal(rollback._tag, "Failure");
-      NodeAssert.equal(rollback.failure._tag, "ProviderAdapterValidationError");
 
       const approval = yield* adapter
         .respondToRequest(threadId, ApprovalRequestId.make("req-1"), "accept")
@@ -319,6 +336,44 @@ validationLayer("PiAdapter validation", (it) => {
         .pipe(Effect.result);
       NodeAssert.equal(userInput._tag, "Failure");
       NodeAssert.equal(userInput.failure._tag, "ProviderAdapterValidationError");
+    }),
+  );
+
+  it.effect("rewinds twice through the existing runtime without replacing the session", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-rewind");
+      const { session } = yield* drainStartupEvents(adapter, threadId);
+      const runtime = validationFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const first = yield* adapter.rollbackThread(threadId, 2).pipe(Effect.result);
+      NodeAssert.equal(first._tag, "Success");
+      if (first._tag !== "Success") return;
+      const second = yield* adapter.rollbackThread(threadId, 1);
+      NodeAssert.deepStrictEqual(second, first.success);
+      NodeAssert.equal(second.threadId, session.threadId);
+      NodeAssert.deepStrictEqual(runtime.rollbackThreadImpl.mock.calls, [[2], [1]]);
+      NodeAssert.equal(runtime.closeImpl.mock.calls.length, 0);
+      NodeAssert.equal(runtime.startImpl.mock.calls.length, 1);
+    }),
+  );
+
+  it.effect("preserves the session and exposes a failed native rewind for retry", () =>
+    Effect.gen(function* () {
+      const adapter = yield* PiAdapter;
+      const threadId = asThreadId("pi-rewind-error");
+      const { session } = yield* drainStartupEvents(adapter, threadId);
+      const runtime = validationFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      runtime.rollbackThreadImpl.mockRejectedValueOnce(new Error("Navigation cancelled"));
+      const failed = yield* adapter.rollbackThread(threadId, 1).pipe(Effect.result);
+      NodeAssert.equal(failed._tag, "Failure");
+      if (failed._tag !== "Failure") return;
+      NodeAssert.equal(failed.failure._tag, "ProviderAdapterRequestError");
+      const retried = yield* adapter.rollbackThread(threadId, 1);
+      NodeAssert.equal(retried.threadId, session.threadId);
+      NodeAssert.equal(runtime.closeImpl.mock.calls.length, 0);
+      NodeAssert.equal(runtime.startImpl.mock.calls.length, 1);
     }),
   );
 
@@ -1892,9 +1947,12 @@ const scriptDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-pi-r
 
 const FAKE_PI_SCRIPT = `#!/usr/bin/env node
 import readline from "node:readline";
+import fs from "node:fs";
 
 const rl = readline.createInterface({ input: process.stdin });
 const send = (payload) => process.stdout.write(JSON.stringify(payload) + "\\n");
+const navigationPath = process.argv[process.argv.indexOf("--extension") + 1];
+const navigationName = JSON.parse(fs.readFileSync(navigationPath, "utf8").match(/, ("tl-rewind-[^"]+")\\);/)[1]);
 
 rl.on("line", (line) => {
   let command;
@@ -1912,6 +1970,9 @@ rl.on("line", (line) => {
       ...(data !== undefined ? { data } : {}),
     });
   switch (command.type) {
+    case "get_commands":
+      respond({ commands: process.env.T3_FAKE_PI_HIDE_NAVIGATION ? [] : [{ name: navigationName }] });
+      break;
     case "get_state":
       respond({
         model: { provider: "anthropic", modelId: "claude-test" },
@@ -1935,6 +1996,12 @@ rl.on("line", (line) => {
       respond();
       break;
     case "prompt":
+      if (command.message.startsWith("/" + navigationName + " ")) {
+        const input = JSON.parse(command.message.slice(navigationName.length + 2));
+        send({ type: "extension_ui_request", method: "notify", message: "throughline-rewind:" + JSON.stringify({ id: input.id, type: "response", command: "throughline_rewind", success: true, data: { cancelled: Boolean(process.env.T3_FAKE_PI_CANCEL_NAVIGATION), sessionId: "pi-fake-sess", sessionFile: "/tmp/pi-fake-session.jsonl", turns: [{ id: "native-turn", items: [] }] } }) });
+        respond();
+        break;
+      }
       respond();
       send({ type: "turn_start" });
       send({ type: "turn_start" }); // duplicate — the runtime must suppress it
@@ -2050,7 +2117,7 @@ it.effect(
       }
 
       const thread = yield* runtime.readThread;
-      NodeAssert.deepStrictEqual(thread.turns, [{ id: turn.turnId, items: [] }]);
+      NodeAssert.deepStrictEqual(thread.turns, [{ id: asTurnId("native-turn"), items: [] }]);
 
       yield* runtime.close;
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), TestClock.withLive),
@@ -2065,4 +2132,162 @@ it.effect("discoverPiModels returns the deduped real catalog from the scripted b
       { slug: "openai/gpt-test", name: "gpt-test" },
     ]);
   }).pipe(Effect.provide(NodeServices.layer), TestClock.withLive),
+);
+
+it.effect(
+  "fails closed when the native navigation command is absent without sending a model prompt",
+  () =>
+    Effect.gen(function* () {
+      const runtime = yield* makePiSessionRuntime({
+        threadId: asThreadId("pi-no-navigation"),
+        binaryPath: fakePiPath,
+        runtimeMode: "full-access",
+        environment: { PATH: process.env.PATH!, T3_FAKE_PI_HIDE_NAVIGATION: "1" },
+      });
+      yield* runtime.start();
+      const result = yield* runtime.rollbackThread(1).pipe(Effect.result);
+      NodeAssert.equal(result._tag, "Failure");
+      if (result._tag === "Failure") NodeAssert.match(result.failure.detail, /unsupported/);
+      NodeAssert.equal((yield* runtime.getSession).activeTurnId, undefined);
+      yield* runtime.close;
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), TestClock.withLive),
+);
+
+it.effect("does not accept the prompt acknowledgement as a cancelled rewind's success", () =>
+  Effect.gen(function* () {
+    const runtime = yield* makePiSessionRuntime({
+      threadId: asThreadId("pi-cancel-navigation"),
+      binaryPath: fakePiPath,
+      runtimeMode: "full-access",
+      environment: { PATH: process.env.PATH!, T3_FAKE_PI_CANCEL_NAVIGATION: "1" },
+    });
+    const before = yield* runtime.start();
+    const result = yield* runtime.rollbackThread(1).pipe(Effect.result);
+    NodeAssert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") NodeAssert.match(result.failure.detail, /cancelled/);
+    NodeAssert.deepStrictEqual((yield* runtime.getSession).resumeCursor, before.resumeCursor);
+    yield* runtime.close;
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), TestClock.withLive),
+);
+
+(process.env.T3_PI_NATIVE_TEST_BINARY ? it.effect : it.effect.skip)(
+  "consumes native Pi navigation through the production runtime and retries cancellation in the same session",
+  () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pi-runtime-proof-"));
+    const agentDirectory = NodePath.join(directory, "agent");
+    const extensionDirectory = NodePath.join(agentDirectory, "extensions");
+    NodeFS.mkdirSync(extensionDirectory, { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(extensionDirectory, "cancel.js"),
+      'export default pi => { let once = true; pi.on("session_before_tree", () => { if (once) { once = false; return { cancel: true }; } }); };',
+    );
+    const sessionFile = NodePath.join(directory, "session.jsonl");
+    const sessionId = "d8b7a8a1-2222-4222-8222-123456789012";
+    const entries = [
+      {
+        type: "session",
+        version: 3,
+        id: sessionId,
+        timestamp: "2026-10-09T00:00:00.000Z",
+        cwd: directory,
+      },
+      {
+        type: "message",
+        id: "user0",
+        parentId: null,
+        timestamp: "2026-10-09T00:00:00.000Z",
+        message: { role: "user", content: "retained", timestamp: 0 },
+      },
+      {
+        type: "message",
+        id: "user1",
+        parentId: "assistant0",
+        timestamp: "2026-10-09T00:00:00.000Z",
+        message: { role: "user", content: "removed", timestamp: 0 },
+      },
+      {
+        type: "message",
+        id: "assistant0",
+        parentId: "user0",
+        timestamp: "2026-10-09T00:00:00.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "first reply" }],
+          api: "openai-responses",
+          provider: "openai",
+          model: "fixture",
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "stop",
+          timestamp: 0,
+        },
+      },
+      {
+        type: "message",
+        id: "assistant1",
+        parentId: "user1",
+        timestamp: "2026-10-09T00:00:00.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "fixture reply" }],
+          api: "openai-responses",
+          provider: "openai",
+          model: "fixture",
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "stop",
+          timestamp: 0,
+        },
+      },
+    ];
+    NodeFS.writeFileSync(
+      sessionFile,
+      entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n",
+    );
+    return Effect.gen(function* () {
+      const runtime = yield* makePiSessionRuntime({
+        threadId: asThreadId("pi-native-runtime"),
+        binaryPath: process.env.T3_PI_NATIVE_TEST_BINARY!,
+        cwd: directory,
+        runtimeMode: "full-access",
+        resumeCursor: { sessionFile, sessionId },
+        environment: {
+          PATH: process.env.PATH!,
+          HOME: directory,
+          PI_CODING_AGENT_DIR: agentDirectory,
+          XDG_CONFIG_HOME: directory,
+          TMPDIR: directory,
+        },
+      });
+      const before = yield* runtime.start();
+      NodeAssert.equal((yield* runtime.readThread).turns.length, 2);
+      const cancelled = yield* runtime.rollbackThread(1).pipe(Effect.result);
+      NodeAssert.equal(cancelled._tag, "Failure");
+      if (cancelled._tag === "Failure") NodeAssert.match(cancelled.failure.detail, /cancelled/);
+      NodeAssert.equal((yield* runtime.readThread).turns.length, 2);
+      NodeAssert.equal((yield* runtime.rollbackThread(1)).turns.length, 1);
+      NodeAssert.equal((yield* runtime.rollbackThread(1)).turns.length, 0);
+      NodeAssert.equal((yield* runtime.rollbackThread(1)).turns.length, 0);
+      NodeAssert.deepStrictEqual((yield* runtime.getSession).resumeCursor, before.resumeCursor);
+      NodeAssert.equal((yield* runtime.getSession).activeTurnId, undefined);
+      for (const entry of entries)
+        NodeAssert.ok(
+          NodeFS.readFileSync(sessionFile, "utf8").includes(yield* encodeFixtureJson(entry)),
+        );
+      yield* runtime.close;
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), TestClock.withLive);
+  },
+  60_000,
 );
