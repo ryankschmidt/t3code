@@ -5,13 +5,16 @@ import {
 } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
 
 import { DPOP_UNKNOWN_HINT } from "../relay/errorPresentation.ts";
@@ -109,6 +112,8 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   readonly bootstrap?: RelayEnvironmentConnectResponse;
   readonly beforeBootstrap?: Effect.Effect<void, ManagedRelay.ManagedRelayClientError>;
   readonly beforePut?: Effect.Effect<void>;
+  readonly beforeProof?: Effect.Effect<void>;
+  readonly thumbprintRef?: Ref.Ref<string>;
   readonly clerkToken?: ClientCapabilities.CloudSession["Service"]["clerkToken"];
 }) {
   const tokens = yield* Ref.make(
@@ -125,7 +130,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   const session = yield* Ref.make<Option.Option<ClientCapabilities.CloudSessionIdentity>>(
     Option.some({ accountId: "account-1" }),
   );
-  const thumbprint = yield* Ref.make("thumbprint-1");
+  const thumbprint = input.thumbprintRef ?? (yield* Ref.make("thumbprint-1"));
   const tokenReads = yield* Queue.unbounded<EnvironmentId>();
   const proofInputs = yield* Ref.make<
     ReadonlyArray<{
@@ -162,7 +167,8 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   const signer = ManagedRelay.ManagedRelayDpopSigner.of({
     thumbprint: Ref.get(thumbprint),
     createProof: (proofInput) =>
-      Ref.update(proofInputs, (current) => [...current, proofInput]).pipe(
+      (input.beforeProof ?? Effect.void).pipe(
+        Effect.andThen(Ref.update(proofInputs, (current) => [...current, proofInput])),
         Effect.as(`proof:${proofInput.url}`),
       ),
   });
@@ -189,7 +195,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
     resetTokenCache: Effect.void,
   });
   const layer = RemoteEnvironmentAuthorization.layer.pipe(
-    Layer.provide(
+    Layer.provideMerge(
       Layer.mergeAll(
         remoteHttpClientLayer(fetch.fetchFn),
         Layer.succeed(ManagedRelay.ManagedRelayDpopSigner, signer),
@@ -229,7 +235,287 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   };
 });
 
+const startIdleConsumer = Effect.fnUntraced(function* (
+  harness: Effect.Success<ReturnType<typeof makeHarness>>,
+) {
+  const applicationScope = yield* Scope.make();
+  const context = yield* Layer.build(harness.layer).pipe(Scope.provide(applicationScope));
+  const remote = Context.get(
+    context,
+    RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
+  );
+  yield* remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID });
+  const maintain = yield* RemoteEnvironmentAuthorization.makeDpopLeaseMaintainer.pipe(
+    Effect.provide(context),
+  );
+  const leaseScope = yield* Scope.make();
+  const fiber = yield* maintain(ENVIRONMENT_ID).pipe(Effect.forkIn(leaseScope));
+  return { applicationScope, leaseScope, fiber, remote };
+});
+
 describe("RemoteEnvironmentAuthorization", () => {
+  it.effect(
+    "a renewed grant already inside its own short renewal margin cannot cause an immediate loop",
+    () =>
+      Effect.gen(function* () {
+        const puts = yield* Ref.make(0);
+        const harness = yield* makeHarness({
+          beforePut: Effect.gen(function* () {
+            const n = yield* Ref.get(puts);
+            yield* Ref.update(puts, (x) => x + 1);
+            if (n === 1) yield* Effect.sleep("950 millis");
+          }),
+          responses: [
+            Response.json(DESCRIPTOR),
+            accessToken("synthetic-window-first", 30),
+            Response.json(DESCRIPTOR),
+            accessToken("synthetic-window-next", 1),
+          ],
+        });
+        const idle = yield* startIdleConsumer(harness);
+        yield* TestClock.adjust("27 seconds");
+        yield* TestClock.adjust("950 millis");
+        expect(yield* Fiber.join(idle.fiber).pipe(Effect.flip)).toMatchObject({
+          _tag: "ConnectionTransientError",
+          reason: "timeout",
+        });
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(2);
+        yield* TestClock.adjust("5 seconds");
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(2);
+        yield* Scope.close(idle.leaseScope, Exit.void);
+        yield* Scope.close(idle.applicationScope, Exit.void);
+      }),
+  );
+
+  it.effect("a key change while persisting cannot publish the old owner's replacement", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const puts = yield* Ref.make(0);
+      const harness = yield* makeHarness({
+        beforePut: Effect.gen(function* () {
+          const n = yield* Ref.get(puts);
+          yield* Ref.update(puts, (x) => x + 1);
+          if (n === 1) {
+            yield* Deferred.succeed(started, undefined);
+            yield* Deferred.await(release);
+          }
+        }),
+        responses: [
+          Response.json(DESCRIPTOR),
+          accessToken("synthetic-persist-first", 30),
+          Response.json(DESCRIPTOR),
+          accessToken("synthetic-persist-wrong", 180),
+        ],
+      });
+      const idle = yield* startIdleConsumer(harness);
+      yield* TestClock.adjust("27 seconds");
+      yield* Deferred.await(started);
+      yield* Ref.set(harness.thumbprint, "thumbprint-2");
+      yield* Deferred.succeed(release, undefined);
+      expect((yield* Fiber.join(idle.fiber).pipe(Effect.flip))._tag).toBe("ConnectionBlockedError");
+      expect((yield* Ref.get(harness.tokens)).has(ENVIRONMENT_ID)).toBe(false);
+      yield* Scope.close(idle.leaseScope, Exit.void);
+      yield* Scope.close(idle.applicationScope, Exit.void);
+    }),
+  );
+
+  it.effect("an explicit stale lease owner cannot start an exchange for the new account", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ responses: [] });
+      const owner = Option.getOrThrow(yield* Ref.get(harness.session));
+      yield* Ref.set(harness.session, Option.some({ accountId: "account-2" }));
+      const failed = yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        return yield* remote
+          .authorizeDpopHttp({
+            expectedEnvironmentId: ENVIRONMENT_ID,
+            leaseOwner: { identity: owner, thumbprint: "thumbprint-1" },
+          })
+          .pipe(Effect.flip);
+      }).pipe(Effect.provide(harness.layer));
+      expect(failed._tag).toBe("ConnectionBlockedError");
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
+      expect(harness.fetch.calls).toHaveLength(0);
+    }),
+  );
+
+  it.effect(
+    "idle consumer renews through the actual shared authorization service without another request",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          responses: [
+            Response.json(DESCRIPTOR),
+            accessToken("synthetic-idle-first", 30),
+            Response.json(DESCRIPTOR),
+            accessToken("synthetic-idle-next", 180),
+          ],
+        });
+        const idle = yield* startIdleConsumer(harness);
+        yield* TestClock.adjust("26 seconds");
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+        yield* TestClock.adjust("1 second");
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(2);
+        expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe(
+          "synthetic-idle-next",
+        );
+        yield* Scope.close(idle.leaseScope, Exit.void);
+        yield* Scope.close(idle.applicationScope, Exit.void);
+      }),
+  );
+
+  it.effect(
+    "disposing an idle consumer does not cancel the exchange shared by an HTTP caller",
+    () =>
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const count = yield* Ref.make(0);
+        const harness = yield* makeHarness({
+          beforeBootstrap: Effect.gen(function* () {
+            const n = yield* Ref.get(count);
+            yield* Ref.update(count, (x) => x + 1);
+            if (n === 1) {
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(release);
+            }
+          }),
+          responses: [
+            Response.json(DESCRIPTOR),
+            accessToken("synthetic-shared-first", 30),
+            Response.json(DESCRIPTOR),
+            accessToken("synthetic-shared-next", 180),
+          ],
+        });
+        const idle = yield* startIdleConsumer(harness);
+        yield* TestClock.adjust("27 seconds");
+        yield* Deferred.await(started);
+        yield* Queue.takeAll(harness.tokenReads);
+        const caller = yield* idle.remote
+          .authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID })
+          .pipe(Effect.forkChild);
+        yield* Queue.take(harness.tokenReads);
+        yield* Scope.close(idle.leaseScope, Exit.void);
+        yield* Deferred.succeed(release, undefined);
+        expect((yield* Fiber.join(caller)).httpAuthorization.accessToken).toBe(
+          "synthetic-shared-next",
+        );
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(2);
+        yield* TestClock.adjust("5 minutes");
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(2);
+        yield* Scope.close(idle.applicationScope, Exit.void);
+      }),
+  );
+
+  it.effect("an idle renewal cannot commit a replacement after the account owner changes", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const count = yield* Ref.make(0);
+      const harness = yield* makeHarness({
+        beforeBootstrap: Effect.gen(function* () {
+          const n = yield* Ref.get(count);
+          yield* Ref.update(count, (x) => x + 1);
+          if (n === 1) {
+            yield* Deferred.succeed(started, undefined);
+            yield* Deferred.await(release);
+          }
+        }),
+        responses: [
+          Response.json(DESCRIPTOR),
+          accessToken("synthetic-owner-first", 30),
+          Response.json(DESCRIPTOR),
+          accessToken("synthetic-owner-wrong", 180),
+        ],
+      });
+      const idle = yield* startIdleConsumer(harness);
+      yield* TestClock.adjust("27 seconds");
+      yield* Deferred.await(started);
+      yield* Ref.set(harness.session, Option.some({ accountId: "account-2" }));
+      yield* Deferred.succeed(release, undefined);
+      expect((yield* Fiber.join(idle.fiber).pipe(Effect.flip))._tag).toBe("ConnectionBlockedError");
+      expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe(
+        "synthetic-owner-first",
+      );
+      expect(
+        harness.fetch.calls.filter(([url]) => String(url).endsWith("/oauth/token")),
+      ).toHaveLength(1);
+      yield* Scope.close(idle.leaseScope, Exit.void);
+      yield* Scope.close(idle.applicationScope, Exit.void);
+    }),
+  );
+
+  it.effect(
+    "a delayed shared exchange cannot make the idle consumer wait past the admitted expiry",
+    () =>
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const count = yield* Ref.make(0);
+        const harness = yield* makeHarness({
+          beforeBootstrap: Effect.gen(function* () {
+            const n = yield* Ref.get(count);
+            yield* Ref.update(count, (x) => x + 1);
+            if (n === 1) {
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(release);
+            }
+          }),
+          responses: [Response.json(DESCRIPTOR), accessToken("synthetic-expiry-first", 30)],
+        });
+        const idle = yield* startIdleConsumer(harness);
+        yield* TestClock.adjust("27 seconds");
+        yield* Deferred.await(started);
+        yield* TestClock.adjust("3 seconds");
+        expect(yield* Fiber.join(idle.fiber).pipe(Effect.flip)).toMatchObject({
+          _tag: "ConnectionTransientError",
+          reason: "timeout",
+        });
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(2);
+        yield* TestClock.adjust("5 seconds");
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(2);
+        yield* Scope.close(idle.leaseScope, Exit.void);
+        yield* Scope.close(idle.applicationScope, Exit.void);
+      }),
+  );
+
+  it.effect("a signing-key change during proof preparation prevents the token request", () =>
+    Effect.gen(function* () {
+      const key = yield* Ref.make("thumbprint-1");
+      const proofs = yield* Ref.make(0);
+      const harness = yield* makeHarness({
+        thumbprintRef: key,
+        beforeProof: Effect.gen(function* () {
+          const count = yield* Ref.get(proofs);
+          yield* Ref.update(proofs, (n) => n + 1);
+          if (count === 1) yield* Ref.set(key, "thumbprint-2");
+        }),
+        responses: [
+          Response.json(DESCRIPTOR),
+          accessToken("synthetic-first-token", 30),
+          Response.json(DESCRIPTOR),
+          accessToken("synthetic-wrong-key-token", 30),
+        ],
+      });
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        yield* remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID });
+        yield* TestClock.adjust("27 seconds");
+        const failed = yield* remote
+          .authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID })
+          .pipe(Effect.flip);
+        expect(failed._tag).toBe("ConnectionBlockedError");
+      }).pipe(Effect.provide(harness.layer));
+      expect(
+        harness.fetch.calls.filter(([url]) => String(url).endsWith("/oauth/token")),
+      ).toHaveLength(1);
+      expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe(
+        "synthetic-first-token",
+      );
+    }),
+  );
+
   for (const rejection of ["explicit", "expired"] as const) {
     it.effect(`never reuses a newly measured grant after ${rejection} rejection`, () =>
       Effect.gen(function* () {

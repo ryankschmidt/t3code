@@ -327,6 +327,7 @@ export const make = Effect.gen(function* () {
           actual: descriptor.environmentId,
         });
       }
+      yield* assertOwner(identity, thumbprint);
       const bootstrapProof = yield* signer
         .createProof({
           method: "POST",
@@ -341,7 +342,7 @@ export const make = Effect.gen(function* () {
               }),
           ),
         );
-      yield* assertSession(identity);
+      yield* assertOwner(identity, thumbprint);
       // Start the lifetime before exchange so request latency cannot extend the server's grant.
       const issuedAt = yield* Clock.currentTimeMillis;
       const access = yield* exchangeRemoteDpopAccessToken({
@@ -634,6 +635,7 @@ export const makeDpopLeaseMaintainer = Effect.gen(function* () {
           });
         const delay = cached.value.expiresAtEpochMs - grantRefreshSkew(cached.value) - now;
         if (delay > 0) {
+          failures = 0;
           // Bound native timer size for long persisted lifetimes; every wake re-reads current authority.
           yield* Effect.sleep(Math.min(delay, 86_400_000));
           continue;
@@ -654,8 +656,46 @@ export const makeDpopLeaseMaintainer = Effect.gen(function* () {
             Effect.result,
           );
         if (Result.isFailure(result)) {
-          if (result.failure._tag !== "ConnectionTransientError" || ++failures >= 3)
-            return yield* result.failure;
+          if (result.failure._tag === "ConnectionBlockedError") {
+            // Refusal to extend is not proof that the existing grant was revoked. Stop requests,
+            // preserve the still-owned lease until expiry, and adopt any independently renewed grant.
+            while (true) {
+              const latestOwner = yield* session.identity;
+              const latestKey = yield* signer.thumbprint.pipe(
+                Effect.mapError(
+                  () =>
+                    new ConnectionBlockedError({
+                      reason: "configuration",
+                      detail: "Could not validate the connection authorization key.",
+                    }),
+                ),
+              );
+              const latest = yield* tokens.get(environmentId);
+              const observedAt = yield* Clock.currentTimeMillis;
+              if (
+                Option.isNone(latestOwner) ||
+                latestOwner.value !== owner.identity ||
+                latestKey !== owner.thumbprint ||
+                Option.isNone(latest) ||
+                latest.value.accountId !== owner.identity.accountId ||
+                latest.value.dpopThumbprint !== owner.thumbprint ||
+                latest.value.expiresAtEpochMs <= observedAt
+              ) {
+                return yield* result.failure;
+              }
+              if (
+                latest.value.accessToken !== cached.value.accessToken ||
+                latest.value.expiresAtEpochMs !== cached.value.expiresAtEpochMs ||
+                latest.value.issuedAtEpochMs !== cached.value.issuedAtEpochMs
+              ) {
+                failures = 0;
+                break;
+              }
+              yield* Effect.sleep(Math.min(latest.value.expiresAtEpochMs - observedAt, 86_400_000));
+            }
+            continue;
+          }
+          if (++failures >= 3) return yield* result.failure;
           const budget = cached.value.expiresAtEpochMs - (yield* Clock.currentTimeMillis);
           const backoff = Math.min(250 * 2 ** (failures - 1), 5_000);
           if (budget <= backoff) return yield* result.failure;
