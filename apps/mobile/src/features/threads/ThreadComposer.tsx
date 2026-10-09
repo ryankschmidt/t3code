@@ -111,6 +111,7 @@ import {
   VoiceOptimizationStatus,
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { VoiceOptimizationUndoControl } from "../voice-input/VoiceOptimizationUndoControl";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import {
   type ExistingThreadSettingsRouteSession,
@@ -965,6 +966,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             {isExpanded ? <View className="h-1" /> : null}
           </ComposerDictationDraftContent>
           <VoiceOptimizationStatus result={voiceInput.optimizationResult} />
+          <VoiceOptimizationUndoControl
+            key={composerOwnerKey}
+            rawTranscript={voiceInput.rawTranscript}
+            canUndo={voiceInput.canUndoOptimization}
+            disabled={voiceInput.isBusy}
+            onUndo={voiceInput.undoOptimization}
+          />
           <Animated.View
             accessibilityElementsHidden={!isToolbarVisible}
             collapsable={false}
