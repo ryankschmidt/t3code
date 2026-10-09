@@ -31,6 +31,17 @@ set -u
 
 # defined before argument parsing, because the detach branch below refuses through it
 refuse() { echo "REFUSED: $*"; exit 2; }
+# Preflight checks prospective directory access without creating persistent install paths.
+# Installation checks mkdir again because access may change after the observation.
+can_prepare_directory() (
+  candidate=$1
+  while [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; do
+    parent=$(dirname "$candidate")
+    [ "$parent" != "$candidate" ] || return 1
+    candidate=$parent
+  done
+  [ -d "$candidate" ] && [ -w "$candidate" ] && [ -x "$candidate" ]
+)
 
 # Check-only is parsed and returned BEFORE the install/detach parser. It cannot launch,
 # quit or replace an app, even when an install-mode flag is accidentally supplied.
@@ -276,8 +287,7 @@ echo "  [3] running app   $L_CURRENT   (two readers + control. proves: current s
 # PROVES: there is somewhere to put the outgoing app, and it is not already occupied.
 # PROVES NOTHING about the backup's integrity until it is actually made.
 BACKUP="$BACKUP_ROOT/ThroughLine-$CURVER-$(date -u '+%Y%m%dT%H%M%SZ').app"
-mkdir -p "$BACKUP_ROOT" 2>/dev/null
-if [ -w "$BACKUP_ROOT" ] && [ ! -e "$BACKUP" ]; then L_BACKUP=PASS; else echo "  backup root not writable, or target already exists"; fi
+if can_prepare_directory "$BACKUP_ROOT" && [ ! -e "$BACKUP" ]; then L_BACKUP=PASS; else echo "  backup root not writable or creatable, or target already exists"; fi
 echo "  [4] rollback slot $L_BACKUP   ($BACKUP)"
 
 # ---- LAYER 5: the source opens and carries the app it claims ------------------------------
@@ -359,6 +369,8 @@ fi
 # ==========================================================================================
 echo
 echo "installing..."
+
+mkdir -p "$BACKUP_ROOT" || { cleanup_mount; refuse "cannot prepare rollback directory; nothing was quit or replaced"; }
 
 if [ -n "${RUNNING:-}" ]; then
   echo "  quitting ThroughLine (pid $RUNNING) — live threads drop here, including any that started this"
