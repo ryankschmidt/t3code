@@ -743,6 +743,13 @@ export interface RpiAf60Ports {
   outputNames(): Promise<unknown>;
   readOutput(name: string): Promise<Uint8Array>;
 }
+export function verifyRpiAf60UnitBytes(bytes: Uint8Array, workspace: string): void {
+  if (
+    !(bytes instanceof Uint8Array) ||
+    Buffer.from(bytes).toString("utf8") !== rpiAf60PackageRecipe(workspace).unit
+  )
+    throw Error("RPI_PACKAGE_UNIT_BINDING");
+}
 /** Source-owned protocol runner over trusted typed ports only. No process/file
  * or transport effects are implemented in this module. Tests of fake ports
  * establish source support, never independent host/package admission. */
@@ -813,6 +820,24 @@ export async function runRpiAf60PackageSupport(request: unknown, ports: RpiAf60P
       sha256: createHash("sha256").update(frozen).digest("hex"),
     });
   }
+  verifyRpiAf60UnitBytes(outputBytes.get("staged-unit.service")!, r.workspace);
+  const readiness = af60Record(
+    JSON.parse(Buffer.from(outputBytes.get("staged-unit-readiness.json")!).toString("utf8")),
+    ["schema", "source_commit", "release", "user", "platform", "exit_code", "checks", "unit"],
+  );
+  if (
+    readiness.schema !== "throughline.rpi-staged-unit-readiness.v1" ||
+    readiness.source_commit !== RPI_AF60_SOURCE ||
+    readiness.release !== RPI_AF60_RELEASE ||
+    readiness.user !== "rpi" ||
+    readiness.platform !== "linux-arm64" ||
+    readiness.exit_code !== 0
+  )
+    throw Error("RPI_PACKAGE_READINESS_BINDING");
+  const readinessChecks = af60Record(readiness.checks, plan.runtime_manifest_contract.checks);
+  if (Object.values(readinessChecks).some((x) => !af60Positive(x)))
+    throw Error("RPI_PACKAGE_READINESS_ZERO_CHECKS");
+  af60Files([readiness.unit], [outputs.find((x) => x.name === "staged-unit.service")!]);
   const manifest = af60Record(
     JSON.parse(Buffer.from(outputBytes.get("package-manifest.json")!).toString("utf8")),
     plan.runtime_manifest_contract.fields,

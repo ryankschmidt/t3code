@@ -1,6 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as source from "./rpi.js";
+test("unit bytes are bound to the exact no-userdata descriptor", () => {
+  const r = (source as unknown as Record<string, (...args: unknown[]) => any>)
+    .rpiAf60PackageRecipe!();
+  assert.doesNotThrow(() =>
+    source.verifyRpiAf60UnitBytes(new TextEncoder().encode(r.unit), "server-af60-057"),
+  );
+  for (const bad of [
+    r.unit.replace("--help", "serve"),
+    r.unit + "[Install]\nWantedBy=default.target\n",
+    r.unit.replace("/isolated/home", "/.t3"),
+  ])
+    assert.throws(
+      () => source.verifyRpiAf60UnitBytes(new TextEncoder().encode(bad), "server-af60-057"),
+      /UNIT_BINDING/,
+    );
+});
 const api = source as unknown as Record<string, (...args: unknown[]) => any>;
 const inputs = () => api.rpiAf60PackageInputs!();
 const request = () => ({
