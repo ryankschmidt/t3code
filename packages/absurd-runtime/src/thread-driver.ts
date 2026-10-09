@@ -28,6 +28,8 @@ import type { Absurd } from "absurd-sdk";
 import { captureStepCheckpoint } from "./checkpoint-bridge.ts";
 
 export type ThreadRunParams = {
+  /** Captured by trusted server ingress, never recovered from turnCommand. */
+  trustedSenderContext?: ThreadRunSenderContext;
   /** The user prompt / instruction for the turn. */
   prompt: string;
   /** Existing thread to reuse; omit to create one. */
@@ -75,6 +77,20 @@ export type ThreadRunParams = {
   completionMode?: "wait" | "dispatch-only";
 };
 
+// Portable serialized data only; this package cannot mint or restore identity.
+export type ThreadRunSenderContext = {
+  readonly sender: {
+    readonly publicAgentId: string;
+    readonly generation: string;
+    readonly nativeKind: string;
+    readonly nativeId: string;
+  };
+  readonly claims: ReadonlyArray<{
+    readonly field: "publicAgentId" | "generation";
+    readonly value: unknown;
+  }>;
+};
+
 export type ThreadRunResult =
   | {
       threadId: string;
@@ -97,6 +113,7 @@ export interface ThreadTransport {
     threadId: string,
     prompt: string,
     turnCommand?: Record<string, unknown>,
+    trustedSenderContext?: ThreadRunSenderContext,
   ): Promise<{ turnId: string; dispatchedAt: string }>;
   awaitTurnComplete(
     threadId: string,
@@ -147,7 +164,12 @@ export function registerThreadRunTask(app: Absurd, transport: ThreadTransport): 
         console.log(
           `[thread-run ${ctx.taskID}] EXECUTING dispatch-turn (thread ${thread.threadId})`,
         );
-        return transport.dispatchTurn(thread.threadId, params.prompt, params.turnCommand);
+        return transport.dispatchTurn(
+          thread.threadId,
+          params.prompt,
+          params.turnCommand,
+          params.trustedSenderContext,
+        );
       });
 
       if (params.checkpoint) {

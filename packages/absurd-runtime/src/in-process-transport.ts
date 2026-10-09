@@ -23,9 +23,9 @@
  * is no default model on this path. The command is built with an explicit
  * `modelSelection`; a missing model throws before any thread is created.
  */
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
-import type { ThreadTransport } from "./thread-driver.ts";
+import type { ThreadTransport, ThreadRunSenderContext } from "./thread-driver.ts";
 
 /** Minimal projection of an orchestration event the transport scans. */
 export interface ReplayEvent {
@@ -42,7 +42,10 @@ export interface ReplayEvent {
  */
 export interface InProcessTransportDeps {
   /** Dispatch one orchestration command in-process (server decodes + dispatches). */
-  dispatchCommand: (command: Record<string, unknown>) => Promise<unknown>;
+  dispatchCommand: (
+    command: Record<string, unknown>,
+    trustedSenderContext?: ThreadRunSenderContext,
+  ) => Promise<unknown>;
   /** Replay persisted orchestration events from an exclusive sequence cursor. */
   replayEvents: (fromSequenceExclusive: number) => Promise<ReadonlyArray<ReplayEvent>>;
   /** Project the created thread attaches to. */
@@ -76,10 +79,10 @@ export function makeInProcessTransport(deps: InProcessTransportDeps): ThreadTran
           "in-process-transport: model is required to create a thread (no default model on this path)",
         );
       }
-      const threadId = randomUUID();
+      const threadId = NodeCrypto.randomUUID();
       await deps.dispatchCommand({
         type: "thread.create",
-        commandId: randomUUID(),
+        commandId: NodeCrypto.randomUUID(),
         threadId,
         projectId: deps.projectId,
         title: "symphony thread-run (TQ-039)",
@@ -93,7 +96,7 @@ export function makeInProcessTransport(deps: InProcessTransportDeps): ThreadTran
       return { threadId, created: true };
     },
 
-    async dispatchTurn(threadId, prompt, turnCommand) {
+    async dispatchTurn(threadId, prompt, turnCommand, trustedSenderContext) {
       const turnCursor = await currentSequence();
       // Client turn rail (landing slice): when the caller supplies the full
       // encoded thread.turn.start command, dispatch it VERBATIM — full parity
@@ -102,23 +105,26 @@ export function makeInProcessTransport(deps: InProcessTransportDeps): ThreadTran
       if (turnCommand) {
         const message = turnCommand["message"] as { messageId?: unknown } | undefined;
         const messageId =
-          typeof message?.messageId === "string" ? message.messageId : randomUUID();
-        await deps.dispatchCommand(turnCommand);
+          typeof message?.messageId === "string" ? message.messageId : NodeCrypto.randomUUID();
+        await deps.dispatchCommand(turnCommand, trustedSenderContext);
         return { turnId: `seq:${turnCursor}:${messageId}`, dispatchedAt: new Date().toISOString() };
       }
-      const messageId = randomUUID();
+      const messageId = NodeCrypto.randomUUID();
       // modelSelection is intentionally omitted: the turn inherits the thread's
       // model set at create time. Keeping it off this command means there is no
       // second place a default model could sneak in.
-      await deps.dispatchCommand({
-        type: "thread.turn.start",
-        commandId: randomUUID(),
-        threadId,
-        message: { messageId, role: "user", text: prompt, attachments: [] },
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        createdAt: new Date().toISOString(),
-      });
+      await deps.dispatchCommand(
+        {
+          type: "thread.turn.start",
+          commandId: NodeCrypto.randomUUID(),
+          threadId,
+          message: { messageId, role: "user", text: prompt, attachments: [] },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          createdAt: new Date().toISOString(),
+        },
+        trustedSenderContext,
+      );
       // Encode the pre-dispatch sequence cursor into the turn handle so
       // awaitTurnComplete scans forward from exactly where we left off.
       return { turnId: `seq:${turnCursor}:${messageId}`, dispatchedAt: new Date().toISOString() };
@@ -138,8 +144,7 @@ export function makeInProcessTransport(deps: InProcessTransportDeps): ThreadTran
         for (const event of events) {
           if (event.sequence > cursor) cursor = event.sequence;
           const payload = event.payload ?? {};
-          const forThisThread =
-            event.aggregateId === threadId || payload["threadId"] === threadId;
+          const forThisThread = event.aggregateId === threadId || payload["threadId"] === threadId;
           if (!forThisThread) continue;
           if (event.type === "thread.session-set") {
             const session = payload["session"] as
