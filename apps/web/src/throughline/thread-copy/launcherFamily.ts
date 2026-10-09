@@ -68,3 +68,12 @@ export function launcherFamilyRows(
     { label: "Record source", value: value.source },
   ];
 }
+
+export function validateLauncherFamilyRead(
+  input: { readonly threadId: string },
+  family: LauncherFamilyViewInput,
+): LauncherFamilyViewInput {
+  if (family.threadId !== input.threadId)
+    throw new Error("Launcher read returned another public thread identity.");
+  return family;
+}
