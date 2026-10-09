@@ -3,7 +3,225 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
+import * as NodeURL from "node:url";
+import * as NodeNet from "node:net";
 import { build, type Plugin } from "esbuild";
+
+/** Read/consume existing packaged bytes only. No bundler, GUI or backend startup. */
+export async function inspectPackagedProviderContract(input: {
+  artifactRoot: string;
+  custodyManifest: string;
+  asarReader: string;
+  fuseReader: string;
+  outputParent: string;
+}) {
+  const root = NodePath.resolve(input.artifactRoot);
+  if (!root.startsWith("/Users/Admin/throughline-worktrees/artifacts/"))
+    throw new Error(
+      "Packaged consumers require the relocated artifact root; old vault payload paths are refused.",
+    );
+  const custody = JSON.parse(NodeFS.readFileSync(input.custodyManifest, "utf8")) as {
+    source_sha: string;
+    package_version: string;
+  };
+  const contents = NodePath.join(root, "side-app/ThroughLine.app/Contents");
+  const archive = NodePath.join(contents, "Resources/app.asar");
+  const executable = NodePath.join(contents, "MacOS/ThroughLine");
+  const zip = NodePath.join(root, "artifacts/ThroughLine-0.0.51-arm64.zip");
+  for (const file of [archive, executable, zip])
+    if (!NodeFS.existsSync(file))
+      throw new Error(`Relocated packaged member is not available: ${file}`);
+  const hashFile = (file: string) =>
+    new Promise<string>((resolve, reject) => {
+      const hash = NodeCrypto.createHash("sha256");
+      const stream = NodeFS.createReadStream(file);
+      stream.on("data", (bytes) => hash.update(bytes));
+      stream.on("error", reject);
+      stream.on("end", () => resolve(hash.digest("hex")));
+    });
+  const hashZipMember = (member: string) =>
+    new Promise<string>((resolve, reject) => {
+      const hash = NodeCrypto.createHash("sha256");
+      const child = NodeChildProcess.spawn("/usr/bin/unzip", ["-p", zip, member], {
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      child.stdout.on("data", (bytes) => hash.update(bytes));
+      child.on("error", reject);
+      child.on("close", (status) =>
+        status === 0
+          ? resolve(hash.digest("hex"))
+          : reject(new Error(`ZIP member custody read failed: ${member}, exit ${status}`)),
+      );
+    });
+  const archiveSha256 = await hashFile(archive);
+  const executableSha256 = await hashFile(executable);
+  const zipArchiveSha256 = await hashZipMember("ThroughLine.app/Contents/Resources/app.asar");
+  const zipExecutableSha256 = await hashZipMember("ThroughLine.app/Contents/MacOS/ThroughLine");
+  if (archiveSha256 !== zipArchiveSha256 || executableSha256 !== zipExecutableSha256)
+    throw new Error("Expanded packaged bytes do not match ZIP custody.");
+  const archiveModule = await import(NodeURL.pathToFileURL(input.asarReader).href);
+  const reader = (archiveModule.default ?? archiveModule) as {
+    extractFile(archive: string, member: string): Buffer;
+  };
+  const fuseModule = await import(NodeURL.pathToFileURL(input.fuseReader).href);
+  const fuses = (await fuseModule.getCurrentFuseWire(executable)) as Record<string, unknown>;
+  if (fuses.version !== "1" || fuses["0"] !== 49)
+    throw new Error("Produced executable has no proven RunAsNode fuse; GUI startup is forbidden.");
+  const member = "apps/server/dist/bin.mjs";
+  const serverBytes = reader.extractFile(archive, member);
+  const source = serverBytes.toString("utf8");
+  const pkg = JSON.parse(reader.extractFile(archive, "package.json").toString("utf8")) as {
+    version: string;
+  };
+  if (pkg.version !== custody.package_version)
+    throw new Error("Packaged version differs from source custody.");
+  NodeFS.mkdirSync(input.outputParent, { recursive: true });
+  const directory = NodeFS.mkdtempSync(
+    NodePath.join(input.outputParent, "packaged-contract-c668-"),
+  );
+  const home = NodePath.join(directory, "home");
+  const backendHome = NodePath.join(directory, "backend-home");
+  NodeFS.mkdirSync(home);
+  NodeFS.mkdirSync(backendHome);
+  const entry = NodePath.join(archive, member);
+  const env = {
+    ELECTRON_RUN_AS_NODE: "1",
+    HOME: home,
+    XDG_CONFIG_HOME: home,
+    T3CODE_HOME: backendHome,
+    PATH: "/usr/bin:/bin",
+    NO_COLOR: "1",
+  };
+  const run = (args: string[]) => {
+    const result = NodeChildProcess.spawnSync(executable, args, {
+      cwd: directory,
+      env,
+      encoding: "utf8",
+      timeout: 15_000,
+      maxBuffer: 128 * 1024,
+    });
+    return {
+      args,
+      status: result.status,
+      signal: result.signal,
+      error: result.error?.message,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+    };
+  };
+  const interpreter = run([
+    "-e",
+    'process.stdout.write(JSON.stringify({node:process.version,executable:process.execPath,home:require("node:os").homedir()})+"\\n")',
+  ]);
+  if (interpreter.status !== 0)
+    throw new Error("Packaged Node-mode interpreter did not run; no backend was launched.");
+  const actualInterpreter = JSON.parse(interpreter.stdout.trim()) as {
+    node: string;
+    executable: string;
+    home: string;
+  };
+  if (actualInterpreter.home !== home || actualInterpreter.executable !== executable)
+    throw new Error("Packaged executable HOME isolation was not established.");
+  const help = run([entry, "--help"]);
+  if (
+    help.status !== 0 ||
+    !help.stdout.includes("--base-dir") ||
+    !help.stdout.includes("--no-browser")
+  )
+    throw new Error("Packaged public CLI isolation contract is unavailable.");
+  // Dynamic import executes the unmodified packaged module, not its main CLI.
+  const exportsProbe = run([
+    "-e",
+    `import(${JSON.stringify(NodeURL.pathToFileURL(entry).href)}).then(m => process.stdout.write(JSON.stringify(Object.keys(m).sort())+"\\n"));`,
+  ]);
+  if (exportsProbe.status !== 0) throw new Error("Packaged export consumer did not run.");
+  const publicExports = JSON.parse(exportsProbe.stdout.trim()) as string[];
+  const privateFactories = ["makePiAdapter", "makePiSessionRuntime", "registerPiNativeNavigation"];
+  const missingPublicFactories = privateFactories.filter((name) => !publicExports.includes(name));
+  const refusal = "Thread rollback is not supported by the Pi provider";
+  const refusalOffset = source.indexOf(refusal);
+  const nativeBridgeMarkers = ["throughline_rewind", "tl-rewind-", "navigation.mjs"].map(
+    (value) => ({ value, present: source.includes(value) }),
+  );
+  const plannedPort = await new Promise<number>((resolve, reject) => {
+    const server = NodeNet.createServer();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string")
+        return reject(new Error("No dedicated probe port was allocated."));
+      server.close((error) => (error ? reject(error) : resolve(address.port)));
+    });
+  });
+  const receipt = {
+    schema: "throughline.packaged-provider-contract.v1",
+    sourceSha: custody.source_sha,
+    snapshot: "early c668 snapshot, not final candidate",
+    packageVersion: pkg.version,
+    artifactRoot: root,
+    zip,
+    archive,
+    executable,
+    member,
+    hashes: {
+      zip: await hashFile(zip),
+      archive: archiveSha256,
+      executable: executableSha256,
+      serverEntry: NodeCrypto.createHash("sha256").update(serverBytes).digest("hex"),
+    },
+    zipCustodyMatched: true,
+    directory,
+    home,
+    backendHome,
+    plannedPort,
+    interpreter,
+    actualInterpreter,
+    help,
+    exportsProbe,
+    publicExports,
+    missingPublicFactories,
+    nativePiRefusal: {
+      present: refusalOffset >= 0,
+      byteOffset: refusalOffset,
+      owningSource: "apps/server/src/provider/Layers/PiAdapter.ts",
+      excerpt:
+        refusalOffset >= 0 ? source.slice(refusalOffset - 160, refusalOffset + 100) : undefined,
+    },
+    nativeBridgeMarkers,
+    providerAcceptance:
+      "not proven: no public credential-free provider consumer seam; early packaged Pi rollback explicitly refuses",
+    backendStarted: false,
+    guiStarted: false,
+    modelRequests: false,
+    credentialsRead: false,
+    freshlyBundledFixtureUsed: false,
+    boundedBackendPlan: {
+      executable,
+      args: [
+        entry,
+        "start",
+        "--mode",
+        "desktop",
+        "--base-dir",
+        backendHome,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(plannedPort),
+        "--no-browser",
+        directory,
+      ],
+      executed: false,
+      limit:
+        "Requires an admitted public no-credential provider seam; no backend/auth/bootstrap has been started.",
+    },
+  };
+  NodeFS.writeFileSync(
+    NodePath.join(directory, "Packaged-Consumer-Receipt.json"),
+    JSON.stringify(receipt, null, 2) + "\n",
+  );
+  return receipt;
+}
 
 export interface CompiledRewindFixture {
   directory: string;
