@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import type { AppNativeStackNavigationOptions } from "../../native/StackHeader";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
+import { ThreadCopyButton } from "./copy/ThreadCopySheet";
 import {
   ThreadGitControls,
   useThreadGitCenterHeaderItems,
@@ -18,6 +19,7 @@ export function useThreadHeaderOptions(props: {
   readonly usesNativeHeaderGlass: boolean;
   readonly gitControls: Parameters<typeof ThreadGitControls>[0];
   readonly onReturnToThread?: () => void;
+  readonly onCopyThreadIdentity?: () => void;
 }) {
   const navigation = useNavigation();
   const { layout, panes, togglePrimarySidebar } = useAdaptiveWorkspaceLayout();
@@ -103,8 +105,20 @@ export function useThreadHeaderOptions(props: {
     // Search lives in the persistent sidebar, so the split header keeps
     // the git controls on the RIGHT (no center items — center space is
     // reserved for future breadcrumbs/status).
-    unstable_headerRightItems: () =>
-      layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems,
+    unstable_headerRightItems: () => [
+      ...(layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems),
+      ...(props.onCopyThreadIdentity
+        ? [
+            withNativeGlassHeaderItem({
+              accessibilityLabel: "Copy thread IDs",
+              icon: { name: "doc.on.doc", type: "sfSymbol" as const },
+              identifier: "thread-copy-identity",
+              onPress: props.onCopyThreadIdentity,
+              type: "button" as const,
+            }),
+          ]
+        : []),
+    ],
     unstable_headerSubtitle: props.usesNativeHeaderGlass ? props.subtitle : undefined,
     contentStyle: undefined,
   };
@@ -113,7 +127,10 @@ export function useThreadHeaderOptions(props: {
     sidebar: false,
     fallback:
       !layout.usesSplitView && !props.usesNativeHeaderGlass ? (
-        <ThreadGitControls {...props.gitControls} showActionControls />
+        <>
+          <ThreadGitControls {...props.gitControls} showActionControls />
+          {props.onCopyThreadIdentity && <ThreadCopyButton onPress={props.onCopyThreadIdentity} />}
+        </>
       ) : null,
   };
 }

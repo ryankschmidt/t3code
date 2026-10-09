@@ -52,6 +52,7 @@ import { cn } from "~/lib/utils";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { Button } from "../ui/button";
 import { Menu, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
+import { ThreadCopyMenu } from "../../throughline/thread-copy/ThreadCopyMenu";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -353,6 +354,9 @@ export const ChatHeader = memo(function ChatHeader({
   );
   const headerActions = (
     <>
+      {isServerThread && (
+        <ThreadCopyMenu environmentId={activeThreadEnvironmentId} threadId={activeThreadId} />
+      )}
       {activeProjectScripts && (
         <>
           <ProjectScriptsControl
@@ -502,7 +506,10 @@ export const ChatHeader = memo(function ChatHeader({
           <MenuTrigger
             className={
               actionsCollapsed &&
-              (activeProjectScripts || showOpenInPicker || (activeProjectName && gitCwd))
+              (isServerThread ||
+                activeProjectScripts ||
+                showOpenInPicker ||
+                (activeProjectName && gitCwd))
                 ? undefined
                 : "hidden"
             }
