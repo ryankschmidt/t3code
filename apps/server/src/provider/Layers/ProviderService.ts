@@ -91,6 +91,7 @@ import {
   type ConfiguredIdentity,
   type ObserverSnapshot,
 } from "../../throughline/headroom/observer.ts";
+import { BrokerStatusClient } from "../../throughline/headroom/BrokerStatusClient.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const encodePromptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -263,7 +264,10 @@ export interface ProviderServiceLiveOptions {
   readonly issueMcpCredential?: typeof McpSessionRegistry.issueActiveMcpCredential;
   /** Read an existing cached observer/configured snapshot for this routed instance.
    * No reader means unknown/admit; this consumer never measures quota or fetches it. */
-  readonly readHeadroomSnapshot?: (instanceId: ProviderInstanceId) =>
+  readonly readHeadroomSnapshot?: (
+    instanceId: ProviderInstanceId,
+    driver?: ProviderDriverKind,
+  ) =>
     | {
         readonly configured: readonly ConfiguredIdentity[];
         readonly snapshot?: ObserverSnapshot;
@@ -490,6 +494,7 @@ const correlateRuntimeEventWithInstance = (
 
 const makeProviderService = Effect.fn("makeProviderService")(function* (
   options?: ProviderServiceLiveOptions,
+  nextHeadroomRefresh?: () => Effect.Effect<void>,
 ) {
   const analytics = yield* Effect.service(AnalyticsService.AnalyticsService);
   const serverConfig = yield* ServerConfig.ServerConfig;
@@ -1738,13 +1743,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       if (options?.readHeadroomSnapshot) {
         let announcedWait = false;
         while (true) {
+          const refreshCompleted = nextHeadroomRefresh?.();
           // This is a synchronous cache read, not an asynchronous usage request.
           // A reader failure is unknown, without leaking its payload into logs.
           let observation: ReturnType<
             NonNullable<ProviderServiceLiveOptions["readHeadroomSnapshot"]>
           >;
           try {
-            observation = options.readHeadroomSnapshot(routed.instanceId);
+            observation = options.readHeadroomSnapshot(routed.instanceId, routed.adapter.provider);
           } catch {
             observation = undefined;
           }
@@ -1783,7 +1789,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             announcedWait = true;
           }
           // Wake at the first actual reset or when the observation becomes stale, then re-read.
-          yield* Effect.sleep(`${nextChange - now} millis`);
+          const expires = Effect.sleep(`${nextChange - now} millis`);
+          yield* refreshCompleted ? Effect.raceFirst(expires, refreshCompleted) : expires;
         }
       }
       if (!routed.isActive) {
@@ -2531,13 +2538,78 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   } satisfies ProviderService.ProviderService["Service"];
 });
 
-export const ProviderServiceLive = Layer.effect(
-  ProviderService.ProviderService,
-  makeProviderService(),
+/** The existing observer route. Each production provider scope owns its own cache lifetime. */
+export const ProviderServiceLive = makeProviderServiceLive(
+  undefined,
+  () =>
+    new BrokerStatusClient({ statusUrl: "http://127.0.0.1:19444/v1/status", freshnessMs: 60_000 }),
 );
 
-export function makeProviderServiceLive(options?: ProviderServiceLiveOptions) {
-  return Layer.effect(ProviderService.ProviderService, makeProviderService(options));
+export function makeProviderServiceLive(
+  options?: ProviderServiceLiveOptions,
+  clientInput?: BrokerStatusClient | (() => BrokerStatusClient),
+) {
+  if (!clientInput)
+    return Layer.effect(ProviderService.ProviderService, makeProviderService(options));
+  return Layer.effect(
+    ProviderService.ProviderService,
+    Effect.gen(function* () {
+      const client = yield* Effect.acquireRelease(
+        Effect.sync(() => (typeof clientInput === "function" ? clientInput() : clientInput)),
+        (owned) => Effect.sync(() => owned.close()),
+      );
+      let changed = yield* Deferred.make<void>();
+      const refresh = Effect.gen(function* () {
+        yield* Effect.promise(() => client.refresh());
+        const completed = changed;
+        changed = yield* Deferred.make<void>();
+        yield* Deferred.succeed(completed, undefined);
+      });
+      // Neither construction nor a model turn awaits the observer HTTP request.
+      yield* refresh.pipe(Effect.forkScoped);
+      yield* Effect.forever(
+        Effect.sleep(`${Math.max(1, Math.floor(client.freshnessMs / 2))} millis`).pipe(
+          Effect.andThen(refresh),
+        ),
+      ).pipe(Effect.forkScoped);
+      const ownerInput = options?.readHeadroomSnapshot;
+      return yield* makeProviderService(
+        {
+          ...options,
+          readHeadroomSnapshot: (instanceId, driver) => {
+            const current = ownerInput?.(instanceId, driver);
+            const cached = client.read();
+            const observerProvider = driver === "claudeAgent" ? "claude" : driver;
+            // Explicit owner configuration wins. Otherwise use only observer metadata,
+            // retaining unknown configuration and unloaded accounts, not just routable instances.
+            const configured =
+              current?.configured ??
+              cached.identities
+                .filter((row) => row.configured !== false && row.provider === observerProvider)
+                .map(({ identity, provider }) => ({ identity, provider }));
+            const configuredKeys = new Set(
+              configured.map((row) => JSON.stringify([row.provider, row.identity])),
+            );
+            const snapshot = cached.snapshot;
+            return {
+              configured,
+              freshnessMs: client.freshnessMs,
+              ...(snapshot
+                ? {
+                    snapshot: {
+                      identities: snapshot.identities.filter((row) =>
+                        configuredKeys.has(JSON.stringify([row.provider, row.identity])),
+                      ),
+                    },
+                  }
+                : {}),
+            };
+          },
+        },
+        () => Deferred.await(changed),
+      );
+    }),
+  );
 }
 // ThroughLine: exact rewind context belongs to the owned identity module, not the generic upstream adapter contract.
 import { CurrentRewindTarget } from "../../throughline/identity/index.ts";
