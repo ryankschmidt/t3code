@@ -1,7 +1,7 @@
 export interface ClientHello {
   readonly protocol_version: number;
   readonly release: string;
-  readonly commit: string;
+  readonly commit: string | null;
   readonly platform: string;
   readonly capabilities: ReadonlyArray<string>;
   readonly last_cursor: number | null;
@@ -17,6 +17,7 @@ export interface HelloPolicy {
 }
 
 export interface ServerHello {
+  readonly [field: string]: unknown;
   readonly protocol_version: number;
   readonly outcome: "compatible" | "degraded" | "update-required";
   readonly server_release: string;
