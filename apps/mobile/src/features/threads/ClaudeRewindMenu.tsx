@@ -4,6 +4,7 @@ import * as Option from "effect/Option";
 import { ComposerContextId, type EnvironmentId, type ThreadId } from "@t3tools/contracts";
 import { buildRewindEntries, type RewindEntry } from "@t3tools/shared/claudeComposerMenus";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { requestOlderThreadTurns } from "@t3tools/client-runtime/state/threads";
 import { AppText as Text } from "../../components/AppText";
 import {
   environmentThreadDetails,
@@ -19,11 +20,10 @@ import {
 } from "../../state/use-composer-drafts";
 import { importAttachment } from "../../lib/composerContextClipboard";
 import { uuidv4 } from "../../lib/uuid";
-
-// ThroughLine-owned preview: hide transport markup, never alter the restored prompt.
-function promptPreview(text: string) {
-  return text.replace(/!\[([^\]]*)\]\([^)]*\)/g, "[Attachment: $1]").trim();
-}
+import {
+  readableRewindPreview as promptPreview,
+  rewindHistoryCoverage,
+} from "./rewind-picker/preview";
 
 export function ClaudeRewindMenu(props: {
   environmentId: EnvironmentId;
@@ -34,6 +34,7 @@ export function ClaudeRewindMenu(props: {
 }) {
   const state = useEnvironmentThread(props.environmentId, props.threadId);
   const thread = Option.getOrNull(state.data);
+  const historyCoverage = rewindHistoryCoverage(Option.getOrNull(state.page));
   const entries = useMemo(
     () =>
       buildRewindEntries({
@@ -239,10 +240,34 @@ export function ClaudeRewindMenu(props: {
               {entries.length === 0 && (
                 <Text className="text-foreground">No user messages loaded.</Text>
               )}
-              {Option.isSome(state.page) && state.page.value.hasMore && (
+              {(historyCoverage === "more" || historyCoverage === "loading") && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Load earlier rewind messages"
+                  disabled={busy || isRunning || historyCoverage === "loading"}
+                  className="mb-3 rounded-xl border border-border bg-card p-4 active:bg-row-hover"
+                  onPress={() => {
+                    setError(null);
+                    if (!requestOlderThreadTurns(props.environmentId, props.threadId)) {
+                      setError(
+                        "Earlier history is unavailable or a request is already queued. Reconnect if it does not load.",
+                      );
+                    }
+                  }}
+                >
+                  <Text className="text-base text-foreground">
+                    {historyCoverage === "loading"
+                      ? "Loading earlier messages…"
+                      : "Load earlier messages"}
+                  </Text>
+                  <Text className="mt-1 text-sm text-foreground-secondary">
+                    Earlier turns are not all loaded yet. Load them here to reach the first turn.
+                  </Text>
+                </Pressable>
+              )}
+              {historyCoverage === "unknown" && (
                 <Text className="py-2 text-foreground-muted">
-                  Older messages are available. Close this menu and load earlier messages in the
-                  conversation.
+                  History coverage is unavailable from this server.
                 </Text>
               )}
               {entries.map((entry) => (
