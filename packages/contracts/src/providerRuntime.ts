@@ -16,6 +16,7 @@ import {
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 import { ProviderUsageLimitsUpdate } from "./providerUsageLimits.ts";
 import { ProviderApprovalOption } from "./orchestration.ts";
+import { compareSelectedAndAnsweringModel, type ModelAnswerVerdict } from "./model.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
@@ -163,6 +164,7 @@ const ThreadRealtimeAudioDeltaType = Schema.Literal("thread.realtime.audio.delta
 const ThreadRealtimeErrorType = Schema.Literal("thread.realtime.error");
 const ThreadRealtimeClosedType = Schema.Literal("thread.realtime.closed");
 const TurnStartedType = Schema.Literal("turn.started");
+const TurnModelObservedType = Schema.Literal("turn.model.observed");
 const TurnCompletedType = Schema.Literal("turn.completed");
 const TurnAbortedType = Schema.Literal("turn.aborted");
 const TurnPlanUpdatedType = Schema.Literal("turn.plan.updated");
@@ -328,6 +330,72 @@ const TurnStartedPayload = Schema.Struct({
   routeFamily: Schema.optional(RuntimeRouteFamily),
 });
 export type TurnStartedPayload = typeof TurnStartedPayload.Type;
+
+/** Response identity is evidence, never a copy of the requested selection. */
+const TurnModelObservedPayload = Schema.Struct({
+  source: Schema.Literal("claude.assistant.message.model"),
+  scope: Schema.Literal("main-turn"),
+  answeringModel: TrimmedNonEmptyStringSchema,
+  requestedModel: Schema.optional(TrimmedNonEmptyStringSchema),
+});
+export type TurnModelObservedPayload = typeof TurnModelObservedPayload.Type;
+const isTurnModelObservedPayload = Schema.is(TurnModelObservedPayload);
+
+export type ModelObservationActivity = {
+  readonly kind: string;
+  readonly turnId: string | null;
+  readonly payload: unknown;
+};
+export type MainTurnModelObservation = {
+  readonly turnId: string | null;
+  readonly answeringModel: string | null;
+  readonly requestedModel: string | null;
+  readonly verdict: ModelAnswerVerdict;
+};
+
+/** Read only an attributable observation of this turn; never borrow another turn or selection. */
+export function resolveMainTurnModelObservation(
+  turnId: string | null,
+  activities: ReadonlyArray<ModelObservationActivity>,
+): MainTurnModelObservation {
+  if (turnId !== null) {
+    for (let index = activities.length - 1; index >= 0; index--) {
+      const activity = activities[index];
+      if (
+        !activity ||
+        activity.kind !== "turn.model.observed" ||
+        activity.turnId !== turnId ||
+        !isTurnModelObservedPayload(activity.payload)
+      )
+        continue;
+      const { answeringModel, requestedModel } = activity.payload;
+      return {
+        turnId,
+        answeringModel,
+        requestedModel: requestedModel ?? null,
+        verdict: compareSelectedAndAnsweringModel(requestedModel, answeringModel),
+      };
+    }
+  }
+  return { turnId, answeringModel: null, requestedModel: null, verdict: "unknown" };
+}
+
+/** Both clients consume the same projected activity facts and the same turn boundary. */
+export function resolveThreadModelObservation(
+  thread:
+    | {
+        readonly session?: { readonly activeTurnId: string | null } | null;
+        readonly latestTurn?: { readonly turnId: string } | null;
+        readonly activities?: ReadonlyArray<ModelObservationActivity>;
+      }
+    | null
+    | undefined,
+): MainTurnModelObservation {
+  return resolveMainTurnModelObservation(
+    thread?.session?.activeTurnId ?? thread?.latestTurn?.turnId ?? null,
+    thread?.activities ?? [],
+  );
+}
 
 /**
  * Normalized main-agent usage for one turn. Input includes cache reads and
@@ -935,6 +1003,15 @@ const ProviderRuntimeTurnStartedEvent = Schema.Struct({
 });
 export type ProviderRuntimeTurnStartedEvent = typeof ProviderRuntimeTurnStartedEvent.Type;
 
+const ProviderRuntimeTurnModelObservedEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: TurnModelObservedType,
+  turnId: TurnId,
+  payload: TurnModelObservedPayload,
+});
+export type ProviderRuntimeTurnModelObservedEvent =
+  typeof ProviderRuntimeTurnModelObservedEvent.Type;
+
 const ProviderRuntimeTurnCompletedEvent = Schema.Struct({
   ...ProviderRuntimeEventBase.fields,
   type: TurnCompletedType,
@@ -1202,6 +1279,7 @@ export const ProviderRuntimeEventV2 = Schema.Union([
   ProviderRuntimeThreadRealtimeErrorEvent,
   ProviderRuntimeThreadRealtimeClosedEvent,
   ProviderRuntimeTurnStartedEvent,
+  ProviderRuntimeTurnModelObservedEvent,
   ProviderRuntimeTurnCompletedEvent,
   ProviderRuntimeTurnAbortedEvent,
   ProviderRuntimeTurnPlanUpdatedEvent,

@@ -9,11 +9,14 @@ import {
   isCurrentCodexModel,
   isOfferedProviderModel,
   isProductDefaultModel,
+  resolveThreadModelObservation,
 } from "@t3tools/contracts";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
+
+export const resolveThreadAnsweringModel = resolveThreadModelObservation;
 
 export type ModelOption = {
   readonly key: string;
