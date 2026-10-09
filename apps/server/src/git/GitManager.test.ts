@@ -2812,6 +2812,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const beforeIndex = (yield* runGit(repoDir, ["ls-files", "--stage", "-z"])).stdout;
         NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "working tracked\n");
         NodeFS.writeFileSync(NodePath.join(repoDir, "new file\nname.txt"), "working untracked\n");
+        const gitDriver = yield* GitVcsDriver.GitVcsDriver;
         let preparations = 0;
         const { manager } = yield* makeManager({
           textGeneration: {
@@ -2825,7 +2826,17 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   "",
                 );
                 return { subject: "Commit working-tree set", body: "" };
-              }),
+              }).pipe(
+                Effect.provideService(GitVcsDriver.GitVcsDriver, gitDriver),
+                Effect.mapError(
+                  (cause) =>
+                    new TextGenerationError({
+                      operation: "generateCommitMessage",
+                      detail: "commit preparation index inspection failed",
+                      cause,
+                    }),
+                ),
+              ),
           },
         });
         const result = yield* runStackedAction(manager, { cwd: repoDir, action: "commit" });
