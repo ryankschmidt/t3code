@@ -870,6 +870,9 @@ importers:
 
   packages/absurd-runtime:
     dependencies:
+      '@effect/platform-node':
+        specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115(bufferutil@4.1.0)(effect@4.0.0-rc.115(patch_hash=0dfc4bb8ebd80fb3e06b91ef61346f5259517ab0f2437644fe95ae531084b1f5))(redis@6.2.1)(utf-8-validate@6.0.6)
       absurd-sdk:
         specifier: ^0.4.0
         version: 0.4.0(pg@8.23.0)

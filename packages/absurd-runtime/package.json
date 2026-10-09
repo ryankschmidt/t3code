@@ -27,6 +27,7 @@
     "smoke": "node --env-file=.env --experimental-strip-types src/smoke.ts"
   },
   "dependencies": {
+    "@effect/platform-node": "catalog:",
     "absurd-sdk": "^0.4.0",
     "effect": "catalog:",
     "pg": "^8.21.0"
