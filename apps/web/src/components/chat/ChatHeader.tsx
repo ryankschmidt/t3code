@@ -53,8 +53,13 @@ import { useIsMobile } from "~/hooks/useMediaQuery";
 import { Button } from "../ui/button";
 import { Menu, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { ThreadCopyMenu } from "../../throughline/thread-copy/ThreadCopyMenu";
+import { LauncherFamilyMenu } from "../../throughline/thread-copy/LauncherFamilyMenu";
+import type { ScopedLauncherFamily } from "../../throughline/thread-copy/launcherFamily";
 
 interface ChatHeaderProps {
+  readonly launcherFamilyResult?: ScopedLauncherFamily | null;
+  readonly launcherFamilyPending?: boolean;
+  readonly launcherFamilyError?: string | null;
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
   draftId?: DraftId;
@@ -125,6 +130,9 @@ export function shouldShowOpenInPicker(input: {
 }
 
 export const ChatHeader = memo(function ChatHeader({
+  launcherFamilyResult = null,
+  launcherFamilyPending = false,
+  launcherFamilyError = null,
   activeThreadEnvironmentId,
   activeThreadId,
   draftId,
@@ -354,6 +362,15 @@ export const ChatHeader = memo(function ChatHeader({
   );
   const headerActions = (
     <>
+      {isServerThread && (
+        <LauncherFamilyMenu
+          environmentId={activeThreadEnvironmentId}
+          threadId={activeThreadId}
+          result={launcherFamilyResult}
+          pending={launcherFamilyPending}
+          error={launcherFamilyError}
+        />
+      )}
       {isServerThread && (
         <ThreadCopyMenu environmentId={activeThreadEnvironmentId} threadId={activeThreadId} />
       )}
