@@ -2,10 +2,12 @@ import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
-import { Modal, Pressable, View } from "react-native";
+import { Modal, Pressable, ScrollView, View } from "react-native";
 import { AppText } from "../../../components/AppText";
 import { useEnvironmentThread } from "../../../state/threads";
 import { copyThreadValue, threadCopyItems, type ThreadCopyField } from "./threadCopy";
+import { LauncherFamilyDetails } from "./LauncherFamilyDetails";
+import type { ScopedLauncherFamily } from "./launcherFamily";
 
 export function ThreadCopyButton(props: { onPress: () => void }) {
   return (
@@ -21,6 +23,9 @@ export function ThreadCopyButton(props: { onPress: () => void }) {
 }
 
 export function ThreadCopySheet(props: {
+  launcherFamilyResult?: ScopedLauncherFamily | null;
+  launcherFamilyPending?: boolean;
+  launcherFamilyError?: string | null;
   environmentId: EnvironmentId;
   threadId: ThreadId;
   open: boolean;
@@ -69,33 +74,42 @@ export function ThreadCopySheet(props: {
       onRequestClose={props.onClose}
     >
       <View className="flex-1 bg-screen px-5 pb-8 pt-8">
-        <AppText className="mb-4 text-2xl font-t3-bold text-foreground">
-          Copy thread identity
-        </AppText>
-        <AppText className="mb-4 text-sm text-foreground-secondary">
-          Values come from this thread’s owning environment. Provider session identity is not a
-          native agent session ID.
-        </AppText>
-        {items.map((item) => (
-          <Pressable
-            key={item.field}
-            accessibilityRole="button"
-            accessibilityLabel={item.value === null ? `${item.label}, unavailable` : item.label}
-            disabled={busy || !identity || item.value === null}
-            onPress={() => void copy(item.field, item.label)}
-            className="mb-3 rounded-xl border border-border bg-card p-4 active:bg-row-hover"
-          >
-            <AppText className="text-base text-foreground">{item.label}</AppText>
-            <AppText className="mt-1 text-sm text-foreground-secondary" selectable>
-              {item.value ?? "Unavailable"}
-            </AppText>
-          </Pressable>
-        ))}
-        {message && (
-          <AppText accessibilityRole="alert" className="py-3 text-base text-foreground">
-            {message}
+        <ScrollView className="flex-1">
+          <AppText className="mb-4 text-2xl font-t3-bold text-foreground">
+            Copy thread identity
           </AppText>
-        )}
+          <AppText className="mb-4 text-sm text-foreground-secondary">
+            Values come from this thread’s owning environment. Provider session identity is not a
+            native agent session ID.
+          </AppText>
+          {items.map((item) => (
+            <Pressable
+              key={item.field}
+              accessibilityRole="button"
+              accessibilityLabel={item.value === null ? `${item.label}, unavailable` : item.label}
+              disabled={busy || !identity || item.value === null}
+              onPress={() => void copy(item.field, item.label)}
+              className="mb-3 rounded-xl border border-border bg-card p-4 active:bg-row-hover"
+            >
+              <AppText className="text-base text-foreground">{item.label}</AppText>
+              <AppText className="mt-1 text-sm text-foreground-secondary" selectable>
+                {item.value ?? "Unavailable"}
+              </AppText>
+            </Pressable>
+          ))}
+          {message && (
+            <AppText accessibilityRole="alert" className="py-3 text-base text-foreground">
+              {message}
+            </AppText>
+          )}
+          <LauncherFamilyDetails
+            environmentId={props.environmentId}
+            threadId={props.threadId}
+            result={props.launcherFamilyResult ?? null}
+            pending={props.launcherFamilyPending ?? false}
+            error={props.launcherFamilyError ?? null}
+          />
+        </ScrollView>
         <Pressable
           accessibilityRole="button"
           disabled={busy}
