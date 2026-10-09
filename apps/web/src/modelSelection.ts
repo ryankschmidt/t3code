@@ -7,6 +7,7 @@ import {
   isCurrentCodexModel,
   isOfferedProviderModel,
   isProductDefaultModel,
+  resolveThreadModelObservation,
   type ModelSelection,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -43,6 +44,7 @@ import {
 import { sortModelsForProviderInstance } from "./modelOrdering";
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
+export const resolveThreadAnsweringModel = resolveThreadModelObservation;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
 const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("codex");
 
