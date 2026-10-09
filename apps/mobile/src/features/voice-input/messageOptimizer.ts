@@ -21,6 +21,7 @@ export function withMessageOptimizer(
   getProvider: () => VoiceOptimizationProvider,
   fetcher: OptimizerFetch = fetch,
   onOutcome?: (result: VoiceOptimizationResult) => void,
+  onRawTranscript?: (raw: string) => void,
 ): VoiceTranscriber {
   return {
     prepare: async (options) => {
@@ -30,6 +31,7 @@ export function withMessageOptimizer(
         transcribe: async (uri, options) => {
           const raw = await prepared.transcribe(uri, options);
           throwIfVoiceTranscriptionAborted(options.signal);
+          onRawTranscript?.(raw);
           const provider = getProvider();
           const result = await optimizeTranscript(raw, provider, options.signal, fetcher);
           throwIfVoiceTranscriptionAborted(options.signal);
