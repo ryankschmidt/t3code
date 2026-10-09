@@ -4920,6 +4920,102 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect(
+    "observes actual main-turn models including matches and changes without copying a later selection",
+    () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
+          yield* observeUsageLimitEvents(adapter, harness.query);
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        const first = yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "first",
+          attachments: [],
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claudeAgent"),
+            model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+          },
+        });
+        harness.query.emit(assistantAnsweredBy(SYNTHETIC_CLAUDE_STANDARD_MODEL, "observed-match"));
+        harness.query.emit(assistantAnsweredBy(SYNTHETIC_CLAUDE_STANDARD_MODEL, "observed-repeat"));
+        yield* drainSdkMessages;
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "steer",
+          attachments: [],
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claudeAgent"),
+            model: SYNTHETIC_CLAUDE_CAPABLE_MODEL,
+          },
+        });
+        harness.query.emit(assistantAnsweredBy(SYNTHETIC_CLAUDE_CAPABLE_MODEL, "observed-change"));
+        harness.query.emit({
+          ...assistantAnsweredBy("subagent-model", "observed-subagent"),
+          parent_tool_use_id: "parent-tool",
+        } as SDKMessage);
+        harness.query.emit({ ...assistantAnsweredBy("", "observed-missing") } as SDKMessage);
+        yield* drainSdkMessages;
+        const observations = runtimeEvents.filter((event) => event.type.startsWith("turn.model."));
+        assert.equal(observations.length, 2);
+        for (const event of observations) assert.equal(event.turnId, first.turnId);
+        assert.deepEqual(
+          observations.map((event) => event.payload),
+          [
+            {
+              source: "claude.assistant.message.model",
+              scope: "main-turn",
+              answeringModel: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+              requestedModel: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+            },
+            {
+              source: "claude.assistant.message.model",
+              scope: "main-turn",
+              answeringModel: SYNTHETIC_CLAUDE_CAPABLE_MODEL,
+              requestedModel: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+            },
+          ],
+        );
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          errors: [],
+          session_id: "sdk-session-model",
+          uuid: "observation-result",
+        } as unknown as SDKMessage);
+        yield* drainSdkMessages;
+        const next = yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "next without requested model",
+          attachments: [],
+        });
+        harness.query.emit(
+          assistantAnsweredBy(SYNTHETIC_CLAUDE_STANDARD_MODEL, "observed-new-turn"),
+        );
+        yield* drainSdkMessages;
+        const afterReset = runtimeEvents.filter((event) => event.type.startsWith("turn.model."));
+        assert.equal(afterReset.length, 3);
+        assert.equal(afterReset[2]!.turnId, next.turnId);
+        assert.notEqual(next.turnId, first.turnId);
+        assert.deepEqual(afterReset[2]!.payload, {
+          source: "claude.assistant.message.model",
+          scope: "main-turn",
+          answeringModel: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+        });
+        runtimeEventsFiber.interruptUnsafe();
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
   it.effect("stays quiet when the model that answered is the model the picker named", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
