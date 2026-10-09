@@ -20,6 +20,11 @@
  *
  * @module provider/Layers/PiSessionRuntime
  */
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import { piNativeNavigationSource } from "../../throughline/rewind/piNativeNavigation.ts";
 import {
   ProviderDriverKind,
   type ProviderInstanceId,
@@ -44,6 +49,9 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const PROVIDER = ProviderDriverKind.make("pi");
+const rpcJsonSchema = Schema.fromJsonString(Schema.Unknown);
+const encodeRpcJson = Schema.encodeEffect(rpcJsonSchema);
+const decodeRpcJson = Schema.decodeEffect(rpcJsonSchema);
 // 300s, not 10s: a cold resume of a large Pi session file must finish loading before
 // the first RPC (set_model / set_thinking_level / prompt) can be answered. Measured
 // 2026-09-01 on a 28.9MB session: 2m23s from prompt to reply; 10s timed out turn-start
@@ -84,6 +92,13 @@ export class PiSessionRuntimeError extends Schema.TaggedError<PiSessionRuntimeEr
 
 type PiRpcCommand =
   | { readonly type: "get_state" }
+  | { readonly type: "get_commands" }
+  | {
+      readonly type: "throughline_rewind";
+      readonly numTurns: number;
+      readonly sessionId: string;
+      readonly sessionFile?: string;
+    }
   | { readonly type: "get_available_models" }
   | {
       readonly type: "prompt";
@@ -189,6 +204,9 @@ export interface PiSessionRuntimeShape {
   ) => Effect.Effect<ProviderTurnStartResult, PiSessionRuntimeError>;
   readonly interruptTurn: (turnId?: TurnId) => Effect.Effect<void, PiSessionRuntimeError>;
   readonly readThread: Effect.Effect<PiThreadSnapshot, PiSessionRuntimeError>;
+  readonly rollbackThread: (
+    numTurns: number,
+  ) => Effect.Effect<PiThreadSnapshot, PiSessionRuntimeError>;
   readonly listAvailableModels: () => Effect.Effect<PiModelCatalog, PiSessionRuntimeError>;
   readonly events: Stream.Stream<PiRuntimeEvent>;
   readonly close: Effect.Effect<void>;
@@ -393,9 +411,33 @@ export const makePiSessionRuntime = (
         }).pipe(Effect.ignore);
       });
 
+    const navigationCommand = `tl-rewind-${yield* randomUUIDv4}`;
+    const navigationFile = yield* Effect.try({
+      try: () => {
+        const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pi-navigation-"));
+        const file = NodePath.join(directory, "navigation.mjs");
+        NodeFS.writeFileSync(file, piNativeNavigationSource(navigationCommand));
+        return file;
+      },
+      catch: (cause) =>
+        new PiSessionRuntimeError({
+          operation: "session/navigation-extension",
+          threadId: options.threadId,
+          detail: "Failed to prepare native Pi navigation extension.",
+          cause,
+        }),
+    });
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        NodeFS.rmSync(navigationFile, { force: true });
+        NodeFS.rmdirSync(NodePath.dirname(navigationFile));
+      }).pipe(Effect.ignore),
+    );
     const spawnArgs = [
       "--mode",
       "rpc",
+      "--extension",
+      navigationFile,
       ...(options.sessionDir ? ["--session-dir", options.sessionDir] : []),
     ];
     const env = options.environment;
@@ -439,6 +481,14 @@ export const makePiSessionRuntime = (
         if (!id) return Effect.void;
         const entry = pending.get(id);
         if (!entry) return Effect.void;
+        // The prompt acknowledgement is not the navigation result. Only our
+        // correlated extension response can attest success/cancellation.
+        if (
+          entry.command === "throughline_rewind" &&
+          response.command !== entry.command &&
+          response.success
+        )
+          return Effect.void;
         pending.delete(id);
         if (!response.success) {
           return Deferred.fail(
@@ -516,6 +566,26 @@ export const makePiSessionRuntime = (
         }
         if (record.type === "response") {
           return handleResponse(record as unknown as PiRpcResponse);
+        }
+        if (
+          record.type === "extension_ui_request" &&
+          record.method === "notify" &&
+          typeof record.message === "string" &&
+          record.message.startsWith("throughline-rewind:")
+        ) {
+          try {
+            return decodeRpcJson(record.message.slice("throughline-rewind:".length)).pipe(
+              Effect.flatMap((value) => {
+                const reply = asRecord(value);
+                return reply?.type === "response" && reply.command === "throughline_rewind"
+                  ? handleResponse(reply as unknown as PiRpcResponse)
+                  : handleRpcEvent(record as PiRpcEventPayload);
+              }),
+              Effect.catch(() => handleRpcEvent(record as PiRpcEventPayload)),
+            );
+          } catch {
+            /* Other notifications remain ordinary native events. */
+          }
         }
         return handleRpcEvent(record as PiRpcEventPayload);
       });
@@ -618,8 +688,27 @@ export const makePiSessionRuntime = (
         const id = yield* randomUUIDv4;
         const response = yield* Deferred.make<PiRpcResponse, PiSessionRuntimeError>();
         pending.set(id, { command: command.type, response });
-        // @effect-diagnostics-next-line preferSchemaOverJson:off - Wire encoding of the Pi RPC command envelope (newline-delimited JSON protocol).
-        yield* Queue.offer(stdinQueue, `${JSON.stringify({ ...command, id })}\n`);
+        const encodeJson = (value: unknown) =>
+          encodeRpcJson(value).pipe(
+            Effect.mapError(
+              (cause) =>
+                new PiSessionRuntimeError({
+                  operation: `rpc/${command.type}`,
+                  threadId: options.threadId,
+                  detail: "Failed to encode Pi RPC command.",
+                  cause,
+                }),
+            ),
+          );
+        const wireCommand =
+          command.type === "throughline_rewind"
+            ? {
+                type: "prompt",
+                id,
+                message: `/${navigationCommand} ${yield* encodeJson({ ...command, id })}`,
+              }
+            : { ...command, id };
+        yield* Queue.offer(stdinQueue, `${yield* encodeJson(wireCommand)}\n`);
         const result = yield* Deferred.await(response).pipe(Effect.timeoutOption(timeoutMs));
         if (Option.isNone(result)) {
           pending.delete(id);
@@ -810,9 +899,88 @@ export const makePiSessionRuntime = (
         yield* sendCommand({ type: "abort" }, ABORT_TIMEOUT_MS);
       });
 
-    const readThread: PiSessionRuntimeShape["readThread"] = Ref.get(turnsRef).pipe(
-      Effect.map((turns) => ({ threadId: options.threadId, turns })),
-    );
+    const navigateThread = Effect.fn("PiSessionRuntime.navigateThread")(function* (
+      numTurns: number,
+    ) {
+      const commands = yield* sendCommand({ type: "get_commands" });
+      const available = asRecord(commands.data)?.commands;
+      if (
+        !Array.isArray(available) ||
+        !available.some((command) => asRecord(command)?.name === navigationCommand)
+      ) {
+        return yield* new PiSessionRuntimeError({
+          operation: "rpc/throughline_rewind",
+          threadId: options.threadId,
+          detail:
+            "Native Pi navigation extension is unavailable; same-session rewind is unsupported.",
+        });
+      }
+      const state = yield* getState;
+      if (!state.sessionId)
+        return yield* new PiSessionRuntimeError({
+          operation: "rpc/throughline_rewind",
+          threadId: options.threadId,
+          detail: "Pi has no native session identity.",
+        });
+      const response = yield* sendCommand({
+        type: "throughline_rewind",
+        numTurns,
+        sessionId: state.sessionId,
+        ...(state.sessionFile ? { sessionFile: state.sessionFile } : {}),
+      });
+      const data = asRecord(response.data);
+      if (
+        data?.cancelled !== false ||
+        data.sessionId !== state.sessionId ||
+        data.sessionFile !== state.sessionFile ||
+        !Array.isArray(data.turns)
+      ) {
+        return yield* new PiSessionRuntimeError({
+          operation: "rpc/throughline_rewind",
+          threadId: options.threadId,
+          detail:
+            data?.cancelled === true
+              ? "Native Pi navigation was cancelled; conversation is unchanged."
+              : "Native Pi navigation returned an invalid same-session result.",
+        });
+      }
+      const turns: PiThreadTurnSnapshot[] = [];
+      for (const turn of data.turns) {
+        const record = asRecord(turn);
+        if (!record || typeof record.id !== "string" || !Array.isArray(record.items))
+          return yield* new PiSessionRuntimeError({
+            operation: "rpc/throughline_rewind",
+            threadId: options.threadId,
+            detail: "Native Pi returned an invalid conversation snapshot.",
+          });
+        turns.push({ id: TurnId.make(record.id), items: record.items });
+      }
+      yield* Ref.set(turnsRef, turns);
+      if (numTurns > 0) {
+        const now = yield* nowIso;
+        yield* Ref.update(stateRef, (current) => ({
+          ...current,
+          currentTurnId: undefined,
+          hasObservedTurnStart: false,
+          abortRequested: false,
+          status: "ready" as const,
+          updatedAt: now,
+        }));
+      }
+      return { threadId: options.threadId, turns };
+    });
+
+    const readThread: PiSessionRuntimeShape["readThread"] = navigateThread(0);
+    const rollbackThread: PiSessionRuntimeShape["rollbackThread"] = (numTurns) =>
+      Number.isSafeInteger(numTurns) && numTurns >= 1
+        ? navigateThread(numTurns)
+        : Effect.fail(
+            new PiSessionRuntimeError({
+              operation: "rpc/throughline_rewind",
+              threadId: options.threadId,
+              detail: "numTurns must be a safe integer >= 1.",
+            }),
+          );
 
     const listAvailableModels: PiSessionRuntimeShape["listAvailableModels"] = () =>
       Effect.gen(function* () {
@@ -841,6 +1009,7 @@ export const makePiSessionRuntime = (
       sendTurn,
       interruptTurn,
       readThread,
+      rollbackThread,
       listAvailableModels,
       events: Stream.fromQueue(events),
       close,

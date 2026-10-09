@@ -1248,14 +1248,29 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       })),
     );
 
-  const rollbackThread: ProviderAdapterShape<ProviderAdapterError>["rollbackThread"] = (threadId) =>
-    Effect.fail(
-      new ProviderAdapterValidationError({
-        provider: PROVIDER,
-        operation: "rollbackThread",
-        issue: `Thread rollback is not supported by the Pi provider (thread '${threadId}').`,
-      }),
+  const rollbackThread: ProviderAdapterShape<ProviderAdapterError>["rollbackThread"] = (
+    threadId,
+    numTurns,
+  ) => {
+    if (!Number.isSafeInteger(numTurns) || numTurns < 1) {
+      return Effect.fail(
+        new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "rollbackThread",
+          issue: "numTurns must be a safe integer >= 1.",
+        }),
+      );
+    }
+    return requireSession(threadId).pipe(
+      Effect.flatMap((session) => session.runtime.rollbackThread(numTurns)),
+      Effect.mapError((cause) =>
+        cause._tag === "ProviderAdapterSessionNotFoundError"
+          ? cause
+          : toRequestError(threadId, "thread/rollback", cause),
+      ),
+      Effect.map((snapshot) => ({ threadId, turns: snapshot.turns })),
     );
+  };
 
   const respondToRequest: ProviderAdapterShape<ProviderAdapterError>["respondToRequest"] = (
     threadId,
