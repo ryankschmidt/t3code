@@ -24,12 +24,18 @@ import {
   makeInProcessTransport,
   startAbsurdRuntime,
   type ReplayEvent,
+  type ThreadRunParams,
 } from "@t3tools/absurd-runtime";
 import { OrchestrationCommand } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import { nativeKinds } from "../throughline/identity/identity-alias.ts";
+import {
+  CurrentAuthenticatedSender,
+  CurrentSenderClaims,
+} from "../throughline/identity/sender-stamp.ts";
 
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 
@@ -38,6 +44,45 @@ import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 // leases for six hours; reusing it would make the dispatch-only fix unable to
 // take effect until that stale generation drained.
 const QUEUE_NAME = "t3-interactive-turns";
+
+const decodeRailCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
+const decodeTrustedSenderContext = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    sender: Schema.Struct({
+      publicAgentId: Schema.NonEmptyString,
+      generation: Schema.NonEmptyString,
+      nativeKind: Schema.Literals(nativeKinds),
+      nativeId: Schema.NonEmptyString,
+    }),
+    claims: Schema.Array(
+      Schema.Struct({
+        field: Schema.Literals(["publicAgentId", "generation"]),
+        value: Schema.Unknown,
+      }),
+    ),
+  }),
+);
+
+export function makeSenderRestoringDispatch(
+  dispatch: OrchestrationEngineService["Service"]["dispatch"],
+  runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>,
+) {
+  return (
+    command: Record<string, unknown>,
+    trusted?: ThreadRunParams["trustedSenderContext"],
+  ): Promise<unknown> =>
+    runPromise(
+      Effect.gen(function* () {
+        const decoded = yield* decodeRailCommand(command);
+        const context =
+          trusted === undefined ? undefined : yield* decodeTrustedSenderContext(trusted);
+        return yield* dispatch(decoded).pipe(
+          Effect.provideService(CurrentAuthenticatedSender, context?.sender),
+          Effect.provideService(CurrentSenderClaims, context?.claims ?? []),
+        );
+      }),
+    );
+}
 
 export const AbsurdRuntimeInProcessLive = Layer.effect(
   AbsurdRuntime,
@@ -49,25 +94,18 @@ export const AbsurdRuntimeInProcessLive = Layer.effect(
     const runtimeContext = yield* Effect.context<never>();
     const runPromise = Effect.runPromiseWith(runtimeContext);
 
-    const decodeCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
-
-    const dispatchCommand = (command: Record<string, unknown>): Promise<unknown> =>
-      runPromise(
-        decodeCommand(command).pipe(Effect.flatMap((decoded) => engine.dispatch(decoded))),
-      );
+    const dispatchCommand = makeSenderRestoringDispatch(engine.dispatch, runPromise);
 
     const replayEvents = (fromSequenceExclusive: number): Promise<ReadonlyArray<ReplayEvent>> =>
       runPromise(
         Stream.runCollect(engine.readEvents(fromSequenceExclusive)).pipe(
           Effect.map((chunk) =>
-            Array.from(chunk).map(
-              (event): ReplayEvent => ({
-                sequence: event.sequence,
-                type: event.type,
-                aggregateId: event.aggregateId,
-                payload: event.payload as Record<string, unknown>,
-              }),
-            ),
+            Array.from(chunk).map((event): ReplayEvent => ({
+              sequence: event.sequence,
+              type: event.type,
+              aggregateId: event.aggregateId,
+              payload: event.payload as Record<string, unknown>,
+            })),
           ),
         ),
       );
