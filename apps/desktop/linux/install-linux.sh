@@ -34,6 +34,17 @@ while [ $# -gt 0 ]; do
 done
 
 refuse() { echo "REFUSED: $*"; exit 2; }
+# Inspect the nearest existing ancestor, without creating a destination during preflight.
+# This proves current access only; install must still check the actual mkdir result.
+can_prepare_directory() (
+  candidate=$1
+  while [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; do
+    parent=$(dirname "$candidate")
+    [ "$parent" != "$candidate" ] || return 1
+    candidate=$parent
+  done
+  [ -d "$candidate" ] && [ -w "$candidate" ] && [ -x "$candidate" ]
+)
 [ -n "$ARTIFACT" ] || refuse "usage: install-linux.sh <appimage-path> --agent-account twr [--verify-only]"
 [ -n "$ACCOUNT" ]  || refuse "--agent-account is required so the installer never guesses whose session it is touching"
 
@@ -89,8 +100,7 @@ echo "  [2] version       $L_VERSION   (version='$VER' -> $TARGET)"
 # PROVES NOTHING about whether the writes are correct.
 W=1
 for d in "$ROOT" "$HOMEDIR/.local/share/applications" "$HOMEDIR/Desktop"; do
-  mkdir -p "$d" 2>/dev/null
-  [ -w "$d" ] || { echo "  not writable: $d"; W=0; }
+  can_prepare_directory "$d" || { echo "  not writable or creatable: $d"; W=0; }
 done
 [ "$W" = 1 ] && L_WRITE=PASS
 echo "  [3] write access  $L_WRITE   (proves: no root needed for any install path. proves NOT: correctness)"
@@ -144,6 +154,10 @@ fi
 # ==========================================================================================
 echo
 echo "installing..."
+
+for d in "$ROOT" "$HOMEDIR/.local/share/applications" "$HOMEDIR/Desktop"; do
+  mkdir -p "$d" || refuse "cannot prepare installation directory: $d"
+done
 
 PREV=$(readlink -f "$LINK" 2>/dev/null || echo "")
 [ -n "$PREV" ] && echo "  rollback: previous app was $PREV — 'ln -sfn $PREV $LINK' restores it"

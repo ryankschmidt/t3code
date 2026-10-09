@@ -30,7 +30,7 @@ function check(scenario: string, extra: string[] = []) {
       *) printf '{"serverVersion":"0.0.42"}\\n200';;
     esac`,
     osascript: `cat >/dev/null
-      [ "$SCENARIO" = permission ] && { echo 'ALLOW_CLICKED'; exit 0; }
+      [ "$SCENARIO" = permission ] && { echo 'PROMPT_OPEN: UserNotificationCenter'; exit 0; }
       [ "$SCENARIO" = nowindow ] && { echo 0; exit 0; }
       echo 1`,
     date: `case "$*" in
@@ -98,10 +98,11 @@ test("zero visible windows is diagnostic, not a false readiness failure", () => 
   assert.match(r.output, /\[9\] window\s+FAIL/);
 });
 
-test("permission handling is recorded", () => {
+test("permission prompt is observed without clicking it", () => {
   const r = check("permission");
   assert.equal(r.status, 0, r.output);
-  assert.match(r.output, /ALLOW_CLICKED/);
+  assert.match(r.output, /PROMPT_OPEN: UserNotificationCenter/);
+  assert.doesNotMatch(r.output, /ALLOW_CLICKED/);
 });
 
 for (const flags of [
