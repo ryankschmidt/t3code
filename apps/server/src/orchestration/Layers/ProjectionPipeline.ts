@@ -1182,6 +1182,13 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               turnId: event.payload.turnId,
               role: event.payload.role,
               text: event.payload.text,
+              ...(event.metadata.senderPublicId !== undefined &&
+              event.metadata.senderGeneration !== undefined
+                ? {
+                    senderPublicId: event.metadata.senderPublicId,
+                    senderGeneration: event.metadata.senderGeneration,
+                  }
+                : {}),
               ...(attachments !== undefined ? { attachments: [...attachments] } : {}),
               ...(event.payload.context !== undefined ? { context: event.payload.context } : {}),
               createdAt: event.payload.createdAt,
@@ -1211,6 +1218,13 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             turnId: event.payload.turnId,
             role: event.payload.role,
             text: nextText,
+            ...(event.metadata.senderPublicId !== undefined &&
+            event.metadata.senderGeneration !== undefined
+              ? {
+                  senderPublicId: event.metadata.senderPublicId,
+                  senderGeneration: event.metadata.senderGeneration,
+                }
+              : {}),
             ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
             ...((event.payload.context ?? previousMessage?.context) !== undefined
               ? { context: event.payload.context ?? previousMessage?.context }

@@ -22,6 +22,15 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import {
+  CurrentAuthenticatedSender,
+  CurrentSenderClaims,
+  assertSenderClaims,
+  captureSenderClaims,
+  stampMessageSender,
+  type AuthenticatedSender,
+  type SenderClaim,
+} from "../../throughline/identity/sender-stamp.ts";
 
 import {
   metricAttributes,
@@ -57,6 +66,8 @@ const isOrchestrationCommandIdConflictError = Schema.is(OrchestrationCommandIdCo
 interface CommandEnvelope {
   command: OrchestrationCommand;
   origin: OrchestrationClientOrigin | undefined;
+  sender: AuthenticatedSender | undefined;
+  senderClaims: readonly SenderClaim[];
   result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
   startedAtMs: number;
 }
@@ -161,6 +172,16 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             });
           }
           if (existingReceipt.value.status === "accepted") {
+            yield* assertSenderClaims(envelope.sender, envelope.senderClaims).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationCommandInvariantError({
+                    commandType: envelope.command.type,
+                    detail: cause.message,
+                    cause,
+                  }),
+              ),
+            );
             return {
               sequence: existingReceipt.value.resultSequence,
             };
@@ -260,15 +281,36 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 }),
           ),
         );
+        yield* assertSenderClaims(envelope.sender, envelope.senderClaims).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationCommandInvariantError({
+                commandType: envelope.command.type,
+                detail: cause.message,
+                cause,
+              }),
+          ),
+        );
         const plannedEvents = Array.isArray(eventBase) ? eventBase : [eventBase];
         // Stamp the dispatching client's origin onto every event the command
         // produced. The decider stays pure; attribution is an engine concern.
-        const eventBases =
+        const originatedEvents =
           envelope.origin === undefined
             ? plannedEvents
             : plannedEvents.map((planned) => ({
                 ...planned,
                 metadata: { ...planned.metadata, origin: envelope.origin },
+              }));
+        const eventBases =
+          envelope.sender === undefined
+            ? originatedEvents
+            : originatedEvents.map((planned) => ({
+                ...planned,
+                metadata: {
+                  ...planned.metadata,
+                  senderPublicId: envelope.sender!.publicAgentId,
+                  senderGeneration: envelope.sender!.generation,
+                },
               }));
         const committedCommand = yield* sql
           .withTransaction(
@@ -281,6 +323,19 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 const savedEvent = yield* eventStore.append(nextEvent);
                 nextCommandReadModel = yield* projectEvent(nextCommandReadModel, savedEvent);
                 const cleanup = yield* projectionPipeline.projectEventDeferred(savedEvent);
+                if (envelope.sender !== undefined && savedEvent.type === "thread.message-sent") {
+                  yield* stampMessageSender(savedEvent.payload.messageId, envelope.sender).pipe(
+                    Effect.provideService(SqlClient.SqlClient, sql),
+                    Effect.mapError(
+                      (cause) =>
+                        new OrchestrationCommandInvariantError({
+                          commandType: envelope.command.type,
+                          detail: "Authenticated sender persistence mismatch.",
+                          cause,
+                        }),
+                    ),
+                  );
+                }
                 attachmentCleanups.push(cleanup);
                 committedEvents.push(savedEvent);
               }
@@ -390,17 +445,30 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             );
 
             if (isOrchestrationCommandRejection(error)) {
-              yield* commandReceiptRepository
-                .upsert({
+              const previousReceipt = yield* commandReceiptRepository
+                .getByCommandId({
                   commandId: envelope.command.commandId,
-                  aggregateKind: aggregateRef.aggregateKind,
-                  aggregateId: aggregateRef.aggregateId,
-                  acceptedAt: yield* nowIso,
-                  resultSequence: commandReadModel.snapshotSequence,
-                  status: "rejected",
-                  error: error.message,
                 })
-                .pipe(Effect.ignore);
+                .pipe(Effect.exit);
+              // A forged replay is refused, but cannot rewrite the original
+              // accepted command's durable receipt into a rejection.
+              if (
+                Exit.isSuccess(previousReceipt) &&
+                (Option.isNone(previousReceipt.value) ||
+                  previousReceipt.value.value.status !== "accepted")
+              ) {
+                yield* commandReceiptRepository
+                  .upsert({
+                    commandId: envelope.command.commandId,
+                    aggregateKind: aggregateRef.aggregateKind,
+                    aggregateId: aggregateRef.aggregateId,
+                    acceptedAt: yield* nowIso,
+                    resultSequence: commandReadModel.snapshotSequence,
+                    status: "rejected",
+                    error: error.message,
+                  })
+                  .pipe(Effect.ignore);
+              }
             }
           }
 
@@ -437,10 +505,15 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   const dispatch: OrchestrationEngineShape["dispatch"] = (command, options) =>
     Effect.gen(function* () {
+      const currentSender = yield* CurrentAuthenticatedSender;
+      const sender = currentSender === undefined ? undefined : { ...currentSender };
+      const senderClaims = [...(yield* CurrentSenderClaims), ...captureSenderClaims(command)];
       const result = yield* Deferred.make<{ sequence: number }, OrchestrationDispatchError>();
       yield* Queue.offer(commandQueue, {
         command,
         origin: options?.origin,
+        sender,
+        senderClaims,
         result,
         startedAtMs: yield* Clock.currentTimeMillis,
       });
