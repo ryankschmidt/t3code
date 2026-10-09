@@ -4,6 +4,8 @@ import * as NodeFS from "node:fs";
 import { beforeAll, describe, expect, it } from "vite-plus/test";
 import {
   assertClaudeRewindPopulation,
+  resolvePackagedProviderInputs,
+  assertPackagedRelease,
   compileProviderRewindFixture,
   consumeCompiledRewindFixture,
   consumeUnsupportedVersionFixture,
@@ -17,6 +19,47 @@ const outputParent =
   process.env.T3_REWIND_PROOF_OUTPUT ?? "/Users/Admin/throughline-worktrees/.proof-fixtures";
 const nativePiBinary = process.env.T3_PI_NATIVE_TEST_BINARY;
 let fixture: CompiledRewindFixture;
+
+describe("release-compatible packaged inputs (synthetic metadata only)", () => {
+  const root = "/Users/Admin/throughline-worktrees/artifacts/synthetic-057";
+  const custody = {
+    release: "0.0.57",
+    source_sha: "a".repeat(40),
+    canonical_artifact_root: root,
+    executable: root + "/side-app/ThroughLine.app/Contents/MacOS/ThroughLine",
+    asar: root + "/side-app/ThroughLine.app/Contents/Resources/app.asar",
+    public_server_entry:
+      root + "/side-app/ThroughLine.app/Contents/Resources/app.asar/apps/server/dist/bin.mjs",
+    zip: root + "/artifacts/actual-057.zip",
+    zip_sha256: "b".repeat(64),
+    asar_sha256: "c".repeat(64),
+    executable_sha256: "d".repeat(64),
+    offline_import_authorized: true,
+  };
+  it("uses declared .57 paths and release metadata without a .51 filename", () => {
+    const inputs = resolvePackagedProviderInputs(root, custody);
+    expect(inputs.zip).toBe(custody.zip);
+    expect(inputs.release).toBe("0.0.57");
+    expect(inputs.source_sha).toBe(custody.source_sha);
+    expect(() => assertPackagedRelease(inputs, "0.0.57")).not.toThrow();
+  });
+  it("rejects an archive/package release mismatch", () => {
+    expect(() =>
+      assertPackagedRelease(resolvePackagedProviderInputs(root, custody), "0.0.51"),
+    ).toThrow("Packaged version differs");
+  });
+  it.each([
+    { release: undefined, package_version: "0.0.57" },
+    { source_sha: "short" },
+    { zip: root + "/../foreign.zip" },
+    { zip_sha256: "missing" },
+    { offline_import_authorized: false },
+    { canonical_artifact_root: root + "-other" },
+    { public_server_entry: custody.asar + "/private.mjs" },
+  ])("refuses incomplete or unsafe public custody %j before execution", (change) => {
+    expect(() => resolvePackagedProviderInputs(root, { ...custody, ...change })).toThrow();
+  });
+});
 
 describe("source-bound Claude population", () => {
   const current = {
