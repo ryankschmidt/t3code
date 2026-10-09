@@ -236,6 +236,69 @@ export interface CompiledRewindFixture {
   variant: "accepted" | "broken-extension";
 }
 
+export interface ClaudeRewindSourceBinding {
+  testSha256: string;
+  callerSha256: string;
+}
+
+const claudeRewindPopulations = [
+  {
+    testSha256: "205d7d783ef9a7f471cff5e129e8661f4a502bf6fcff10db4ae97d02d9a500f6",
+    callerSha256: "6e51bc40747b9526f99e80cf9068df3e9825d23a43f73d399fc5c7f74f25c63c",
+    passed: 20,
+    excluded: 144,
+  },
+  {
+    testSha256: "a1d74dd682f2262ddab28a1d6c81c18406e4e839bbb22fe34ef6f69d54dee05a",
+    callerSha256: "89627de401a33d9344187bc767a809c44c8fac68ecd7ffc144196fb5a78f9633",
+    passed: 21,
+    excluded: 145,
+  },
+] as const;
+
+/** Exact source-and-machine-result binding, never text-presence acceptance. */
+export function assertClaudeRewindPopulation(binding: ClaudeRewindSourceBinding, report: unknown) {
+  const expected = claudeRewindPopulations.find(
+    (pin) => pin.testSha256 === binding.testSha256 && pin.callerSha256 === binding.callerSha256,
+  );
+  if (!expected)
+    throw new Error("Claude rewind caller/test source is not an admitted population pin.");
+  if (!report || typeof report !== "object")
+    throw new Error("Claude rewind machine report is missing.");
+  const result = report as {
+    success?: boolean;
+    numTotalTests?: number;
+    numPassedTests?: number;
+    numFailedTests?: number;
+    numPendingTests?: number;
+    numTodoTests?: number;
+    testResults?: Array<{ assertionResults?: Array<{ status?: string }> }>;
+  };
+  const rows = result.testResults?.flatMap((suite) => suite.assertionResults ?? []) ?? [];
+  const passedRows = rows.filter((row) => row.status === "passed").length;
+  const excludedRows = rows.filter(
+    (row) => row.status === "pending" || row.status === "skipped",
+  ).length;
+  const total = expected.passed + expected.excluded;
+  if (
+    result.success !== true ||
+    result.numTotalTests !== total ||
+    result.numPassedTests !== expected.passed ||
+    result.numPassedTests <= 0 ||
+    result.numFailedTests !== 0 ||
+    result.numPendingTests !== expected.excluded ||
+    result.numTodoTests !== 0 ||
+    rows.length !== total ||
+    passedRows !== expected.passed ||
+    excludedRows !== expected.excluded
+  ) {
+    throw new Error(
+      `Claude rewind population mismatch: source requires ${expected.passed} executed/${expected.excluded} excluded/${total} total; got ${result.numPassedTests}/${result.numPendingTests}/${result.numTotalTests}, rows ${passedRows}/${excludedRows}/${rows.length}.`,
+    );
+  }
+  return { ...binding, passed: expected.passed, excluded: expected.excluded, total };
+}
+
 function exportedPath(value: unknown): string | undefined {
   if (typeof value === "string") return value;
   if (value && typeof value === "object") {
@@ -465,6 +528,7 @@ pi.on("session_tree", (_event, ctx) => { const file = ctx.sessionManager.getSess
         : input.selection === "unsupported"
           ? "fails closed when the native navigation command is absent|does not accept the prompt acknowledgement"
           : undefined;
+  const claudeReportPath = NodePath.join(fixture.directory, "Claude-Rewind-Population.json");
   const args = [
     "--no-experimental-strip-types",
     fixture.vpCli,
@@ -474,6 +538,9 @@ pi.on("session_tree", (_event, ctx) => { const file = ctx.sessionManager.getSess
     "--config",
     fixture.config,
     ...(filter ? ["-t", filter] : []),
+    ...(input.selection === "claude"
+      ? ["--reporter=default", "--reporter=json", `--outputFile=${claudeReportPath}`]
+      : []),
   ];
   const environment = {
     PATH: `${NodePath.dirname(fixture.nodeExecutable)}:${process.env.PATH ?? ""}`,
@@ -538,6 +605,23 @@ pi.on("session_tree", (_event, ctx) => { const file = ctx.sessionManager.getSess
     signal: result.signal,
     error: result.error?.message,
     preservation,
+    claudeSourceBinding:
+      input.selection === "claude"
+        ? {
+            testSha256:
+              Object.entries(fixture.sourceHashes).find(([file]) =>
+                file.endsWith("/provider/Layers/ClaudeAdapter.test.ts"),
+              )?.[1] ?? "",
+            callerSha256:
+              Object.entries(fixture.sourceHashes).find(([file]) =>
+                file.endsWith("/provider/Layers/ClaudeAdapter.ts"),
+              )?.[1] ?? "",
+          }
+        : undefined,
+    claudePopulationReport:
+      input.selection === "claude" && NodeFS.existsSync(claudeReportPath)
+        ? (JSON.parse(NodeFS.readFileSync(claudeReportPath, "utf8")) as unknown)
+        : undefined,
     output,
   };
   NodeFS.writeFileSync(
