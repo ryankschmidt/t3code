@@ -10,7 +10,45 @@ import {
   resolveNewTaskModelSelection,
   resolveSelectableModelSelection,
   type ModelOption,
+  resolveThreadAnsweringModel,
 } from "./modelOptions";
+
+describe("mobile picker answering-model observation", () => {
+  const thread = {
+    session: { activeTurnId: "turn-1" },
+    latestTurn: { turnId: "turn-1" },
+    modelSelection: { model: "claude-fable-5-1" },
+    activities: [
+      {
+        kind: "turn.model.observed",
+        turnId: "turn-1",
+        payload: {
+          source: "claude.assistant.message.model",
+          scope: "main-turn",
+          requestedModel: "claude-fable-5-1",
+          answeringModel: "claude-opus-5-5",
+        },
+      },
+    ],
+  };
+  it("shows the persisted answer after reload and after the next selection changes", () => {
+    const next = JSON.parse(JSON.stringify(thread));
+    next.modelSelection.model = "claude-sonnet-5-5";
+    expect(resolveThreadAnsweringModel(next)).toMatchObject({
+      answeringModel: "claude-opus-5-5",
+      requestedModel: "claude-fable-5-1",
+      verdict: "mismatch",
+    });
+  });
+  it("never borrows an older turn or the selection to fill missing actual identity", () => {
+    expect(
+      resolveThreadAnsweringModel({ ...thread, session: { activeTurnId: "turn-new" } })
+        .answeringModel,
+    ).toBeNull();
+    expect(resolveThreadAnsweringModel({ ...thread, activities: [] }).verdict).toBe("unknown");
+    expect(resolveThreadAnsweringModel(null).answeringModel).toBeNull();
+  });
+});
 
 describe("mobile model options", () => {
   it("rejects removed saved OpenAI selections without reintroducing them as fallbacks", () => {
