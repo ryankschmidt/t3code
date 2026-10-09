@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
+import {
+  LauncherThreadFamilyInput,
+  LauncherThreadFamily,
+} from "./throughline/launcherThreadFamily.ts";
 
 import {
   WsSubscribeServerConfigRpc,
@@ -53,7 +57,7 @@ describe("ThroughLine hello registry", () => {
     };
     expect(
       Exit.isSuccess(
-        Schema.decodeExit(WsThroughlineHelloRpc.payloadSchema)({
+        Schema.decodeUnknownExit(WsThroughlineHelloRpc.payloadSchema)({
           ...client,
           future_field: "ignored by this server",
         }),
@@ -69,5 +73,36 @@ describe("ThroughLine hello registry", () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe("launcher family wire boundary", () => {
+  it("carries only public thread ID, never client filesystem or host overrides", () => {
+    expect(
+      Schema.decodeUnknownSync(LauncherThreadFamilyInput)({
+        threadId: "public-thread",
+        filePath: "/not-a-client-port",
+        host: "rpi",
+        limit: 1000,
+      }),
+    ).toEqual({ threadId: "public-thread" });
+  });
+  it("requires an explicit recorded root rather than inferring it from a parent", () => {
+    expect(
+      Exit.isFailure(
+        Schema.decodeUnknownExit(LauncherThreadFamily)({
+          threadId: "public-thread",
+          source: "agent-instruments.thread-lineage.v1",
+          status: "recorded",
+          parentThreadId: "parent",
+          creatorResolution: "recorded",
+          launcherSeat: null,
+          purpose: "fixture",
+          handle: null,
+          host: "mac",
+          family: { status: "recorded", ancestorThreadIds: ["parent"] },
+        }),
+      ),
+    ).toBe(true);
   });
 });

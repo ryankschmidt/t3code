@@ -43,6 +43,8 @@ import {
   TurnId,
   UsageLimitSourceId,
   WS_METHODS,
+  OrchestrationGetSnapshotError,
+  EnvironmentAuthorizationError,
   WsRpcGroup,
   EditorId,
   WorktreeSetupSnapshot,
@@ -63,6 +65,9 @@ import * as Deferred from "effect/Deferred";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
+import * as Result from "effect/Result";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -1794,6 +1799,65 @@ const EMPTY_DEVICE_STATE: DeviceServiceState = {
 };
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  for (const authorized of [true, false]) {
+    it.effect(
+      `launcher family read gate: ${authorized ? "authorized reads serving-host record" : "unauthorized refuses first"}`,
+      () =>
+        Effect.gen(function* () {
+          yield* buildAppUnderTest();
+          let wsUrl: string;
+          if (authorized) wsUrl = yield* getWsServerUrl("/ws");
+          else {
+            const { body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+              scope: "access:write",
+            });
+            const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+              headers: { authorization: `Bearer ${body.access_token ?? ""}` },
+            });
+            const ticket = (yield* ticketResponse.json) as { readonly ticket: string };
+            wsUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket.ticket)}`;
+          }
+          const group = RpcGroup.make(
+            Rpc.make("orchestration.getLauncherThreadFamily", {
+              payload: Schema.Struct({ threadId: Schema.String }),
+              success: Schema.Unknown,
+              error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+            }),
+          );
+          const result = yield* Effect.scoped(
+            RpcClient.make(group).pipe(
+              Effect.flatMap((client) =>
+                client["orchestration.getLauncherThreadFamily"]({ threadId: "held-reader-thread" }),
+              ),
+              Effect.provide(wsRpcProtocolLayer(wsUrl)),
+              Effect.exit,
+            ),
+          );
+          if (authorized) {
+            assert.isTrue(Exit.isSuccess(result));
+            if (Exit.isSuccess(result)) {
+              const family = result.value as { threadId: string; source: string; status: string };
+              assert.equal(family.threadId, "held-reader-thread");
+              assert.equal(family.source, "agent-instruments.thread-lineage.v1");
+              assert.isTrue(family.status === "recorded" || family.status === "unknown");
+            }
+            return;
+          }
+          assert.isTrue(Exit.isFailure(result));
+          if (Exit.isFailure(result)) {
+            const failure = Cause.findError(result.cause);
+            assert.isTrue(Result.isSuccess(failure));
+            if (!Result.isSuccess(failure)) return;
+            const error = failure.success as { _tag?: string; requiredScope?: string };
+            assert.equal(
+              error._tag,
+              authorized ? "OrchestrationGetSnapshotError" : "EnvironmentAuthorizationError",
+            );
+            if (!authorized) assert.equal(error.requiredScope, "orchestration:read");
+          }
+        }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    );
+  }
   it.effect(
     "ThroughLine hello compatibility: shared client session negotiates against the real server route",
     () =>
@@ -1804,10 +1868,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({})),
         );
         const { cookie, url } = parseSessionCookieFromWsUrl(wsUrl);
-        const constructor = (socketUrl: string, protocols?: string | ReadonlyArray<string>) =>
+        const constructor = (socketUrl: string) =>
           new NodeSocket.NodeWS.WebSocket(
             socketUrl,
-            protocols as string | string[] | undefined,
+            undefined,
             cookie ? { headers: { cookie } } : undefined,
           ) as unknown as globalThis.WebSocket;
         const factory = yield* ClientRpcSession.make({ hello: helloFixtures[0].client }).pipe(

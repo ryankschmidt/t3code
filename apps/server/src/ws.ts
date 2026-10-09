@@ -93,6 +93,7 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
+import { readLauncherThreadFamily } from "./throughline/identity/launcher-lineage.ts";
 import {
   existingTransportPolicy,
   negotiateHello,
@@ -2666,6 +2667,19 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverProbe, Effect.succeed({}), {
             "rpc.aggregate": "server",
           }),
+        [ORCHESTRATION_WS_METHODS.getLauncherThreadFamily]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getLauncherThreadFamily,
+            Effect.tryPromise({
+              try: () => readLauncherThreadFamily(input.threadId),
+              catch: (cause) =>
+                new OrchestrationGetSnapshotError({
+                  message: "Failed to read launcher lineage",
+                  cause,
+                }),
+            }),
+            { "rpc.aggregate": "orchestration" },
+          ),
         [WS_METHODS.throughlineHello]: (input) =>
           observeRpcEffect(
             WS_METHODS.throughlineHello,
