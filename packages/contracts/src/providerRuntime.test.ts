@@ -1,9 +1,86 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { classifyTaskAgentKind, ProviderRuntimeEvent } from "./providerRuntime.ts";
+import {
+  classifyTaskAgentKind,
+  ProviderRuntimeEvent,
+  resolveMainTurnModelObservation,
+} from "./providerRuntime.ts";
 
 const decodeRuntimeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
+
+describe("attributable main-turn model observation", () => {
+  const event = {
+    type: "turn.model.observed",
+    eventId: "model-observed",
+    provider: "claudeAgent",
+    createdAt: "2026-10-09T00:00:00.000Z",
+    threadId: "thread-1",
+    turnId: "turn-1",
+    payload: {
+      source: "claude.assistant.message.model",
+      scope: "main-turn",
+      requestedModel: "claude-fable-5-1",
+      answeringModel: "claude-opus-5-5",
+    },
+  };
+  const activity = { kind: event.type, turnId: event.turnId, payload: event.payload };
+
+  it("requires actual identity, a turn, and explicit main-assistant provenance", () => {
+    expect(decodeRuntimeEvent(event).type).toBe("turn.model.observed");
+    for (const bad of [
+      { ...event, turnId: undefined },
+      { ...event, payload: { ...event.payload, answeringModel: undefined } },
+      { ...event, payload: { ...event.payload, answeringModel: "" } },
+      { ...event, payload: { ...event.payload, scope: "subagent" } },
+      { ...event, payload: { ...event.payload, source: "requested.selection" } },
+    ])
+      expect(() => decodeRuntimeEvent(bad)).toThrow();
+  });
+
+  it("compares the turn's recorded request and response, not a later selection", () => {
+    expect(resolveMainTurnModelObservation("turn-1", [activity])).toMatchObject({
+      turnId: "turn-1",
+      requestedModel: "claude-fable-5-1",
+      answeringModel: "claude-opus-5-5",
+      verdict: "mismatch",
+    });
+    expect(
+      resolveMainTurnModelObservation("turn-1", [
+        { ...activity, payload: { ...event.payload, requestedModel: "claude-opus-5-5" } },
+      ]).verdict,
+    ).toBe("match");
+  });
+
+  it("keeps absent, subagent-only, wrong-provenance and other-turn identities unknown", () => {
+    for (const activities of [
+      [],
+      [{ ...activity, turnId: "turn-old" }],
+      [{ ...activity, payload: { ...event.payload, scope: "subagent" } }],
+      [{ ...activity, payload: { ...event.payload, answeringModel: undefined } }],
+      [{ ...activity, payload: { ...event.payload, source: "requested.selection" } }],
+    ])
+      expect(resolveMainTurnModelObservation("turn-1", activities)).toMatchObject({
+        answeringModel: null,
+        requestedModel: null,
+        verdict: "unknown",
+      });
+    expect(resolveMainTurnModelObservation(null, [activity]).answeringModel).toBeNull();
+  });
+
+  it("survives JSON snapshot reload and retains a later observed substitution", () => {
+    const reloaded = JSON.parse(JSON.stringify([activity]));
+    expect(resolveMainTurnModelObservation("turn-1", reloaded)).toEqual(
+      resolveMainTurnModelObservation("turn-1", [activity]),
+    );
+    expect(
+      resolveMainTurnModelObservation("turn-1", [
+        activity,
+        { ...activity, payload: { ...event.payload, answeringModel: "claude-sonnet-5-5" } },
+      ]).answeringModel,
+    ).toBe("claude-sonnet-5-5");
+  });
+});
 
 describe("ProviderRuntimeEvent", () => {
   it("requires input and output totals for complete turn usage", () => {
