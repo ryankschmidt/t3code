@@ -81,6 +81,9 @@ import {
 } from "@t3tools/shared/claudeCompaction";
 import { HostProcessIsExecutable } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { bindIdentityAlias } from "../../throughline/identity/identity-alias.ts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -296,6 +299,8 @@ interface ClaudeResumeState {
 interface ClaudeTurnState {
   readonly turnId: TurnId;
   readonly startedAt: string;
+  readonly requestedModelAtStart: string | undefined;
+  lastObservedAnsweringModel: string | undefined;
   /**
    * True for turns auto-started by assistant output arriving without an
    * active turn (background agent/subagent responses between user prompts).
@@ -2750,7 +2755,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     if (!turnState || turnState.answeringModelChecked || !answeringModel) {
       return;
     }
-    const selected = context.currentApiModelId ?? context.session.model ?? undefined;
+    const selected = turnState.requestedModelAtStart;
     const verdict = compareSelectedAndAnsweringModel(selected, answeringModel);
     if (verdict === "unknown") {
       return;
@@ -3627,6 +3632,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       context.turnState = {
         turnId,
         startedAt,
+        requestedModelAtStart: undefined,
+        lastObservedAnsweringModel: undefined,
         synthetic: true,
         assistantTextBlocks: new Map(),
         assistantTextBlockOrder: [],
@@ -5537,6 +5544,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const turnState: ClaudeTurnState = {
         turnId,
         startedAt: yield* nowIso,
+        requestedModelAtStart: input.modelSelection?.model,
+        lastObservedAnsweringModel: undefined,
         assistantTextBlocks: new Map(),
         assistantTextBlockOrder: [],
         capturedProposedPlanKeys: new Set(),
@@ -5602,6 +5611,27 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     if (steeringTurnState === null) context.turnStartMessageIds.push(turnId);
     yield* updateResumeCursor(context);
+    const assignedPromptUuid =
+      steeringTurnState === null
+        ? turnId
+        : messageOrigin
+          ? nativeUuidFor(messageOrigin)
+          : undefined;
+    const aliasSql = yield* Effect.serviceOption(SqlClient.SqlClient);
+    if (
+      messageOrigin !== undefined &&
+      assignedPromptUuid !== undefined &&
+      Option.isSome(aliasSql)
+    ) {
+      yield* bindIdentityAlias({
+        publicAgentId: messageOrigin.threadId,
+        nativeKind: "claude",
+        nativeId: assignedPromptUuid,
+      }).pipe(
+        Effect.provideService(SqlClient.SqlClient, aliasSql.value),
+        Effect.mapError((cause) => toRequestError(input.threadId, "turn/identity-alias", cause)),
+      );
+    }
     yield* Queue.offer(context.promptQueue, {
       type: "message",
       message:

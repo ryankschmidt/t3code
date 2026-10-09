@@ -26,6 +26,8 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, describe, it } from "@effect/vitest";
+import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { lookupIdentityAlias } from "../../throughline/identity/identity-alias.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -4811,6 +4813,46 @@ describe("ClaudeAdapterLive", () => {
       Effect.provide(harness.layer),
     );
   });
+
+  it.effect(
+    "persists the exact SDK prompt UUID before submission without replacing native rewind identity",
+    () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "first",
+          attachments: [],
+          messageId: MessageId.make("displayed-first"),
+        });
+        const iterator = harness.getLastCreateQueryInput()!.prompt[Symbol.asyncIterator]();
+        const first = yield* Effect.promise(() => iterator.next());
+        assert.isFalse(first.done);
+        const firstAlias = yield* lookupIdentityAlias("claude", first.value!.uuid!);
+        assert.equal(firstAlias?.publicAgentId, THREAD_ID);
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "steer",
+          attachments: [],
+          messageId: MessageId.make("displayed-steer"),
+        });
+        const steering = yield* Effect.promise(() => iterator.next());
+        assert.isFalse(steering.done);
+        const steeringAlias = yield* lookupIdentityAlias("claude", steering.value!.uuid!);
+        assert.equal(steeringAlias?.publicAgentId, THREAD_ID);
+        assert.notEqual(steering.value!.uuid, first.value!.uuid);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer.pipe(Layer.provideMerge(SqlitePersistenceMemory))),
+      );
+    },
+  );
 
   // ThroughLine: the picker cannot lie. The operator has twice watched this
   // app name one model while another answered. The label and the answering
