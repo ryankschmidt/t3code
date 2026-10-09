@@ -93,6 +93,10 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
+import {
+  existingTransportPolicy,
+  negotiateHello,
+} from "../../../packages/throughline-protocol/src/hello.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -2662,6 +2666,16 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverProbe, Effect.succeed({}), {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.throughlineHello]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.throughlineHello,
+            serverEnvironment.getDescriptor.pipe(
+              Effect.map((environment) =>
+                negotiateHello(input, existingTransportPolicy(environment.serverVersion)),
+              ),
+            ),
+            { "rpc.aggregate": "server" },
+          ),
         [WS_METHODS.serverGetConfig]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverGetConfig,

@@ -288,6 +288,170 @@ const publishConfigEvents = Effect.fn("TestRpcSessionFactory.publishConfigEvents
 });
 
 describe("RpcSessionFactory", () => {
+  for (const outcome of ["compatible", "degraded", "update-required"] as const) {
+    it.effect(
+      `optional ThroughLine hello exposes ${outcome} without changing the initial snapshot`,
+      () =>
+        Effect.gen(function* () {
+          const hello = {
+            protocol_version: 1,
+            release: "0.0.52",
+            commit: "fixture",
+            platform: "ios",
+            capabilities: ["environmentThemes"],
+            last_cursor: 12,
+          };
+          const { factory, sockets } = yield* makeFactory({ hello });
+          const session = yield* factory.connect(PREPARED);
+          const ready = yield* Effect.forkChild(Effect.exit(session.ready));
+          const socket = yield* awaitSocket(sockets);
+          socket.open();
+          yield* completeInitialConfig(socket);
+          const request = yield* awaitRequest(socket, 1);
+          expect(request).toMatchObject({ tag: "throughline.hello", payload: hello });
+          socket.serverMessage(
+            encodeJson({
+              _tag: "Exit",
+              requestId: request.id,
+              exit: {
+                _tag: "Success",
+                value: {
+                  protocol_version: 1,
+                  outcome,
+                  server_release: "0.0.51",
+                  server_commit: null,
+                  min_supported_client: "0.0.0",
+                  capabilities: ["environmentThemes"],
+                  future_field: "preserved",
+                },
+              },
+            }),
+          );
+          const readyExit = yield* Fiber.join(ready);
+          if (outcome === "update-required") {
+            expect(Exit.isFailure(readyExit)).toBe(true);
+            if (Exit.isFailure(readyExit)) {
+              expect(Cause.squash(readyExit.cause)).toMatchObject({
+                _tag: "ConnectionBlockedError",
+                reason: "unsupported",
+              });
+            }
+          } else expect(Exit.isSuccess(readyExit)).toBe(true);
+          const compatibilityEffect = session.compatibility;
+          if (compatibilityEffect === undefined)
+            return yield* Effect.die("Hello compatibility API missing");
+          const compatibility = yield* compatibilityEffect;
+          expect(compatibility).toMatchObject({
+            kind: "negotiated",
+            hello: { outcome, future_field: "preserved" },
+          });
+          expect((yield* session.initialConfig).environment.environmentId).toBe(
+            TARGET.environmentId,
+          );
+          // Re-reading the cached result must not send a second hello.
+          yield* compatibilityEffect;
+          expect(
+            socket.sent.map((message) => decodeJson(message)).filter(isRpcRequest),
+          ).toHaveLength(2);
+        }),
+    );
+  }
+
+  it.effect(
+    "optional ThroughLine hello falls back only for the exact old-server missing-method reply",
+    () =>
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory({
+          hello: {
+            protocol_version: 1,
+            release: "0.0.52",
+            commit: "fixture",
+            platform: "android",
+            capabilities: [],
+            last_cursor: null,
+          },
+        });
+        const session = yield* factory.connect(PREPARED);
+        const ready = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        const request = yield* awaitRequest(socket, 1);
+        socket.serverMessage(
+          encodeJson({
+            _tag: "Exit",
+            requestId: request.id,
+            exit: {
+              _tag: "Failure",
+              cause: [
+                { _tag: "Die", defect: encodeDefect("Unknown request tag: throughline.hello") },
+              ],
+            },
+          }),
+        );
+        yield* Fiber.join(ready);
+        const compatibilityEffect = session.compatibility;
+        if (compatibilityEffect === undefined)
+          return yield* Effect.die("Hello compatibility API missing");
+        expect(yield* compatibilityEffect).toEqual({ kind: "legacy" });
+        expect(yield* session.initialConfig).toEqual(SERVER_CONFIG);
+      }),
+  );
+
+  for (const failure of ["permission", "other-defect", "disconnect"] as const) {
+    it.effect(`optional ThroughLine hello does not hide ${failure} as legacy compatibility`, () =>
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory({
+          hello: {
+            protocol_version: 1,
+            release: "0.0.52",
+            commit: "fixture",
+            platform: "web",
+            capabilities: [],
+            last_cursor: null,
+          },
+        });
+        const session = yield* factory.connect(PREPARED);
+        const ready = yield* Effect.forkChild(Effect.exit(session.ready));
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        const request = yield* awaitRequest(socket, 1);
+        if (failure === "disconnect") socket.close();
+        else
+          socket.serverMessage(
+            encodeJson({
+              _tag: "Exit",
+              requestId: request.id,
+              exit: {
+                _tag: "Failure",
+                cause: [
+                  failure === "permission"
+                    ? {
+                        _tag: "Fail",
+                        error: {
+                          _tag: "EnvironmentAuthorizationError",
+                          message: "hello rejected",
+                          requiredScope: "orchestration:read",
+                        },
+                      }
+                    : { _tag: "Die", defect: encodeDefect("Unknown request tag: another.method") },
+                ],
+              },
+            }),
+          );
+        const result = yield* Fiber.join(ready);
+        expect(Exit.isFailure(result)).toBe(true);
+        if (failure === "permission" && Exit.isFailure(result)) {
+          expect(Cause.squash(result.cause)).toMatchObject({
+            _tag: "ConnectionBlockedError",
+            reason: "permission",
+          });
+        }
+      }),
+    );
+  }
+
   it.effect("owns one scoped websocket attempt and exposes readiness and closure", () =>
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();

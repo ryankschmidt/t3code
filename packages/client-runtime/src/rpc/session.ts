@@ -46,6 +46,8 @@ const SOCKET_OPEN_TIMEOUT = "15 seconds";
 
 export interface RpcSession {
   readonly client: WsRpcProtocolClient;
+  /** Additive: older session implementations need not expose negotiation metadata. */
+  readonly compatibility?: Effect.Effect<HelloCompatibility, ConnectionAttemptError>;
   readonly initialConfig: Effect.Effect<ServerConfig, ConnectionAttemptError>;
   readonly subscribeServerConfig: (
     input: ServerConfigSubscriptionInput,
@@ -56,11 +58,23 @@ export interface RpcSession {
 }
 
 export interface RpcSessionOptions {
+  /** The app supplies its actual release/platform metadata; absence stays legacy. */
+  readonly hello?: Parameters<WsRpcProtocolClient[typeof WS_METHODS.throughlineHello]>[0];
   readonly environmentThemes?: boolean;
   readonly usageLimitSources?: boolean;
   /** This client answers /usage-limits itself, so the server may advertise it. */
   readonly usageLimitsCommand?: boolean;
 }
+
+export type HelloCompatibility =
+  | { readonly kind: "not-requested" }
+  | { readonly kind: "legacy" }
+  | {
+      readonly kind: "negotiated";
+      readonly hello: Effect.Success<
+        ReturnType<WsRpcProtocolClient[typeof WS_METHODS.throughlineHello]>
+      >;
+    };
 
 export class RpcSessionFactory extends Context.Service<
   RpcSessionFactory,
@@ -301,6 +315,37 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       ),
       Effect.withSpan("environment.initialSync"),
     );
+    const compatibilityDeferred = yield* Deferred.make<
+      HelloCompatibility,
+      ConnectionAttemptError
+    >();
+    const compatibility = Deferred.await(compatibilityDeferred);
+    yield* Deferred.complete(
+      compatibilityDeferred,
+      options.hello === undefined
+        ? Effect.succeed<HelloCompatibility>({ kind: "not-requested" })
+        : initialConfig.pipe(
+            Effect.andThen(
+              protocolClient[WS_METHODS.throughlineHello](options.hello).pipe(
+                Effect.map((hello): HelloCompatibility => ({ kind: "negotiated", hello })),
+                Effect.mapError(mapRpcError),
+                Effect.catchDefect((defect) =>
+                  // The old RPC server replies with a per-request Die string.
+                  // Never turn authentication, transport or arbitrary defects
+                  // into a successful legacy negotiation.
+                  defect === "Unknown request tag: throughline.hello"
+                    ? Effect.succeed<HelloCompatibility>({ kind: "legacy" })
+                    : Effect.fail(
+                        new ConnectionTransientErrorClass({
+                          reason: "remote-unavailable",
+                          detail: `${connection.label} protocol negotiation failed.`,
+                        }),
+                      ),
+                ),
+              ),
+            ),
+          ),
+    ).pipe(Effect.forkScoped);
     const serverConfigEvents = Stream.unwrap(
       Effect.gen(function* () {
         const subscription = yield* PubSub.subscribe(serverConfigUpdates);
@@ -377,10 +422,22 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
 
     return {
       client: protocolClient,
+      compatibility,
       initialConfig,
       subscribeServerConfig,
       ready: Deferred.await(connected).pipe(
         Effect.andThen(initialConfig),
+        Effect.andThen(compatibility),
+        Effect.flatMap((result) =>
+          result.kind === "negotiated" && result.hello.outcome === "update-required"
+            ? Effect.fail(
+                new ConnectionBlockedError({
+                  reason: "unsupported",
+                  detail: `Update your app to connect to ${connection.label}; minimum supported client: ${result.hello.min_supported_client}.`,
+                }),
+              )
+            : Effect.void,
+        ),
         Effect.asVoid,
         Effect.raceFirst(Deferred.await(disconnected)),
       ),
