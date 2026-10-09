@@ -22,11 +22,7 @@ import {
   withAuthenticatedSender,
 } from "../../throughline/identity/sender-stamp.ts";
 
-const layer = Layer.mergeAll(
-  OrchestrationEngineLive,
-  OrchestrationProjectionPipelineLive,
-  OrchestrationProjectionSnapshotQueryLive,
-).pipe(
+const layer = OrchestrationEngineLive.pipe(
   Layer.provideMerge(OrchestrationProjectionPipelineLive),
   Layer.provideMerge(OrchestrationProjectionSnapshotQueryLive),
   Layer.provide(ThreadBackgroundLiveness.layer),
