@@ -539,6 +539,10 @@ const config: ExpoConfig = {
     appVariant: APP_VARIANT,
     // The ThroughLine version of this build — the same number the desktop and server report.
     throughlineVersion,
+    throughlineReleaseIdentity: {
+      release: throughlineVersion,
+      fullCommit: process.env.APP_COMMIT?.trim() || null,
+    },
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
