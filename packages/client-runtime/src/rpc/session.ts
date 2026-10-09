@@ -24,7 +24,12 @@ import * as RpcClientError from "effect/unstable/rpc/RpcClientError";
 import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
 import * as Socket from "effect/unstable/socket/Socket";
 
-import { makeWsRpcProtocolClient, type WsRpcProtocolClient } from "./protocol.ts";
+import {
+  makeWsRpcProtocolClient,
+  makePreservingWsRpcProtocolClient,
+  type WsRpcProtocolClient,
+} from "./protocol.ts";
+import type { DecodedEvent } from "../../../throughline-protocol/src/events.ts";
 import { NETWORK_BLOCKING_HINT } from "../errors/network.ts";
 import type {
   ConnectionAttemptError,
@@ -48,6 +53,8 @@ export interface RpcSession {
   readonly client: WsRpcProtocolClient;
   /** Additive: older session implementations need not expose negotiation metadata. */
   readonly compatibility?: Effect.Effect<HelloCompatibility, ConnectionAttemptError>;
+  /** Connection-local diagnostic ring (last 64 wire events), never persisted. */
+  readonly preservedConfigEvents?: Effect.Effect<ReadonlyArray<DecodedEvent>>;
   readonly initialConfig: Effect.Effect<ServerConfig, ConnectionAttemptError>;
   readonly subscribeServerConfig: (
     input: ServerConfigSubscriptionInput,
@@ -224,7 +231,16 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     const protocolContext = yield* Layer.build(protocolLayer).pipe(
       Effect.withSpan("environment.websocket.connect"),
     );
-    const protocolClient = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
+    const preservedConfigEventsRef = yield* Ref.make<ReadonlyArray<DecodedEvent>>([]);
+    const protocolClient = yield* (
+      options.hello === undefined
+        ? makeWsRpcProtocolClient
+        : makePreservingWsRpcProtocolClient((event) =>
+            Ref.update(preservedConfigEventsRef, (events) => [...events, event].slice(-64)),
+          )
+    ).pipe(Effect.provide(protocolContext));
+    const configSubscription = (input: ServerConfigSubscriptionInput) =>
+      protocolClient[WS_METHODS.subscribeServerConfig](input);
     const initialConfigDeferred = yield* Deferred.make<ServerConfig>();
     const serverConfigExit = yield* Deferred.make<void, ServerConfigSubscriptionError>();
     const configSubscriptionClosed = yield* Deferred.make<never, ConnectionAttemptError>();
@@ -234,9 +250,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       reason: "remote-unavailable",
       detail: `${connection.label} config subscription ended.`,
     });
-    const serverConfigSource = protocolClient[WS_METHODS.subscribeServerConfig](
-      serverConfigInput,
-    ).pipe(
+    const serverConfigSource = configSubscription(serverConfigInput).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
           const buffered = yield* Ref.modify(serverConfigState, (current) => {
@@ -403,9 +417,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       Stream.unwrap(
         validatedInitialConfig.pipe(
           Effect.as(
-            Equal.equals(input, serverConfigInput)
-              ? serverConfigEvents
-              : protocolClient[WS_METHODS.subscribeServerConfig](input),
+            Equal.equals(input, serverConfigInput) ? serverConfigEvents : configSubscription(input),
           ),
         ),
       );
@@ -423,6 +435,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     return {
       client: protocolClient,
       compatibility,
+      preservedConfigEvents: Ref.get(preservedConfigEventsRef),
       initialConfig,
       subscribeServerConfig,
       ready: Deferred.await(connected).pipe(

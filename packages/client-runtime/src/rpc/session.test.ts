@@ -288,6 +288,152 @@ const publishConfigEvents = Effect.fn("TestRpcSessionFactory.publishConfigEvents
 });
 
 describe("RpcSessionFactory", () => {
+  it.effect("negotiating config decoder preserves the existing asQueue consumer contract", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory({
+        hello: {
+          protocol_version: 1,
+          release: "0.0.52",
+          platform: "web",
+          commit: null,
+          capabilities: [],
+          last_cursor: null,
+        },
+      });
+      const session = yield* factory.connect(PREPARED);
+      const ready = yield* Effect.forkChild(session.ready);
+      const socket = yield* awaitSocket(sockets);
+      socket.open();
+      yield* completeInitialConfig(socket);
+      const hello = yield* awaitRequest(socket, 1);
+      socket.serverMessage(
+        encodeJson({
+          _tag: "Exit",
+          requestId: hello.id,
+          exit: {
+            _tag: "Success",
+            value: {
+              protocol_version: 1,
+              outcome: "compatible",
+              server_release: "0.0.51",
+              server_commit: null,
+              min_supported_client: "0.0.0",
+              capabilities: [],
+            },
+          },
+        }),
+      );
+      yield* Fiber.join(ready);
+      const queue = yield* session.client[WS_METHODS.subscribeServerConfig](
+        {},
+        { asQueue: true, streamBufferSize: 8 },
+      );
+      const subscription = yield* awaitRequest(socket, 2);
+      socket.serverMessage(
+        encodeJson({
+          _tag: "Chunk",
+          requestId: subscription.id,
+          values: [
+            { version: 2, type: "future.queue-event", payload: { keep: true } },
+            { version: 1, type: "snapshot", config: ENCODED_SERVER_CONFIG },
+          ],
+        }),
+      );
+      expect((yield* Queue.take(queue)).type).toBe("snapshot");
+    }),
+  );
+
+  it.effect("negotiating config decoder still refuses malformed known events", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory({
+        hello: {
+          protocol_version: 1,
+          release: "0.0.52",
+          platform: "web",
+          commit: null,
+          capabilities: [],
+          last_cursor: null,
+        },
+      });
+      const session = yield* factory.connect(PREPARED);
+      const closed = yield* Effect.forkChild(Effect.exit(session.closed));
+      const socket = yield* awaitSocket(sockets);
+      socket.open();
+      const subscription = yield* awaitRequest(socket);
+      socket.serverMessage(
+        encodeJson({
+          _tag: "Chunk",
+          requestId: subscription.id,
+          values: [{ version: 1, type: "providerStatuses", payload: { providers: "invalid" } }],
+        }),
+      );
+      expect(Exit.isFailure(yield* Fiber.join(closed))).toBe(true);
+      const preserved = session.preservedConfigEvents;
+      if (preserved === undefined) return yield* Effect.die("Preserved config event API missing");
+      expect(yield* preserved).toMatchObject([{ kind: "invalid-known" }]);
+    }),
+  );
+  it.effect(
+    "negotiating client preserves unknown config events and fields without dispatching unknown events",
+    () =>
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory({
+          hello: {
+            protocol_version: 1,
+            release: "0.0.52",
+            platform: "iOS",
+            commit: null,
+            capabilities: [],
+            last_cursor: null,
+          },
+        });
+        const session = yield* factory.connect(PREPARED);
+        const ready = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        const request = yield* awaitRequest(socket);
+        const unknown = {
+          version: 2,
+          type: "future.config",
+          payload: { voiceText: "keep this text" },
+        };
+        const snapshot = {
+          version: 1,
+          type: "snapshot",
+          config: { ...ENCODED_SERVER_CONFIG, future_config: 7 },
+          future_event: true,
+        };
+        socket.serverMessage(
+          encodeJson({ _tag: "Chunk", requestId: request.id, values: [unknown, snapshot] }),
+        );
+        const helloRequest = yield* awaitRequest(socket, 1);
+        socket.serverMessage(
+          encodeJson({
+            _tag: "Exit",
+            requestId: helloRequest.id,
+            exit: {
+              _tag: "Success",
+              value: {
+                protocol_version: 1,
+                outcome: "compatible",
+                server_release: "0.0.51",
+                server_commit: null,
+                min_supported_client: "0.0.0",
+                capabilities: [],
+              },
+            },
+          }),
+        );
+        yield* Fiber.join(ready);
+        expect(yield* session.initialConfig).toEqual(SERVER_CONFIG);
+        const preserved = session.preservedConfigEvents;
+        if (preserved === undefined) return yield* Effect.die("Preserved config event API missing");
+        expect(yield* preserved).toMatchObject([
+          { kind: "preserved-unknown", raw: unknown },
+          { kind: "known", raw: snapshot },
+        ]);
+      }),
+  );
   for (const outcome of ["compatible", "degraded", "update-required"] as const) {
     it.effect(
       `optional ThroughLine hello exposes ${outcome} without changing the initial snapshot`,
@@ -1296,6 +1442,7 @@ describe("RpcSessionFactory", () => {
         altKey: false,
         modKey: true,
       };
+      expect(sockets).toHaveLength(1);
       yield* completeInitialConfig(socket, {
         ...ENCODED_SERVER_CONFIG,
         keybindings: [
