@@ -73,7 +73,7 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import { UsageLimitsSection } from "./UsageLimits";
+import { UsageLimitsSection } from "./UsageLimitsSection";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
 import { sortModelsByTokens } from "./usageBreakdown";

@@ -47,6 +47,7 @@ vi.mock("./usageProviders", async (importOriginal) => {
 });
 
 import { UsagePage } from "./UsagePage";
+import { saveUsagePagePreferences } from "./usagePagePreferences";
 const environments = [
   {
     environmentId: EnvironmentId.make("test-environment"),
@@ -150,3 +151,20 @@ describe("UsagePage Escape navigation", () => {
 });
 
 // @vitest-environment jsdom
+
+it("mounts broker unknown state in the existing Limits page without a competing page", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  saveUsagePagePreferences({ metric: "limits", windowDays: 30 });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(() => root.render(<UsagePage />));
+    expect(container.querySelector('[aria-label="Broker headroom"]')).not.toBeNull();
+    expect(container.textContent).toContain("Broker headroom unknown");
+    expect(container.textContent).not.toContain("Quota available");
+  } finally {
+    await act(() => root.unmount());
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  }
+});
