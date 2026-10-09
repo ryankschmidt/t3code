@@ -9,6 +9,7 @@ import {
   buildCatalogueParity,
   compareSelectedAndAnsweringModel,
   isOfferedProviderModel,
+  isProductDefaultModel,
 } from "./model.ts";
 import { ProviderDriverKind } from "./providerInstance.ts";
 
@@ -152,6 +153,21 @@ describe("the picker cannot lie", () => {
 
   it("does not absorb a different model that merely shares a prefix", () => {
     expect(compareSelectedAndAnsweringModel("gpt-6", "gpt-60")).toBe("mismatch");
+    expect(compareSelectedAndAnsweringModel("claude-opus-5", "claude-opus-5-5")).toBe("mismatch");
+    expect(compareSelectedAndAnsweringModel("claude-fable-5", "claude-fable-5-1")).toBe("mismatch");
+    expect(compareSelectedAndAnsweringModel("gpt-6-sol", "gpt-6.1-sol")).toBe("mismatch");
+    expect(compareSelectedAndAnsweringModel("gpt-6.1-sol", "gpt-6.1-sol-fast")).toBe("mismatch");
+    expect(compareSelectedAndAnsweringModel("gpt-6.1-sol-latest", "gpt-6.1-sol")).toBe("mismatch");
+  });
+
+  it("normalizes only a provider route, API date, and explicit context-window decoration", () => {
+    expect(
+      compareSelectedAndAnsweringModel(
+        "claude-opus-5-5[1m]",
+        "tower-anthropic/claude-opus-5-5-20261001[1m]",
+      ),
+    ).toBe("match");
+    expect(compareSelectedAndAnsweringModel("gpt-6.1-sol[fast]", "gpt-6.1-sol")).toBe("mismatch");
   });
 });
 
@@ -180,17 +196,26 @@ it("offers Spark and GPT-5.6/GPT-6 families without admitting retired models", (
   }
 });
 
-describe("Astra Codex catalog defaults", () => {
+describe("current policy catalog defaults", () => {
   const codex = ProviderDriverKind.make("codex");
-  it("defaults Codex to Astra ahead of the retained Sol fallback", () => {
-    expect(DEFAULT_MODEL).toBe("gpt-6-astra");
-    expect(DEFAULT_MODEL_BY_PROVIDER[codex]).toBe("gpt-6-astra");
-    expect(PREFERRED_DEFAULT_CODEX_MODELS).toEqual(["gpt-6-astra", "gpt-6-sol", "gpt-5.6-terra"]);
+  it("defaults Codex to the configured Sol workhorse ahead of Astra", () => {
+    expect(DEFAULT_MODEL).toBe("gpt-6.1-sol");
+    expect(DEFAULT_MODEL_BY_PROVIDER[codex]).toBe("gpt-6.1-sol");
+    expect(PREFERRED_DEFAULT_CODEX_MODELS).toEqual(["gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-terra"]);
+    expect(isProductDefaultModel("gpt-6.1-sol", "codex", false)).toBe(true);
+    expect(isProductDefaultModel("gpt-6-astra", "codex", true)).toBe(false);
+    expect(isProductDefaultModel("claude-fable-5-1", "claudeAgent", true)).toBe(false);
   });
   it("resolves Astra aliases without changing Sol aliases", () => {
     for (const alias of ["astra", "6", "gpt-6", "gpt-6-astra"]) {
       expect(MODEL_SLUG_ALIASES_BY_PROVIDER[codex]?.[alias]).toBe("gpt-6-astra");
     }
-    expect(MODEL_SLUG_ALIASES_BY_PROVIDER[codex]?.sol).toBe("gpt-6-sol");
+    expect(MODEL_SLUG_ALIASES_BY_PROVIDER[codex]?.sol).toBe("gpt-6.1-sol");
+    expect(MODEL_SLUG_ALIASES_BY_PROVIDER[ProviderDriverKind.make("claudeAgent")]?.sonnet).toBe(
+      "claude-sonnet-5-5",
+    );
+    expect(MODEL_SLUG_ALIASES_BY_PROVIDER[ProviderDriverKind.make("claudeAgent")]?.fable).toBe(
+      "claude-fable-5-1",
+    );
   });
 });

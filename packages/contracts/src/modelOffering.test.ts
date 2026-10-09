@@ -18,10 +18,20 @@ const provider = (driver: string, slugs: ReadonlyArray<string>) => ({
   models: slugs.map((slug) => ({ slug, isCustom: false })),
 });
 
+// Independent expectations from ryan model list --json (2026-10-09), not the implementation.
+const currentClaude = ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"];
+const currentCodex = [
+  "gpt-6-astra",
+  "gpt-6.1-sol",
+  "gpt-6-luna",
+  "gpt-5.3-codex-spark",
+  "gpt-5.6-terra",
+];
+
 // Synthetic discovery fixture: every configured current model plus historical retired and unrelated IDs.
 const reported = [
   provider("claudeAgent", [
-    ...DEFAULT_MODEL_OFFERING.offeredModels.claudeAgent!,
+    ...currentClaude,
     "claude-fable-5",
     "claude-opus-5",
     "claude-opus-4-8",
@@ -31,15 +41,10 @@ const reported = [
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
   ]),
-  provider("codex", [
-    ...DEFAULT_MODEL_OFFERING.offeredModels.codex!,
-    "gpt-5.6-sol",
-    "gpt-5.6-luna",
-    "gpt-5.5",
-  ]),
+  provider("codex", [...currentCodex, "gpt-6-sol", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.5"]),
   provider("pi", [
-    ...DEFAULT_MODEL_OFFERING.offeredModels.claudeAgent!.map((id) => `anthropic/${id}`),
-    ...DEFAULT_MODEL_OFFERING.offeredModels.codex!.map((id) => `openai-codex/${id}`),
+    ...currentClaude.map((id) => `anthropic/${id}`),
+    ...currentCodex.map((id) => `openai-codex/${id}`),
     "anthropic/claude-opus-5",
     "anthropic/claude-opus-4-5-20251101",
     "anthropic/claude-sonnet-5",
@@ -78,19 +83,17 @@ describe("applyModelOffering", () => {
   });
 
   it("offers Claude exactly Ryan's list, Opus 5.5 first", () => {
-    expect(slugsOf(offered, "claudeAgent")).toEqual(
-      DEFAULT_MODEL_OFFERING.offeredModels.claudeAgent,
-    );
+    expect(slugsOf(offered, "claudeAgent")).toEqual(currentClaude);
   });
 
   it("offers Codex exactly today's list, gpt-6-astra first", () => {
-    expect(slugsOf(offered, "codex")).toEqual(DEFAULT_MODEL_OFFERING.offeredModels.codex);
+    expect(slugsOf(offered, "codex")).toEqual(currentCodex);
   });
 
   it("offers Pi exactly the union of Claude and Codex, one route per model", () => {
     expect(slugsOf(offered, "pi")).toEqual([
-      ...DEFAULT_MODEL_OFFERING.offeredModels.claudeAgent!.map((id) => `anthropic/${id}`),
-      ...DEFAULT_MODEL_OFFERING.offeredModels.codex!.map((id) => `openai-codex/${id}`),
+      ...currentClaude.map((id) => `anthropic/${id}`),
+      ...currentCodex.map((id) => `openai-codex/${id}`),
     ]);
   });
 
@@ -108,13 +111,13 @@ describe("applyModelOffering", () => {
 
   it("follows a written offering instead of the compiled one", () => {
     const written: ModelOffering = {
-      offeredModels: { claudeAgent: ["claude-sonnet-5"], codex: ["gpt-6-astra"] },
+      offeredModels: { claudeAgent: ["claude-sonnet-5-5"], codex: ["gpt-6-astra"] },
       retiredModels: [],
     };
     const result = applyModelOffering(reported, written);
-    expect(slugsOf(result, "claudeAgent")).toEqual(["claude-sonnet-5"]);
+    expect(slugsOf(result, "claudeAgent")).toEqual(["claude-sonnet-5-5"]);
     expect(slugsOf(result, "pi")).toEqual([
-      "anthropic/claude-sonnet-5",
+      "anthropic/claude-sonnet-5-5",
       "openai-codex/gpt-6-astra",
     ]);
   });
@@ -134,6 +137,38 @@ describe("applyModelOffering", () => {
       "claude-opus-5-5",
       "my-proxy/claude-x",
     ]);
+  });
+
+  it("does not let another configured driver enlarge Pi's curated source union", () => {
+    const offering: ModelOffering = {
+      offeredModels: { ...DEFAULT_MODEL_OFFERING.offeredModels, cursor: ["composer-2"] },
+      retiredModels: DEFAULT_MODEL_OFFERING.retiredModels,
+    };
+    expect(
+      slugsOf(
+        applyModelOffering(
+          [provider("cursor", ["composer-2"]), provider("pi", ["cursor/composer-2"])],
+          offering,
+        ),
+        "pi",
+      ),
+    ).toEqual([]);
+  });
+
+  it("preserves configured broker route IDs and does not invent unavailable routes", () => {
+    expect(
+      slugsOf(
+        applyModelOffering(
+          [
+            provider("claudeAgent", currentClaude),
+            provider("codex", currentCodex),
+            provider("pi", ["tower-anthropic/claude-sonnet-5-5", "openai-codex/gpt-6.1-sol"]),
+          ],
+          DEFAULT_MODEL_OFFERING,
+        ),
+        "pi",
+      ),
+    ).toEqual(["tower-anthropic/claude-sonnet-5-5", "openai-codex/gpt-6.1-sol"]);
   });
 });
 
@@ -157,14 +192,14 @@ describe("the Claude new-thread default", () => {
     });
     expect(retireModelSelection(gpt55, DEFAULT_MODEL_OFFERING)).toEqual({
       instanceId: "codex",
-      model: "gpt-6-astra",
+      model: "gpt-6.1-sol",
     });
   });
 
   it("leaves an allowed default and an unset default alone", () => {
     const sol = Schema.decodeUnknownSync(ModelSelection)({
       instanceId: "codex",
-      model: "gpt-6-sol",
+      model: "gpt-6.1-sol",
     });
     expect(retireModelSelection(sol, DEFAULT_MODEL_OFFERING)).toBe(sol);
     expect(retireModelSelection(null, DEFAULT_MODEL_OFFERING)).toBeNull();
@@ -182,5 +217,22 @@ describe("the Claude new-thread default", () => {
   it("ships the offering as the server settings default", () => {
     const decoded = Schema.decodeUnknownSync(ServerSettings)({});
     expect(decoded.modelOffering).toEqual(DEFAULT_MODEL_OFFERING);
+  });
+
+  it("preserves the provider and explicit options when migrating a retired Codex model", () => {
+    const options = [
+      { id: "reasoningEffort", value: "high" },
+      { id: "contextWindow", value: "1m" },
+    ];
+    expect(
+      retireModelSelection(
+        Schema.decodeUnknownSync(ModelSelection)({
+          instanceId: "codex",
+          model: "gpt-6-sol",
+          options,
+        }),
+        DEFAULT_MODEL_OFFERING,
+      ),
+    ).toEqual({ instanceId: "codex", model: "gpt-6.1-sol", options });
   });
 });

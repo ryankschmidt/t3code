@@ -149,7 +149,7 @@ const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 
-export const DEFAULT_MODEL = "gpt-6-astra";
+export const DEFAULT_MODEL = "gpt-6.1-sol";
 
 export function isCurrentCodexModel(model: string): boolean {
   return model === "gpt-5.3-codex-spark" || /^gpt-(?:5\.6|6)(?:$|[.-])/.test(model);
@@ -285,9 +285,8 @@ export type ModelAnswerVerdict = "match" | "mismatch" | "unknown";
  */
 export function normalizeModelIdentityForComparison(model: string): string {
   return modelIdentity(model)
-    .replace(/\[[^\]]*\]$/, "")
+    .replace(/\[\d+[km]\]$/, "")
     .replace(/-\d{8}$/, "")
-    .replace(/-latest$/, "")
     .trim();
 }
 
@@ -298,14 +297,9 @@ export function compareSelectedAndAnsweringModel(
   const selectedId = selected ? normalizeModelIdentityForComparison(selected) : "";
   const answeringId = answering ? normalizeModelIdentityForComparison(answering) : "";
   if (selectedId.length === 0 || answeringId.length === 0) return "unknown";
-  if (selectedId === answeringId) return "match";
-  // One side may carry a finer variant of the same model (`claude-opus-5`
-  // answered by `claude-opus-5-1`). A prefix is the same model only when it
-  // ends at a segment boundary, so `claude-opus-5` never absorbs
-  // `claude-opus-50` and never absorbs a different family.
-  const [shorter, longer] =
-    selectedId.length <= answeringId.length ? [selectedId, answeringId] : [answeringId, selectedId];
-  return longer.startsWith(`${shorter}-`) ? "match" : "mismatch";
+  // Version, fast-mode, and moving-alias suffixes may name different models.
+  // Only the explicitly normalized route/date/window decoration is equivalent.
+  return selectedId === answeringId ? "match" : "mismatch";
 }
 
 /**
@@ -314,9 +308,8 @@ export function compareSelectedAndAnsweringModel(
  * default; when none are available, Codex's own `isDefault` flag wins.
  */
 export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
+  "gpt-6.1-sol",
   "gpt-6-astra",
-
-  "gpt-6-sol",
   "gpt-5.6-terra",
 ];
 export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-6-luna";
@@ -399,20 +392,21 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "gpt-5.3": "gpt-5.3-codex",
     "5.3-spark": "gpt-5.3-codex-spark",
     "gpt-5.3-spark": "gpt-5.3-codex-spark",
-    "5.6": "gpt-6-sol",
-    sol: "gpt-6-sol",
-    "5.6-sol": "gpt-6-sol",
-    "gpt-5.6": "gpt-6-sol",
+    "5.6": "gpt-6.1-sol",
+    sol: "gpt-6.1-sol",
+    "6.1-sol": "gpt-6.1-sol",
+    "5.6-sol": "gpt-6.1-sol",
+    "gpt-5.6": "gpt-6.1-sol",
     luna: "gpt-6-luna",
     "5.6-luna": "gpt-6-luna",
     terra: "gpt-5.6-terra",
     "5.6-terra": "gpt-5.6-terra",
   },
   [CLAUDE_DRIVER_KIND]: {
-    fable: "claude-fable-5",
-    "fable-5": "claude-fable-5",
-    "claude-fable": "claude-fable-5",
-    "claude-sonnet-5": "claude-sonnet-5",
+    fable: "claude-fable-5-1",
+    "fable-5": "claude-fable-5-1",
+    "claude-fable": "claude-fable-5-1",
+    "claude-sonnet-5": "claude-sonnet-5-5",
     // ThroughLine: Opus 5 is retired, so every name that meant it resolves to its successor
     // rather than to a model no picker offers.
     opus: "claude-opus-5-5",
@@ -428,10 +422,12 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "opus-4.6": "claude-opus-4-6",
     "claude-opus-4.6": "claude-opus-4-6",
     "claude-opus-4-6-20251117": "claude-opus-4-6",
-    sonnet: "claude-sonnet-5",
-    "sonnet-5": "claude-sonnet-5",
-    "claude-sonnet-5.0": "claude-sonnet-5",
-    "claude-sonnet-5-0": "claude-sonnet-5",
+    sonnet: "claude-sonnet-5-5",
+    "sonnet-5": "claude-sonnet-5-5",
+    "sonnet-5.5": "claude-sonnet-5-5",
+    "claude-sonnet-5.5": "claude-sonnet-5-5",
+    "claude-sonnet-5.0": "claude-sonnet-5-5",
+    "claude-sonnet-5-0": "claude-sonnet-5-5",
     "sonnet-4.6": "claude-sonnet-4-6",
     "claude-sonnet-4.6": "claude-sonnet-4-6",
     "claude-sonnet-4-6-20251117": "claude-sonnet-4-6",
