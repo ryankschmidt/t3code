@@ -153,3 +153,32 @@ it("does not let an unrelated incomplete legacy creation hide an explicitly reco
     },
   );
 });
+
+it("treats equivalent legacy and created-kind rows as the same record regardless of key order", async () => {
+  const modern = row("root", null);
+  const reversed = Object.fromEntries(Object.entries(modern).reverse());
+  await fixture([row("root", null, { kind: undefined }), reversed], async (filePath) => {
+    expect(await readLauncherThreadFamily("root", { filePath })).toMatchObject({
+      status: "recorded",
+      family: { status: "recorded", rootThreadId: "root" },
+    });
+  });
+});
+
+it("does not certify an unresolved non-null creator edge or expose it as a verified parent", async () => {
+  await fixture(
+    [
+      row("root", null),
+      row("child", "root", {
+        creating_thread_resolution: "THREAD_ADDRESS_NOT_FOUND",
+      }),
+    ],
+    async (filePath) => {
+      expect(await readLauncherThreadFamily("child", { filePath })).toMatchObject({
+        status: "recorded",
+        parentThreadId: null,
+        family: { status: "unknown", reason: "creator-unresolved" },
+      });
+    },
+  );
+});

@@ -131,7 +131,17 @@ export async function readLauncherThreadFamily(
     }
     const record = { ...decoded.value, kind: "created" };
     const prior = records.get(record.thread_id);
-    if (prior && JSON.stringify(prior) !== JSON.stringify(record)) conflicts.add(record.thread_id);
+    if (
+      prior &&
+      (prior.thread_id !== record.thread_id ||
+        prior.creating_thread_id !== record.creating_thread_id ||
+        prior.creating_thread_resolution !== record.creating_thread_resolution ||
+        prior.launcher_seat !== record.launcher_seat ||
+        prior.purpose !== record.purpose ||
+        prior.handle !== record.handle ||
+        prior.host !== record.host)
+    )
+      conflicts.add(record.thread_id);
     records.set(record.thread_id, record);
   }
   if (invalidRecords.has(threadId)) return unknown("invalid-record");
@@ -142,7 +152,8 @@ export async function readLauncherThreadFamily(
     threadId,
     source: sourceSchema,
     status: "recorded" as const,
-    parentThreadId: record.creating_thread_id,
+    parentThreadId:
+      record.creating_thread_resolution === "RESOLVED" ? record.creating_thread_id : null,
     creatorResolution: record.creating_thread_resolution,
     launcherSeat: record.launcher_seat,
     purpose: record.purpose,
@@ -166,6 +177,12 @@ export async function readLauncherThreadFamily(
           current.creating_thread_resolution === "NO_SESSION"
             ? { status: "recorded", rootThreadId: current.thread_id, ancestorThreadIds: ancestors }
             : { status: "unknown", reason: "creator-unresolved", ancestorThreadIds: ancestors },
+      };
+    }
+    if (current.creating_thread_resolution !== "RESOLVED") {
+      return {
+        ...base,
+        family: { status: "unknown", reason: "creator-unresolved", ancestorThreadIds: ancestors },
       };
     }
     const parent = current.creating_thread_id;
