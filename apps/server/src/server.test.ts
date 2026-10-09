@@ -1804,12 +1804,19 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({})),
         );
         const { cookie, url } = parseSessionCookieFromWsUrl(wsUrl);
-        const constructor = (socketUrl: string, protocols?: string | ReadonlyArray<string>) =>
-          new NodeSocket.NodeWS.WebSocket(
+        const constructor = (socketUrl: string, options?: Socket.WebSocketConstructorOptions) => {
+          const protocols =
+            typeof options === "string" || Array.isArray(options) ? options : undefined;
+          const headers =
+            typeof options === "object" && !Array.isArray(options) ? options?.headers : undefined;
+          return new NodeSocket.NodeWS.WebSocket(
             socketUrl,
-            protocols as string | string[] | undefined,
-            cookie ? { headers: { cookie } } : undefined,
+            protocols,
+            cookie || headers
+              ? { headers: { ...(cookie ? { cookie } : {}), ...headers } }
+              : undefined,
           ) as unknown as globalThis.WebSocket;
+        };
         const factory = yield* ClientRpcSession.make({ hello: helloFixtures[0].client }).pipe(
           Effect.provideService(Socket.WebSocketConstructor, constructor),
         );
