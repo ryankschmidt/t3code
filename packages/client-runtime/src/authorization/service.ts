@@ -59,6 +59,19 @@ export interface AuthorizedRemoteHttpEnvironment {
   readonly httpAuthorization: Extract<PreparedHttpAuthorization, { readonly _tag: "Dpop" }>;
 }
 
+export interface DpopLeaseOwner {
+  readonly identity: ClientCapabilities.CloudSessionIdentity;
+  readonly thumbprint: string;
+}
+
+const grantRefreshSkew = (grant: TokenStore.RemoteDpopAccessToken): number =>
+  grant.issuedAtEpochMs !== undefined && grant.issuedAtEpochMs < grant.expiresAtEpochMs
+    ? Math.min(
+        DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS,
+        (grant.expiresAtEpochMs - grant.issuedAtEpochMs) / 10,
+      )
+    : DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS;
+
 export class RemoteEnvironmentAuthorization extends Context.Service<
   RemoteEnvironmentAuthorization,
   {
@@ -75,6 +88,8 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
     readonly authorizeDpopHttp: (input: {
       readonly expectedEnvironmentId: EnvironmentId;
       readonly rejectedAccessToken?: string;
+      /** Local connection-lease restriction, never an endpoint parameter or a scope grant. */
+      readonly leaseOwner?: DpopLeaseOwner;
     }) => Effect.Effect<AuthorizedRemoteHttpEnvironment, ConnectionAttemptError>;
   }
 >()("@t3tools/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
@@ -236,6 +251,23 @@ export const make = Effect.gen(function* () {
     }
   });
 
+  const assertOwner = Effect.fnUntraced(function* (
+    identity: ClientCapabilities.CloudSessionIdentity,
+    thumbprint: string,
+  ) {
+    yield* assertSession(identity);
+    const currentThumbprint = yield* signer.thumbprint.pipe(
+      Effect.mapError(
+        () =>
+          new ConnectionBlockedError({
+            reason: "configuration",
+            detail: "Could not validate the environment authorization key.",
+          }),
+      ),
+    );
+    if (currentThumbprint !== thumbprint) return yield* sessionChanged();
+  });
+
   // Called under tokenLock so a late rejection cannot remove a newer credential.
   const removeRejectedToken = Effect.fnUntraced(function* (
     environmentId: EnvironmentId,
@@ -344,6 +376,9 @@ export const make = Effect.gen(function* () {
       return yield* sessionChanged();
     }
     const identity = session.value;
+    if (input.leaseOwner !== undefined && input.leaseOwner.identity !== identity) {
+      return yield* sessionChanged();
+    }
     const thumbprint = yield* signer.thumbprint.pipe(
       Effect.mapError(
         () =>
@@ -356,7 +391,10 @@ export const make = Effect.gen(function* () {
     );
     const selected = yield* tokenLock.withPermits(1)(
       Effect.gen(function* () {
-        yield* assertSession(identity);
+        if (input.leaseOwner !== undefined && input.leaseOwner.thumbprint !== thumbprint) {
+          return yield* sessionChanged();
+        }
+        yield* assertOwner(identity, thumbprint);
         const now = yield* Clock.currentTimeMillis;
         const cached = yield* tokenStore
           .get(input.expectedEnvironmentId)
@@ -365,15 +403,9 @@ export const make = Effect.gen(function* () {
         // A fixed one-minute margin would immediately discard every short-lived grant.
         // Preserve the legacy margin for old cache entries, but cap new grants at 10% of their
         // actual admitted lifetime so they can be reused and still renew before expiry.
-        const refreshSkew =
-          Option.isSome(cached) &&
-          cached.value.issuedAtEpochMs !== undefined &&
-          cached.value.issuedAtEpochMs < cached.value.expiresAtEpochMs
-            ? Math.min(
-                DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS,
-                (cached.value.expiresAtEpochMs - cached.value.issuedAtEpochMs) / 10,
-              )
-            : DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS;
+        const refreshSkew = Option.isSome(cached)
+          ? grantRefreshSkew(cached.value)
+          : DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS;
         if (
           Option.isSome(cached) &&
           cached.value.environmentId === input.expectedEnvironmentId &&
@@ -406,12 +438,25 @@ export const make = Effect.gen(function* () {
           Effect.flatMap((token) =>
             tokenLock.withPermits(1)(
               Effect.gen(function* () {
-                yield* assertSession(identity);
+                yield* assertOwner(identity, thumbprint);
                 yield* tokenStore
                   .put(token)
                   .pipe(Effect.withSpan("environment.authorization.accessToken.persist"));
                 const current = yield* cloudSession.identity;
-                if (Option.isNone(current) || current.value !== identity) {
+                const currentThumbprint = yield* signer.thumbprint.pipe(
+                  Effect.mapError(
+                    () =>
+                      new ConnectionBlockedError({
+                        reason: "configuration",
+                        detail: "Could not validate the persisted grant's authorization key.",
+                      }),
+                  ),
+                );
+                if (
+                  Option.isNone(current) ||
+                  current.value !== identity ||
+                  currentThumbprint !== thumbprint
+                ) {
                   yield* removeRejectedToken(input.expectedEnvironmentId, token.accessToken);
                   return yield* sessionChanged();
                 }
@@ -457,7 +502,7 @@ export const make = Effect.gen(function* () {
       "connection.remote_token_cache": selected.fromCache ? "hit" : "miss",
     });
     const token = yield* selected.token;
-    yield* assertSession(identity);
+    yield* assertOwner(identity, thumbprint);
     return { token, fromCache: selected.fromCache, identity };
   });
 
@@ -520,3 +565,116 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(RemoteEnvironmentAuthorization, make);
+
+/** Captures authorization capabilities once; the connection driver owns each returned loop's scope.
+ * The loop is only a consumer. Shared exchange, cache replacement and scopes stay in the service. */
+export const makeDpopLeaseMaintainer = Effect.gen(function* () {
+  const remote = yield* RemoteEnvironmentAuthorization;
+  const tokens = yield* TokenStore.RemoteDpopAccessTokenStore;
+  const session = yield* ClientCapabilities.CloudSession;
+  const signer = yield* ManagedRelay.ManagedRelayDpopSigner;
+
+  const maintain: (environmentId: EnvironmentId) => Effect.Effect<never, ConnectionAttemptError> =
+    Effect.fn("clientRuntime.authorization.maintainConnectionLease")(function* (environmentId) {
+      const identity = yield* session.identity;
+      if (Option.isNone(identity))
+        return yield* new ConnectionBlockedError({
+          reason: "authentication",
+          detail: "No authorization owner for this connection.",
+        });
+      const thumbprint = yield* signer.thumbprint.pipe(
+        Effect.mapError(
+          () =>
+            new ConnectionBlockedError({
+              reason: "configuration",
+              detail: "Could not validate the connection authorization key.",
+            }),
+        ),
+      );
+      const owner: DpopLeaseOwner = { identity: identity.value, thumbprint };
+      let failures = 0;
+      while (true) {
+        const current = yield* session.identity;
+        const currentKey = yield* signer.thumbprint.pipe(
+          Effect.mapError(
+            () =>
+              new ConnectionBlockedError({
+                reason: "configuration",
+                detail: "Could not validate the connection authorization key.",
+              }),
+          ),
+        );
+        if (
+          Option.isNone(current) ||
+          current.value !== owner.identity ||
+          currentKey !== owner.thumbprint
+        ) {
+          return yield* new ConnectionBlockedError({
+            reason: "authentication",
+            detail: "The connection authorization owner changed.",
+          });
+        }
+        const cached = yield* tokens.get(environmentId);
+        if (
+          Option.isNone(cached) ||
+          cached.value.accountId !== owner.identity.accountId ||
+          cached.value.dpopThumbprint !== owner.thumbprint
+        ) {
+          return yield* new ConnectionBlockedError({
+            reason: "authentication",
+            detail: "No matching grant for the connection authorization owner.",
+          });
+        }
+        const now = yield* Clock.currentTimeMillis;
+        const remaining = cached.value.expiresAtEpochMs - now;
+        if (remaining <= 0)
+          return yield* new ConnectionTransientError({
+            reason: "timeout",
+            detail: "The connection grant expired before unattended renewal completed.",
+          });
+        const delay = cached.value.expiresAtEpochMs - grantRefreshSkew(cached.value) - now;
+        if (delay > 0) {
+          // Bound native timer size for long persisted lifetimes; every wake re-reads current authority.
+          yield* Effect.sleep(Math.min(delay, 86_400_000));
+          continue;
+        }
+        const result = yield* remote
+          .authorizeDpopHttp({ expectedEnvironmentId: environmentId, leaseOwner: owner })
+          .pipe(
+            Effect.timeoutOrElse({
+              duration: remaining,
+              orElse: () =>
+                Effect.fail(
+                  new ConnectionTransientError({
+                    reason: "timeout",
+                    detail: "The connection grant expired while waiting for renewal.",
+                  }),
+                ),
+            }),
+            Effect.result,
+          );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "ConnectionTransientError" || ++failures >= 3)
+            return yield* result.failure;
+          const budget = cached.value.expiresAtEpochMs - (yield* Clock.currentTimeMillis);
+          const backoff = Math.min(250 * 2 ** (failures - 1), 5_000);
+          if (budget <= backoff) return yield* result.failure;
+          yield* Effect.sleep(backoff);
+          continue;
+        }
+        failures = 0;
+        const replacement = yield* tokens.get(environmentId);
+        const completedAt = yield* Clock.currentTimeMillis;
+        if (
+          Option.isNone(replacement) ||
+          replacement.value.expiresAtEpochMs - grantRefreshSkew(replacement.value) <= completedAt
+        ) {
+          return yield* new ConnectionTransientError({
+            reason: "timeout",
+            detail: "The renewed grant has no safe unattended renewal window.",
+          });
+        }
+      }
+    });
+  return maintain;
+});
