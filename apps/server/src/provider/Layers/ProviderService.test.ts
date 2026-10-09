@@ -2,6 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeHttp from "node:http";
 
 import type {
   ProviderApprovalDecision,
@@ -37,6 +38,7 @@ import { it, assert, describe, vi } from "@effect/vitest";
 import { afterAll } from "vite-plus/test";
 
 import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -64,7 +66,8 @@ import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
 import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
-import { makeProviderServiceLive } from "./ProviderService.ts";
+import { makeProviderServiceLive, type ProviderServiceLiveOptions } from "./ProviderService.ts";
+import { BrokerStatusClient } from "../../throughline/headroom/BrokerStatusClient.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -419,6 +422,7 @@ function makeProviderServiceLayer(
     readonly supportsConversationRollback?: boolean;
     readonly analyticsLayer?: Layer.Layer<AnalyticsService.AnalyticsService>;
     readonly registry?: ProviderAdapterRegistry.ProviderAdapterRegistry["Service"];
+    readonly readHeadroomSnapshot?: ProviderServiceLiveOptions["readHeadroomSnapshot"];
   } = {},
 ) {
   const codex = makeFakeCodexAdapter(CODEX_DRIVER, input.supportsConversationRollback);
@@ -446,7 +450,11 @@ function makeProviderServiceLayer(
 
   const layer = it.layer(
     Layer.mergeAll(
-      makeProviderServiceLive().pipe(
+      makeProviderServiceLive(
+        input.readHeadroomSnapshot
+          ? { readHeadroomSnapshot: input.readHeadroomSnapshot }
+          : undefined,
+      ).pipe(
         Layer.provide(NodeServices.layer),
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
@@ -1059,6 +1067,409 @@ it.effect("ProviderServiceLive rejects new sessions for disabled custom instance
 );
 
 const routing = makeProviderServiceLayer();
+const epochIso = (epoch: number) => DateTime.formatIso(DateTime.makeUnsafe(epoch));
+
+it.effect("ProviderService cache factory owns initial/periodic HTTP refresh and cleanup", () =>
+  Effect.gen(function* () {
+    const codex = makeFakeCodexAdapter();
+    const now = DateTime.toEpochMillis(yield* DateTime.now);
+    let cacheNow = now;
+    let quotaState: "empty" | "available" = "empty";
+    let requests = 0;
+    const fixture = NodeHttp.createServer((_request, response) => {
+      requests++;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          schema: "throughline-provider-broker.observer-status.v1",
+          last_sequence: requests,
+          identities: [
+            {
+              identity: "current-account",
+              provider: "codex",
+              credential_loaded: true,
+              quota: {
+                state: quotaState,
+                observed_at: epochIso(cacheNow),
+                reset_at: epochIso(now + 600_000),
+              },
+            },
+            {
+              identity: "foreign-account",
+              provider: "codex",
+              credential_loaded: false,
+              quota: { state: "available", observed_at: epochIso(cacheNow) },
+            },
+          ],
+        }),
+      );
+    });
+    yield* Effect.promise(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          fixture.once("error", reject);
+          fixture.listen(0, "127.0.0.1", resolve);
+        }),
+    );
+    yield* Effect.addFinalizer(() =>
+      Effect.promise(
+        () =>
+          new Promise<void>((resolve) => {
+            fixture.closeAllConnections();
+            fixture.close(() => resolve());
+          }),
+      ),
+    );
+    const address = fixture.address();
+    assert(address && typeof address !== "string");
+    const cache = new BrokerStatusClient({
+      statusUrl: `http://127.0.0.1:${address.port}/v1/status`,
+      freshnessMs: 120_000,
+      now: () => cacheNow,
+    });
+    const initial = Promise.withResolvers<void>();
+    const periodic = Promise.withResolvers<void>();
+    const later = Promise.withResolvers<void>();
+    const originalRefresh = cache.refresh.bind(cache);
+    let refreshes = 0;
+    vi.spyOn(cache, "refresh").mockImplementation(async () => {
+      await originalRefresh();
+      const number = refreshes++;
+      (number === 0 ? initial : number === 1 ? periodic : later).resolve();
+    });
+    const scope = yield* Scope.make();
+    const repository = ProviderSessionRuntime.layer.pipe(Layer.provide(SqlitePersistenceMemory));
+    const directory = ProviderSessionDirectoryLive.pipe(Layer.provide(repository));
+    const configured = [{ identity: "current-account", provider: "codex" }];
+    const mount = (options: ProviderServiceLiveOptions, ownedCache: BrokerStatusClient) =>
+      makeProviderServiceLive(options, ownedCache).pipe(
+        Layer.provide(NodeServices.layer),
+        Layer.provide(
+          Layer.succeed(
+            ProviderAdapterRegistry.ProviderAdapterRegistry,
+            makeStaticInstanceRegistry([[codexInstanceId, codex.adapter]]),
+          ),
+        ),
+        Layer.provide(directory),
+        Layer.provide(defaultServerSettingsLayer),
+        Layer.provide(serverConfigTestLayer),
+        Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      );
+    const layer = mount(
+      {
+        issueMcpCredential: () => Effect.succeed(undefined),
+        readHeadroomSnapshot: () => ({ configured, freshnessMs: 120_000 }),
+      },
+      cache,
+    );
+    const services = yield* Layer.build(layer).pipe(Scope.provide(scope));
+    const provider = yield* ProviderService.ProviderService.pipe(Effect.provide(services));
+    yield* Effect.promise(() => initial.promise);
+    assert.equal(cache.read().state, "fresh");
+    const threadId = asThreadId("cache-factory-lifetime");
+    yield* provider.startSession(threadId, {
+      provider: CODEX_DRIVER,
+      providerInstanceId: codexInstanceId,
+      threadId,
+      runtimeMode: "full-access",
+    });
+    codex.sendTurn.mockClear();
+    const sending = yield* provider
+      .sendTurn({ threadId, input: "controlled cached pool" })
+      .pipe(Effect.forkScoped);
+    yield* advanceTestClock(1);
+    assert.equal(
+      codex.sendTurn.mock.calls.length,
+      0,
+      "foreign available account must not escape the configured pool",
+    );
+    quotaState = "available";
+    cacheNow = now + 60_000;
+    yield* advanceTestClock(59_999);
+    yield* Effect.promise(() => periodic.promise);
+    yield* Fiber.join(sending);
+    assert.equal(
+      codex.sendTurn.mock.calls.length,
+      1,
+      "periodic truthful refresh must release the existing pending send",
+    );
+    // A configured account absent from HTTP must survive as unknown, not vanish.
+    configured.push({ identity: "new-unloaded-unknown", provider: "codex" });
+    quotaState = "empty";
+    cacheNow = now + 120_000;
+    yield* advanceTestClock(60_000);
+    yield* Effect.promise(() => later.promise);
+    yield* provider.sendTurn({ threadId, input: "new configured unknown account" });
+    assert.equal(
+      codex.sendTurn.mock.calls.length,
+      2,
+      "current configured unknown identity must admit even beside known-empty observations",
+    );
+    yield* Scope.close(scope, Exit.void);
+    assert.equal(cache.read().state, "closed");
+    const stoppedAt = requests;
+    yield* advanceTestClock(120_000);
+    assert.equal(requests, stoppedAt, "refresh lifetime must not survive its provider scope");
+    // Production fallback has no invented configured-owner getter. Unknown
+    // configuration and an unloaded-but-available observer identity must remain.
+    const fallbackScope = yield* Scope.make();
+    cacheNow = DateTime.toEpochMillis(yield* DateTime.now);
+    const fallbackReady = Promise.withResolvers<void>();
+    const fallbackCache = new BrokerStatusClient({
+      statusUrl: `http://127.0.0.1:${address.port}/v1/status`,
+      freshnessMs: 120_000,
+      now: () => cacheNow,
+    });
+    const fallbackRefresh = fallbackCache.refresh.bind(fallbackCache);
+    vi.spyOn(fallbackCache, "refresh").mockImplementation(async () => {
+      await fallbackRefresh();
+      fallbackReady.resolve();
+    });
+    const fallbackServices = yield* Layer.build(
+      mount(
+        {
+          issueMcpCredential: () => Effect.succeed(undefined),
+        },
+        fallbackCache,
+      ),
+    ).pipe(Scope.provide(fallbackScope));
+    const fallbackProvider = yield* ProviderService.ProviderService.pipe(
+      Effect.provide(fallbackServices),
+    );
+    yield* Effect.promise(() => fallbackReady.promise);
+    assert.equal(
+      fallbackCache.read().identities.find((row) => row.identity === "foreign-account")?.loaded,
+      false,
+    );
+    assert.equal(
+      fallbackCache.read().identities.find((row) => row.identity === "foreign-account")?.configured,
+      null,
+    );
+    const fallbackThread = asThreadId("cache-factory-fallback-pool");
+    yield* fallbackProvider.startSession(fallbackThread, {
+      provider: CODEX_DRIVER,
+      providerInstanceId: codexInstanceId,
+      threadId: fallbackThread,
+      runtimeMode: "full-access",
+    });
+    codex.sendTurn.mockClear();
+    yield* fallbackProvider.sendTurn({
+      threadId: fallbackThread,
+      input: "unknown configured unloaded pool member",
+    });
+    assert.equal(codex.sendTurn.mock.calls.length, 1);
+    yield* Scope.close(fallbackScope, Exit.void);
+    assert.equal(fallbackCache.read().state, "closed");
+  }),
+);
+
+let observerInput:
+  | {
+      readonly configured: readonly { identity: string; provider: string }[];
+      readonly snapshot?: {
+        identities: readonly {
+          identity: string;
+          provider: string;
+          credential_loaded: boolean;
+          quota?: {
+            state: "unknown" | "available" | "empty";
+            observed_at?: string;
+            reset_at?: string;
+          };
+        }[];
+      };
+      readonly freshnessMs: number;
+    }
+  | undefined;
+const headroomDispatch = makeProviderServiceLayer({
+  readHeadroomSnapshot: () => observerInput,
+});
+headroomDispatch.layer("ProviderService actual headroom dispatch", (it) => {
+  it.effect(
+    "admits absent, stale and reset-unknown observations through the real adapter consumer",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId("headroom-unknown-stale");
+        yield* provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        });
+        headroomDispatch.codex.sendTurn.mockClear();
+        observerInput = undefined;
+        yield* provider.sendTurn({ threadId, input: "absent" });
+        observerInput = {
+          configured: [{ identity: "account-unloaded", provider: "codex" }],
+          freshnessMs: 1_000,
+          snapshot: {
+            identities: [
+              {
+                identity: "account-unloaded",
+                provider: "codex",
+                credential_loaded: false,
+                quota: {
+                  state: "empty",
+                  observed_at: DateTime.formatIso(DateTime.makeUnsafe(-60_000)),
+                  reset_at: "2099-01-01T00:00:00Z",
+                },
+              },
+            ],
+          },
+        };
+        yield* provider.sendTurn({ threadId, input: "stale" });
+        observerInput = {
+          ...observerInput,
+          snapshot: {
+            identities: [
+              {
+                identity: "account-unloaded",
+                provider: "codex",
+                credential_loaded: false,
+                quota: { state: "empty", observed_at: DateTime.formatIso(DateTime.makeUnsafe(0)) },
+              },
+            ],
+          },
+        };
+        yield* provider.sendTurn({ threadId, input: "reset unknown" });
+        assert.equal(headroomDispatch.codex.sendTurn.mock.calls.length, 3);
+      }),
+  );
+  it.effect("fresh empty holds the actual adapter call until reset without a new wait engine", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("headroom-empty-reset");
+      const now = DateTime.toEpochMillis(yield* DateTime.now);
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      headroomDispatch.codex.sendTurn.mockClear();
+      observerInput = {
+        configured: [{ identity: "account-active", provider: "codex" }],
+        freshnessMs: 120_000,
+        snapshot: {
+          identities: [
+            {
+              identity: "account-active",
+              provider: "codex",
+              credential_loaded: true,
+              quota: {
+                state: "empty",
+                observed_at: DateTime.formatIso(DateTime.makeUnsafe(now)),
+                reset_at: DateTime.formatIso(DateTime.makeUnsafe(now + 60_000)),
+              },
+            },
+          ],
+        },
+      };
+      const waiting = yield* provider.streamEvents.pipe(
+        Stream.filter(
+          (event) => event.type === "session.state.changed" && event.payload.state === "waiting",
+        ),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      const sending = yield* provider
+        .sendTurn({ threadId, input: "controlled empty pool" })
+        .pipe(Effect.forkScoped);
+      yield* advanceTestClock(1);
+      assert.equal(headroomDispatch.codex.sendTurn.mock.calls.length, 0);
+      yield* advanceTestClock(59_999);
+      yield* Fiber.join(sending);
+      const events = yield* Fiber.join(waiting);
+      assert.equal(events.length, 1);
+      assert.equal(headroomDispatch.codex.sendTurn.mock.calls.length, 1);
+    }),
+  );
+  it.effect("a held turn admits when the observation becomes stale before reset", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("headroom-expires");
+      const now = DateTime.toEpochMillis(yield* DateTime.now);
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      headroomDispatch.codex.sendTurn.mockClear();
+      observerInput = {
+        configured: [{ identity: "account-active", provider: "codex" }],
+        freshnessMs: 1_000,
+        snapshot: {
+          identities: [
+            {
+              identity: "account-active",
+              provider: "codex",
+              credential_loaded: true,
+              quota: {
+                state: "empty",
+                observed_at: DateTime.formatIso(DateTime.makeUnsafe(now)),
+                reset_at: DateTime.formatIso(DateTime.makeUnsafe(now + 60_000)),
+              },
+            },
+          ],
+        },
+      };
+      const sending = yield* provider
+        .sendTurn({ threadId, input: "stale while waiting" })
+        .pipe(Effect.forkScoped);
+      yield* advanceTestClock(1);
+      assert.equal(headroomDispatch.codex.sendTurn.mock.calls.length, 0);
+      yield* advanceTestClock(999);
+      yield* Fiber.join(sending);
+      assert.equal(headroomDispatch.codex.sendTurn.mock.calls.length, 1);
+    }),
+  );
+  it.effect(
+    "admits a dynamic pool with any available or unknown member, not a fixed account count",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId("headroom-dynamic-pool");
+        const now = DateTime.toEpochMillis(yield* DateTime.now);
+        yield* provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        });
+        headroomDispatch.codex.sendTurn.mockClear();
+        const configured = Array.from({ length: 32 }, (_, index) => ({
+          identity: `controlled-${index}`,
+          provider: "codex",
+        }));
+        observerInput = {
+          configured,
+          freshnessMs: 120_000,
+          snapshot: {
+            identities: configured.map((row, index) => ({
+              ...row,
+              credential_loaded: index !== 31,
+              quota: {
+                state: index === 31 ? "unknown" : "empty",
+                observed_at: DateTime.formatIso(DateTime.makeUnsafe(now)),
+                reset_at: DateTime.formatIso(DateTime.makeUnsafe(now + 60_000)),
+              },
+            })),
+          },
+        };
+        yield* provider.sendTurn({ threadId, input: "unknown unloaded member" });
+        assert.equal(headroomDispatch.codex.sendTurn.mock.calls.length, 1);
+      }),
+  );
+});
 
 const customCompactionDriver = ProviderDriverKind.make("custom-compaction-provider");
 const nativeCompactionInstanceId = ProviderInstanceId.make("native-compaction");
