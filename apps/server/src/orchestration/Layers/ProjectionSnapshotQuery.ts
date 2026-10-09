@@ -116,6 +116,8 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
     isStreaming: Schema.Number,
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
     context: Schema.NullOr(Schema.fromJsonString(OrchestrationMessageContext)),
+    senderPublicId: Schema.optional(Schema.NullOr(Schema.String)),
+    senderGeneration: Schema.optional(Schema.NullOr(Schema.String)),
   }),
 );
 const ProjectionTurnStartMessageDbRowSchema = ProjectionThreadMessageDbRowSchema.mapFields(
@@ -838,6 +840,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           context_json AS "context",
+          sender_public_id AS "senderPublicId",
+          sender_generation AS "senderGeneration",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1531,6 +1535,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         text,
         attachments_json AS "attachments",
         context_json AS "context",
+          sender_public_id AS "senderPublicId",
+          sender_generation AS "senderGeneration",
         is_streaming AS "isStreaming",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
@@ -1564,6 +1570,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           context_json AS "context",
+          sender_public_id AS "senderPublicId",
+          sender_generation AS "senderGeneration",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1977,6 +1985,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           context_json AS "context",
+          sender_public_id AS "senderPublicId",
+          sender_generation AS "senderGeneration",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -2397,6 +2407,9 @@ pending_approval_requests AS (
                   text: row.text,
                   ...(row.attachments !== null ? { attachments: row.attachments } : {}),
                   ...(row.context !== null ? { context: row.context } : {}),
+                  ...(row.senderPublicId != null && row.senderGeneration != null
+                    ? { senderPublicId: row.senderPublicId, senderGeneration: row.senderGeneration }
+                    : {}),
                   turnId: row.turnId,
                   streaming: row.isStreaming === 1,
                   createdAt: row.createdAt,
@@ -3635,6 +3648,9 @@ pending_approval_requests AS (
         updatedAt: row.updatedAt,
         ...(row.attachments !== null ? { attachments: row.attachments } : {}),
         ...(row.context !== null ? { context: row.context } : {}),
+        ...(row.senderPublicId != null && row.senderGeneration != null
+          ? { senderPublicId: row.senderPublicId, senderGeneration: row.senderGeneration }
+          : {}),
       },
       hasOtherUserMessages: row.hasOtherUserMessages === 1,
     }));

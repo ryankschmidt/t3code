@@ -24,6 +24,8 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
     isStreaming: Schema.Number,
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
     context: Schema.NullOr(Schema.fromJsonString(OrchestrationMessageContext)),
+    senderPublicId: Schema.optional(Schema.NullOr(Schema.String)),
+    senderGeneration: Schema.optional(Schema.NullOr(Schema.String)),
   }),
 );
 const ProjectionThreadMessageExistsDbRowSchema = Schema.Struct({ exists: Schema.Number });
@@ -42,6 +44,9 @@ function toProjectionThreadMessage(
     updatedAt: row.updatedAt,
     ...(row.attachments !== null ? { attachments: row.attachments } : {}),
     ...(row.context !== null ? { context: row.context } : {}),
+    ...(row.senderPublicId != null && row.senderGeneration != null
+      ? { senderPublicId: row.senderPublicId, senderGeneration: row.senderGeneration }
+      : {}),
   };
 }
 
@@ -63,6 +68,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json,
           context_json,
+          sender_public_id,
+          sender_generation,
           is_streaming,
           created_at,
           updated_at
@@ -89,6 +96,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
               WHERE message_id = ${row.messageId}
             )
           ),
+          ${row.senderPublicId ?? null},
+          ${row.senderGeneration ?? null},
           ${row.isStreaming ? 1 : 0},
           ${row.createdAt},
           ${row.updatedAt}
@@ -107,6 +116,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
             excluded.context_json,
             projection_thread_messages.context_json
           ),
+          sender_public_id = COALESCE(excluded.sender_public_id, projection_thread_messages.sender_public_id),
+          sender_generation = COALESCE(excluded.sender_generation, projection_thread_messages.sender_generation),
           is_streaming = excluded.is_streaming,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at
@@ -129,6 +140,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json,
           context_json,
+          sender_public_id,
+          sender_generation,
           is_streaming,
           created_at,
           updated_at
@@ -141,6 +154,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           ${row.text},
           ${nextAttachmentsJson},
           ${nextContextJson},
+          ${row.senderPublicId ?? null},
+          ${row.senderGeneration ?? null},
           1,
           ${row.createdAt},
           ${row.updatedAt}
@@ -159,6 +174,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
             excluded.context_json,
             projection_thread_messages.context_json
           ),
+          sender_public_id = COALESCE(excluded.sender_public_id, projection_thread_messages.sender_public_id),
+          sender_generation = COALESCE(excluded.sender_generation, projection_thread_messages.sender_generation),
           is_streaming = 1,
           updated_at = excluded.updated_at
       `;
@@ -178,6 +195,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           context_json AS "context",
+          sender_public_id AS "senderPublicId",
+          sender_generation AS "senderGeneration",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -217,6 +236,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           context_json AS "context",
+          sender_public_id AS "senderPublicId",
+          sender_generation AS "senderGeneration",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
