@@ -779,6 +779,23 @@ const makeWsRpcLayer = (
           authorizeEffect(requiredScopeForRpcMethod(method), effect),
           traceAttributes,
         );
+      const authorizeCurrentContinuationSession = <A, E, R>(
+        method: string,
+        effect: Effect.Effect<A, E, R>,
+      ) => {
+        const requiredScope = requiredScopeForRpcMethod(method);
+        return sessions.listActive().pipe(
+          Effect.mapError(() => authorizationError(requiredScope)),
+          Effect.flatMap((active) =>
+            active.some(
+              (session) =>
+                session.sessionId === currentSessionId && session.scopes.includes(requiredScope),
+            )
+              ? effect
+              : Effect.fail(authorizationError(requiredScope)),
+          ),
+        );
+      };
       const observeRpcStream = <A, E, R>(
         method: string,
         stream: Stream.Stream<A, E, R>,
@@ -2922,6 +2939,29 @@ const makeWsRpcLayer = (
               const keybindingsConfig = yield* keybindings.removeKeybindingRule(rule);
               return { keybindings: keybindingsConfig, issues: [] };
             }),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverReadContinuation]: () =>
+          observeRpcEffect(
+            WS_METHODS.serverReadContinuation,
+            authorizeCurrentContinuationSession(
+              WS_METHODS.serverReadContinuation,
+              serverSettings.getSettings.pipe(
+                Effect.map((settings) => settings.continueThreadsAfterServerUpdate),
+              ),
+            ),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverPatchContinuation]: ({ value }) =>
+          observeRpcEffect(
+            WS_METHODS.serverPatchContinuation,
+            authorizeCurrentContinuationSession(
+              WS_METHODS.serverPatchContinuation,
+              serverSettings.updateSettings({ continueThreadsAfterServerUpdate: value }).pipe(
+                Effect.andThen(serverSettings.getSettings),
+                Effect.map((settings) => settings.continueThreadsAfterServerUpdate),
+              ),
+            ),
             { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.serverGetSettings]: (_input) =>

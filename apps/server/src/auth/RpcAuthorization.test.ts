@@ -15,6 +15,21 @@ import {
 } from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it("local continuation read uses existing read scope", () => {
+    expect(requiredScopeForRpcMethod("server.readContinuation")).toBe(AuthOrchestrationReadScope);
+  });
+  it("local continuation patch requires operate, never read-only permission", () => {
+    expect(requiredScopeForRpcMethod("server.patchContinuation")).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod("server.patchContinuation")).not.toBe(
+      AuthOrchestrationReadScope,
+    );
+  });
+  it("both local continuation ports belong to the typed RPC group", () => {
+    expect(WsRpcGroup.requests.has("server.readContinuation")).toBe(true);
+    expect(WsRpcGroup.requests.has("server.patchContinuation")).toBe(true);
+  });
   it("negotiates ThroughLine hello under the existing read scope only", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.throughlineHello)).toBe(AuthOrchestrationReadScope);
   });

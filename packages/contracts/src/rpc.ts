@@ -384,6 +384,8 @@ export const WS_METHODS = {
   serverCommitDesktopUpdate: "server.commitDesktopUpdate",
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverRemoveKeybinding: "server.removeKeybinding",
+  serverReadContinuation: "server.readContinuation",
+  serverPatchContinuation: "server.patchContinuation",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -619,6 +621,22 @@ const WsServerCommitDesktopUpdateRpc = Rpc.make(WS_METHODS.serverCommitDesktopUp
   payload: DesktopUpdateCommitInput,
   success: ServerSelfUpdateResult,
   error: Schema.Union([ServerSelfUpdateError, EnvironmentAuthorizationError]),
+});
+
+const WsServerReadContinuationRpc = Rpc.make(WS_METHODS.serverReadContinuation, {
+  payload: Schema.Record(Schema.String, Schema.Never),
+  success: Schema.Boolean,
+  error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+const WsServerPatchContinuationRpc = Rpc.make(WS_METHODS.serverPatchContinuation, {
+  payload: Schema.Record(Schema.String, Schema.Unknown)
+    .check(
+      Schema.makeFilter((body) => Object.keys(body).length === 1 && Object.hasOwn(body, "value")),
+    )
+    .pipe(Schema.decodeTo(Schema.Struct({ value: Schema.Boolean }))),
+  success: Schema.Boolean,
+  error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
@@ -1484,6 +1502,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerCommitDesktopUpdateRpc,
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
+  WsServerReadContinuationRpc,
+  WsServerPatchContinuationRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,

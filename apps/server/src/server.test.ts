@@ -1,3 +1,6 @@
+import * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
+import { EnvironmentAuthorizationError } from "@t3tools/contracts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -523,6 +526,7 @@ const makeBrowserOtlpPayload = (spanName: string) =>
   });
 
 const buildAppUnderTest = (options?: {
+  realSettings?: boolean;
   onPairingChangesSubscribed?: Effect.Effect<void>;
   config?: Partial<ServerConfig.ServerConfig["Service"]>;
   layers?: {
@@ -867,14 +871,25 @@ const buildAppUnderTest = (options?: {
         ),
       ),
       Layer.provide(
-        Layer.mock(ServerSettings.ServerSettingsService)({
-          start: Effect.void,
-          ready: Effect.void,
-          getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
-          updateSettings: () => Effect.succeed(DEFAULT_SERVER_SETTINGS),
-          streamChanges: Stream.empty,
-          ...options?.layers?.serverSettings,
-        }),
+        options?.realSettings === true
+          ? Layer.effectDiscard(
+              ServerSettings.ServerSettingsService.pipe(
+                Effect.flatMap((settings) =>
+                  Effect.gen(function* () {
+                    yield* settings.start.pipe(Effect.forkScoped);
+                    yield* settings.ready;
+                  }),
+                ),
+              ),
+            ).pipe(Layer.provideMerge(ServerSettings.layer))
+          : Layer.mock(ServerSettings.ServerSettingsService)({
+              start: Effect.void,
+              ready: Effect.void,
+              getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+              updateSettings: () => Effect.succeed(DEFAULT_SERVER_SETTINGS),
+              streamChanges: Stream.empty,
+              ...options?.layers?.serverSettings,
+            }),
       ),
       Layer.provide(
         Layer.mergeAll(
@@ -1794,6 +1809,221 @@ const EMPTY_DEVICE_STATE: DeviceServiceState = {
 };
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it.effect("local continuation ports: missing and unknown scopes refuse", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* buildAppUnderTest({ realSettings: true });
+        const token = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+          scope: "access:read",
+        });
+        assert.equal(token.response.status, 200);
+        const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+          headers: { authorization: `Bearer ${token.body.access_token ?? ""}` },
+        });
+        assert.equal(ticketResponse.status, 200);
+        const { ticket } = yield* responseJsonEffect<{ readonly ticket: string }>(ticketResponse);
+        assert.equal(typeof ticket, "string");
+        const url = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket)}`;
+        yield* withWsRpcClient(url, (client) =>
+          Effect.gen(function* () {
+            const read = yield* client[WS_METHODS.serverReadContinuation]({}).pipe(Effect.flip);
+            const patch = yield* client[WS_METHODS.serverPatchContinuation]({ value: true }).pipe(
+              Effect.flip,
+            );
+            assert.equal(read._tag, "EnvironmentAuthorizationError");
+            assert.equal(patch._tag, "EnvironmentAuthorizationError");
+            if (read._tag === "EnvironmentAuthorizationError")
+              assert.equal(read.requiredScope, "orchestration:read");
+            if (patch._tag === "EnvironmentAuthorizationError")
+              assert.equal(patch.requiredScope, "orchestration:operate");
+          }),
+        );
+        const unknown = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+          scope: "fixture:unknown-scope",
+        });
+        assert.equal(unknown.response.status, 400);
+      }),
+    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("local continuation ports: revoked connected session cannot patch", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* buildAppUnderTest({ realSettings: true });
+        const ownerCookie = yield* getAuthenticatedSessionCookieHeader();
+        const token = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+          scope: "orchestration:read orchestration:operate",
+        });
+        assert.equal(token.response.status, 200);
+        const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+          headers: { authorization: `Bearer ${token.body.access_token ?? ""}` },
+        });
+        const { ticket } = yield* responseJsonEffect<{ readonly ticket: string }>(ticketResponse);
+        const url = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket)}`;
+        yield* withWsRpcClient(url, (client) =>
+          Effect.gen(function* () {
+            const before = yield* client[WS_METHODS.serverReadContinuation]({});
+            const response = yield* HttpClient.get("/api/auth/clients", {
+              headers: { cookie: ownerCookie },
+            });
+            const clients =
+              yield* responseJsonEffect<ReadonlyArray<{ sessionId: string; current: boolean }>>(
+                response,
+              );
+            const sessionId = clients.find((entry) => !entry.current)?.sessionId;
+            assert.isDefined(sessionId);
+            const revoked = yield* HttpClient.post("/api/auth/clients/revoke", {
+              headers: { cookie: ownerCookie },
+              body: yield* HttpBody.json({ sessionId }),
+            });
+            assert.equal(revoked.status, 200);
+            const denied = yield* client[WS_METHODS.serverPatchContinuation]({
+              value: !before,
+            }).pipe(Effect.flip);
+            assert.equal(denied._tag, "EnvironmentAuthorizationError");
+            const after = yield* withWsRpcClient(yield* getWsServerUrl("/ws"), (owner) =>
+              owner[WS_METHODS.serverReadContinuation]({}),
+            );
+            assert.equal(after, before);
+          }),
+        );
+      }),
+    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("local continuation ports: wrong environment and phantom thread inputs refuse", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* buildAppUnderTest({ realSettings: true });
+        const url = yield* getWsServerUrl("/ws");
+        const before = yield* withWsRpcClient(url, (client) =>
+          client[WS_METHODS.serverReadContinuation]({}),
+        );
+        const { cookie, url: plainUrl } = parseSessionCookieFromWsUrl(url);
+        const constructor = (socketUrl: string, protocols?: string | ReadonlyArray<string>) =>
+          new NodeSocket.NodeWS.WebSocket(
+            socketUrl,
+            protocols as string | string[] | undefined,
+            cookie ? { headers: { cookie } } : undefined,
+          ) as unknown as globalThis.WebSocket;
+        const factory = yield* ClientRpcSession.make().pipe(
+          Effect.provideService(Socket.WebSocketConstructor, constructor),
+        );
+        const target = new PrimaryConnectionTarget({
+          environmentId: EnvironmentId.make("wrong-fixture-environment"),
+          label: "wrong fixture",
+          httpBaseUrl: plainUrl.replace(/^ws:/, "http:"),
+          wsBaseUrl: plainUrl,
+        });
+        const session = yield* factory.connect({
+          environmentId: target.environmentId,
+          label: target.label,
+          httpBaseUrl: target.httpBaseUrl,
+          socketUrl: plainUrl,
+          httpAuthorization: null,
+          target,
+        });
+        const readyExit = yield* Effect.exit(session.ready);
+        assert.equal(Exit.isFailure(readyExit), true);
+        if (Exit.isFailure(readyExit)) {
+          const error = Cause.squash(readyExit.cause) as {
+            readonly _tag?: string;
+            readonly reason?: string;
+            readonly detail?: string;
+          };
+          assert.equal(error._tag, "ConnectionBlockedError");
+          assert.equal(error.reason, "configuration");
+          assert.include(error.detail ?? "", "wrong-fixture-environment");
+        }
+        const raw = RpcGroup.make(
+          Rpc.make("server.readContinuation", { payload: Schema.Unknown, success: Schema.Unknown }),
+          Rpc.make("server.patchContinuation", {
+            payload: Schema.Unknown,
+            success: Schema.Unknown,
+          }),
+        );
+        yield* RpcClient.make(raw).pipe(
+          Effect.flatMap((client) =>
+            Effect.gen(function* () {
+              assert.equal(
+                Exit.isFailure(
+                  yield* Effect.exit(
+                    client["server.readContinuation"]({
+                      environmentId: "wrong",
+                      threadId: "phantom",
+                    }),
+                  ),
+                ),
+                true,
+              );
+              assert.equal(
+                Exit.isFailure(
+                  yield* Effect.exit(
+                    client["server.patchContinuation"]({ value: !before, threadId: "phantom" }),
+                  ),
+                ),
+                true,
+              );
+              assert.equal(
+                yield* withWsRpcClient(url, (owner) =>
+                  owner[WS_METHODS.serverReadContinuation]({}),
+                ),
+                before,
+              );
+            }),
+          ),
+          Effect.provide(wsRpcProtocolLayer(url)),
+        );
+      }),
+    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("local continuation ports: real settings service and read-only patch refusal", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({ realSettings: true });
+      const token = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: "orchestration:read",
+      });
+      assert.equal(token.response.status, 200);
+      const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+        headers: { authorization: `Bearer ${token.body.access_token ?? ""}` },
+      });
+      assert.equal(ticketResponse.status, 200);
+      const { ticket } = yield* responseJsonEffect<{ readonly ticket: string }>(ticketResponse);
+      assert.equal(typeof ticket, "string");
+      const readUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket)}`;
+      yield* Effect.scoped(
+        withWsRpcClient(readUrl, (readClient) =>
+          Effect.gen(function* () {
+            const before = yield* readClient[WS_METHODS.serverReadContinuation]({});
+            assert.equal(typeof before, "boolean");
+            const denied = yield* readClient[WS_METHODS.serverPatchContinuation]({
+              value: !before,
+            }).pipe(Effect.flip);
+            assert.equal(denied._tag, "EnvironmentAuthorizationError");
+            if (denied._tag === "EnvironmentAuthorizationError")
+              assert.equal(denied.requiredScope, "orchestration:operate");
+            assert.equal(yield* readClient[WS_METHODS.serverReadContinuation]({}), before);
+            const ownerUrl = yield* getWsServerUrl("/ws");
+            yield* Effect.scoped(
+              withWsRpcClient(ownerUrl, (owner) =>
+                Effect.gen(function* () {
+                  assert.equal(
+                    yield* owner[WS_METHODS.serverPatchContinuation]({ value: !before }),
+                    !before,
+                  );
+                  const legacy = yield* owner[WS_METHODS.serverGetSettings]({});
+                  assert.equal(legacy.continueThreadsAfterServerUpdate, !before);
+                }),
+              ),
+            );
+            assert.equal(yield* readClient[WS_METHODS.serverReadContinuation]({}), !before);
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect(
     "ThroughLine hello compatibility: shared client session negotiates against the real server route",
     () =>
