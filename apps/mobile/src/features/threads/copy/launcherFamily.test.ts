@@ -1,6 +1,10 @@
 import { describe, it } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { launcherFamilyRows, type LauncherFamilyViewInput } from "./launcherFamily";
+import {
+  validateLauncherFamilyRead,
+  launcherFamilyRows,
+  type LauncherFamilyViewInput,
+} from "./launcherFamily";
 
 const ref = { environmentId: "mac", threadId: "copy-thread" };
 const family: LauncherFamilyViewInput = {
@@ -89,4 +93,21 @@ describe("factual launcher lineage display", () => {
       "Unknown · ancestor-not-recorded",
     );
   });
+});
+
+it("validates public thread identity before caching a read", () => {
+  assert.throws(
+    () => validateLauncherFamilyRead({ threadId: "wrong-thread" }, family),
+    /public thread/,
+  );
+});
+
+it("preserves a genuine unknown result without constructing family facts", () => {
+  const unknown = {
+    threadId: ref.threadId,
+    source: "agent-instruments.thread-lineage.v1" as const,
+    status: "unknown" as const,
+    reason: "ancestor-not-recorded",
+  };
+  assert.equal(validateLauncherFamilyRead({ threadId: ref.threadId }, unknown), unknown);
 });
