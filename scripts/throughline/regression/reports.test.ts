@@ -22,12 +22,15 @@ test("green totals cannot replace an exact pinned mobile case", () => {
   }
 });
 
-test("skipped, pending, failed and duplicate pinned cases refuse", () => {
+test("skipped, pending and failed pinned cases refuse", () => {
   for (const status of ["skipped", "pending", "failed"]) {
     assert.deepEqual(checkPinnedReports(pins, checkout, [report([{ title, status }])]), [
       `CASE_NOT_PASSED: ${file} :: ${title} (${status})`,
     ]);
   }
+});
+
+test("duplicate results retain the existing capability check's all-matches-must-pass rule", () => {
   assert.deepEqual(
     checkPinnedReports(pins, checkout, [
       report([
@@ -35,7 +38,16 @@ test("skipped, pending, failed and duplicate pinned cases refuse", () => {
         { title, status: "passed" },
       ]),
     ]),
-    [`CASE_AMBIGUOUS: ${file} :: ${title}`],
+    [],
+  );
+  assert.deepEqual(
+    checkPinnedReports(pins, checkout, [
+      report([
+        { title, status: "passed" },
+        { title, status: "failed" },
+      ]),
+    ]),
+    [`CASE_NOT_PASSED: ${file} :: ${title} (failed)`],
   );
 });
 

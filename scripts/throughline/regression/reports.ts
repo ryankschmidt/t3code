@@ -26,9 +26,9 @@ export function checkPinnedReports(pins: Pin[], checkout: string, reports: Repor
     for (const title of pin.cases) {
       const matches = assertions.filter((assertion) => assertion.title === title);
       if (matches.length === 0) refusals.push(`CASE_MISSING: ${pin.file} :: ${title}`);
-      else if (matches.length !== 1) refusals.push(`CASE_AMBIGUOUS: ${pin.file} :: ${title}`);
-      else if (matches[0]!.status !== "passed") {
-        refusals.push(`CASE_NOT_PASSED: ${pin.file} :: ${title} (${matches[0]!.status})`);
+      else {
+        const bad = matches.find((match) => match.status !== "passed");
+        if (bad) refusals.push(`CASE_NOT_PASSED: ${pin.file} :: ${title} (${bad.status})`);
       }
     }
   }
