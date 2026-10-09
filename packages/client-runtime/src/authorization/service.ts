@@ -310,6 +310,8 @@ export const make = Effect.gen(function* () {
           ),
         );
       yield* assertSession(identity);
+      // Start the lifetime before exchange so request latency cannot extend the server's grant.
+      const issuedAt = yield* Clock.currentTimeMillis;
       const access = yield* exchangeRemoteDpopAccessToken({
         httpBaseUrl: bootstrap.endpoint.httpBaseUrl,
         credential: bootstrap.credential,
@@ -321,13 +323,13 @@ export const make = Effect.gen(function* () {
         Effect.provideService(HttpClient.HttpClient, httpClient),
         Effect.withSpan("environment.authorization.accessToken.exchange"),
       );
-      const issuedAt = yield* Clock.currentTimeMillis;
       return new TokenStore.RemoteDpopAccessToken({
         environmentId: descriptor.environmentId,
         accountId: identity.accountId,
         label: descriptor.label,
         endpoint: bootstrap.endpoint,
         accessToken: access.access_token,
+        issuedAtEpochMs: issuedAt,
         expiresAtEpochMs: issuedAt + access.expires_in * 1_000,
         dpopThumbprint: thumbprint,
       });
@@ -360,12 +362,24 @@ export const make = Effect.gen(function* () {
           .get(input.expectedEnvironmentId)
           .pipe(Effect.withSpan("environment.authorization.accessToken.cache"));
         const owner = tokenOwners.get(input.expectedEnvironmentId);
+        // A fixed one-minute margin would immediately discard every short-lived grant.
+        // Preserve the legacy margin for old cache entries, but cap new grants at 10% of their
+        // actual admitted lifetime so they can be reused and still renew before expiry.
+        const refreshSkew =
+          Option.isSome(cached) &&
+          cached.value.issuedAtEpochMs !== undefined &&
+          cached.value.issuedAtEpochMs < cached.value.expiresAtEpochMs
+            ? Math.min(
+                DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS,
+                (cached.value.expiresAtEpochMs - cached.value.issuedAtEpochMs) / 10,
+              )
+            : DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS;
         if (
           Option.isSome(cached) &&
           cached.value.environmentId === input.expectedEnvironmentId &&
           cached.value.accountId === identity.accountId &&
           cached.value.dpopThumbprint === thumbprint &&
-          cached.value.expiresAtEpochMs > now + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS &&
+          cached.value.expiresAtEpochMs > now + refreshSkew &&
           cached.value.accessToken !== input.rejectedAccessToken &&
           (owner?.accessToken !== cached.value.accessToken || owner.identity === identity)
         ) {

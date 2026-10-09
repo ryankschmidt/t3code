@@ -65,12 +65,12 @@ const websocketTicket = (ticket: string) =>
     expiresAt: "2026-06-06T01:00:00.000Z",
   });
 
-const accessToken = (token: string) =>
+const accessToken = (token: string, expiresIn = 3_600) =>
   Response.json({
     access_token: token,
     issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
     token_type: "DPoP",
-    expires_in: 3_600,
+    expires_in: expiresIn,
     scope: AuthStandardClientScopes.join(" "),
   });
 
@@ -230,6 +230,109 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
 });
 
 describe("RemoteEnvironmentAuthorization", () => {
+  for (const rejection of ["explicit", "expired"] as const) {
+    it.effect(`never reuses a newly measured grant after ${rejection} rejection`, () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          responses: [
+            Response.json(DESCRIPTOR),
+            accessToken("synthetic-revoked-token", 30),
+            Response.json(DESCRIPTOR),
+            authInvalid(),
+          ],
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          const first = yield* remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID });
+          if (rejection === "expired") yield* TestClock.adjust("30 seconds");
+          const failure = yield* remote
+            .authorizeDpopHttp({
+              expectedEnvironmentId: ENVIRONMENT_ID,
+              ...(rejection === "explicit"
+                ? { rejectedAccessToken: first.httpAuthorization.accessToken }
+                : {}),
+            })
+            .pipe(Effect.flip);
+          expect(failure._tag).toBe("ConnectionBlockedError");
+        }).pipe(Effect.provide(harness.layer));
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(2);
+        if (rejection === "explicit")
+          expect((yield* Ref.get(harness.tokens)).has(ENVIRONMENT_ID)).toBe(false);
+      }),
+    );
+  }
+
+  it.effect("a transient early-renewal failure does not discard the existing unexpired grant", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        responses: [
+          Response.json(DESCRIPTOR),
+          accessToken("synthetic-still-valid-token", 30),
+          Response.json(DESCRIPTOR),
+          Response.json({}, { status: 503 }),
+        ],
+      });
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        const first = yield* remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID });
+        yield* TestClock.adjust("27 seconds");
+        const failure = yield* remote
+          .authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID })
+          .pipe(Effect.flip);
+        expect(failure._tag).toBe("ConnectionTransientError");
+        const retained = (yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID);
+        expect(retained?.accessToken).toBe(first.httpAuthorization.accessToken);
+        expect(retained?.expiresAtEpochMs).toBe(first.httpAuthorization.expiresAtEpochMs);
+        expect(retained?.expiresAtEpochMs).toBeGreaterThan(yield* Clock.currentTimeMillis);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect(
+    "renews a short-lived grant before its own expiry without exchanging it on every request",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          responses: [
+            Response.json(DESCRIPTOR),
+            accessToken("short-synthetic-token", 30),
+            Response.json(DESCRIPTOR),
+            accessToken("replacement-synthetic-token", 180),
+          ],
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          const first = yield* remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID });
+          const again = yield* remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID });
+          expect(again).toEqual(first);
+          yield* TestClock.adjust("26 seconds");
+          const before = yield* remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID });
+          expect(before).toEqual(first);
+          yield* TestClock.adjust("1 second");
+          const renewed = yield* remote.authorizeDpopHttp({
+            expectedEnvironmentId: ENVIRONMENT_ID,
+          });
+          expect(renewed.httpAuthorization.accessToken).toBe("replacement-synthetic-token");
+          expect(
+            renewed.httpAuthorization.expiresAtEpochMs - first.httpAuthorization.expiresAtEpochMs,
+          ).toBe(177_000);
+        }).pipe(Effect.provide(harness.layer));
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(2);
+        const exchanges = harness.fetch.calls.filter(([url]) =>
+          String(url).endsWith("/oauth/token"),
+        );
+        expect(exchanges).toHaveLength(2);
+        for (const [, init] of exchanges) {
+          expect(new URLSearchParams(String(init.body)).get("scope")).toBe(
+            AuthStandardClientScopes.join(" "),
+          );
+          expect(init.headers).toEqual(
+            expect.objectContaining({ dpop: `proof:${ENDPOINT.httpBaseUrl}/oauth/token` }),
+          );
+        }
+      }),
+  );
+
   it.effect("reuses a validated bearer descriptor while issuing fresh websocket tickets", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
