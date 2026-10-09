@@ -1,4 +1,5 @@
 import { CommandId, MessageId, ThreadId } from "@t3tools/contracts";
+import type { OrchestrationCommand } from "@t3tools/contracts";
 import type { PeerIdentity } from "@ryan/coms-net";
 import * as NodeCrypto from "node:crypto";
 import * as Data from "effect/Data";
@@ -8,6 +9,11 @@ import * as Option from "effect/Option";
 import * as ComsNetTransport from "../../ComsNetTransport.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
+import type { OrchestrationEngineShape } from "../../../orchestration/Services/OrchestrationEngine.ts";
+import {
+  senderFromMcpScope,
+  withAuthenticatedSender,
+} from "../../../throughline/identity/sender-stamp.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ComsNetToolkit, ComsNetToolError } from "./tools.ts";
 
@@ -93,6 +99,13 @@ const requestText = (request: {
   ].join("\n");
 };
 
+export const dispatchFromAuthenticatedMcp = (
+  engine: Pick<OrchestrationEngineShape, "dispatch">,
+  command: OrchestrationCommand,
+  scope: McpInvocationContext.McpInvocationScope,
+  payload: unknown,
+) => withAuthenticatedSender(engine.dispatch(command), senderFromMcpScope(scope), payload);
+
 export type ComsNetPeerView = PeerIdentity & { readonly isSelf: boolean };
 
 export const markCallerPeer = (
@@ -142,20 +155,27 @@ const handlers = {
       yield* transport.markDispatchSucceeded(scope, request.requestId);
       yield* dispatchWithLifecycleResult(
         withComsNetDispatchAckTimeout(
-          engine.dispatch({
-            type: "thread.turn.start",
-            commandId: CommandId.make(`comsnet:${request.requestId}`),
-            threadId: ThreadId.make(request.receiverThreadId),
-            message: {
-              messageId: MessageId.make(`comsnet:${request.requestId}:${NodeCrypto.randomUUID()}`),
-              role: "user",
-              text: requestText(request),
-              attachments: [],
+          dispatchFromAuthenticatedMcp(
+            engine,
+            {
+              type: "thread.turn.start",
+              commandId: CommandId.make(`comsnet:${request.requestId}`),
+              threadId: ThreadId.make(request.receiverThreadId),
+              message: {
+                messageId: MessageId.make(
+                  `comsnet:${request.requestId}:${NodeCrypto.randomUUID()}`,
+                ),
+                role: "user",
+                text: requestText(request),
+                attachments: [],
+              },
+              runtimeMode: target.value.runtimeMode,
+              interactionMode: target.value.interactionMode,
+              createdAt: request.createdAt,
             },
-            runtimeMode: target.value.runtimeMode,
-            interactionMode: target.value.interactionMode,
-            createdAt: request.createdAt,
-          }),
+            scope,
+            input.payload,
+          ),
         ),
         () => Effect.void,
         (message) => transport.failDispatch(scope, request.requestId, message),

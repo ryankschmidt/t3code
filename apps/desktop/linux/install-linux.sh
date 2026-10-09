@@ -224,7 +224,10 @@ done
 #
 # So the service is stopped for the lifetime of the app window, and started again when the
 # window closes. Stops go through systemd's own unit control — never pkill/pgrep by pattern.
-systemctl --user stop "\$SERVICE" 2>/dev/null
+if ! systemctl --user stop "\$SERVICE"; then
+  echo "REFUSED: headless service did not stop; desktop was not launched against its database" >&2
+  exit 2
+fi
 i=0; while [ \$i -lt 20 ]; do ss -ltn 2>/dev/null | grep -q ":$PORT " || break; sleep 0.5; i=\$((i+1)); done
 
 # --password-store IS LOAD-BEARING. Do not remove it.
@@ -318,8 +321,14 @@ cat > "$DROPIN_DIR/10-clean-stop.conf" <<DROPIN
 # 130 = 128+SIGINT, 143 = 128+SIGTERM. Both mean "asked to stop and did", not "crashed".
 [Service]
 SuccessExitStatus=130 143 SIGINT SIGTERM
+# An explicit systemctl stop suppresses Restart=always, preserving desktop handover.
+Restart=always
+RestartSec=2s
+[Install]
+WantedBy=default.target
 DROPIN
-systemctl --user daemon-reload 2>/dev/null
+systemctl --user daemon-reload || refuse "could not load service recovery policy"
+systemctl --user enable "$SERVICE" || refuse "could not register service at the user boot target"
 systemctl --user reset-failed "$SERVICE" 2>/dev/null
 echo "  clean-stop $DROPIN_DIR/10-clean-stop.conf"
 

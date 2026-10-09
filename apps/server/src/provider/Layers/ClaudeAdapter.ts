@@ -3680,7 +3680,35 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     // ThroughLine: compare what answered against what the picker labelled,
     // on the main thread's own snapshot (subagents return above).
-    yield* checkAnsweringModel(context, trimmedString(message.message.model));
+    const answeringModel = trimmedString(message.message.model);
+    const observationTurn = context.turnState;
+    if (
+      observationTurn !== undefined &&
+      observationTurn.synthetic !== true &&
+      answeringModel !== undefined &&
+      observationTurn.lastObservedAnsweringModel !== answeringModel
+    ) {
+      const stamp = yield* makeEventStamp();
+      yield* offerRuntimeEvent({
+        type: "turn.model.observed",
+        eventId: stamp.eventId,
+        provider: PROVIDER,
+        createdAt: stamp.createdAt,
+        threadId: context.session.threadId,
+        turnId: asCanonicalTurnId(observationTurn.turnId),
+        payload: {
+          source: "claude.assistant.message.model",
+          scope: "main-turn",
+          answeringModel,
+          ...(observationTurn.requestedModelAtStart
+            ? { requestedModel: observationTurn.requestedModelAtStart }
+            : {}),
+        },
+        providerRefs: nativeProviderRefs(context),
+      });
+      observationTurn.lastObservedAnsweringModel = answeringModel;
+    }
+    yield* checkAnsweringModel(context, answeringModel);
 
     const content = message.message?.content;
     if (Array.isArray(content)) {
