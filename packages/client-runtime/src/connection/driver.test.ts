@@ -3,7 +3,6 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
