@@ -1074,6 +1074,83 @@ for (const [name, mutate] of [
   ],
 ] as Array<[string, (s: any) => void]>)
   cases.push({ name, expect: "FAIL", checks: ["X26"], mutate });
+// JEV cost-router delta (D25): the operator floor, code-decides and the K07-only JEV pass cannot drift.
+for (const [name, mutate] of [
+  [
+    "JEV route delta source hash mismatch",
+    (s: any) => {
+      s.jev_cost_router_delta.source_documents[0].sha256 = "0".repeat(64);
+    },
+  ],
+  [
+    "route slot cannot drop the operator floor",
+    (s: any) => {
+      const t = s.tasks.find((t: any) => t.id === "T3.08");
+      t.what = t.what.replace(
+        "An operator message routed no_model must carry a record-built reply or the slot escalates it to light; the operator's bytes are never rewritten.",
+        "",
+      );
+    },
+  ],
+  [
+    "a JEV no-answer cannot block or approve a turn",
+    (s: any) => {
+      const t = s.tasks.find((t: any) => t.id === "T9.06");
+      t.failure_test = t.failure_test.replace("a turn waits on a JEV call; ", "");
+    },
+  ],
+  [
+    "route decision cannot lose its replay record",
+    (s: any) => {
+      const t = s.tasks.find((t: any) => t.id === "T3.01");
+      t.what = t.what.replace("and the floor-file version", "");
+    },
+  ],
+  [
+    "a broadcast cannot be classified once per recipient",
+    (s: any) => {
+      const t = s.tasks.find((t: any) => t.id === "T7.03");
+      t.what = t.what.replace(
+        "A broadcast is one admitted command with many recipients, classified once;",
+        "A broadcast is classified per recipient;",
+      );
+    },
+  ],
+  [
+    "K07 cannot lose the route slot as a consumer",
+    (s: any) => {
+      const k = s.contracts.find((c: any) => c.id === "K07");
+      k.statement = k.statement.slice(
+        0,
+        k.statement.indexOf(" The route slot of the admission decision"),
+      );
+    },
+  ],
+  [
+    "D25 Fable design call cannot change",
+    (s: any) => {
+      const d = s.decisions.find((d: any) => d.id === "D25");
+      d.fable_call = "rewritten";
+    },
+  ],
+  [
+    "the floor file cannot be written by code",
+    (s: any) => {
+      const t = s.tasks.find((t: any) => t.id === "T3.08");
+      t.failure_test = t.failure_test.replace("; the floor file is written by any code path", "");
+    },
+  ],
+] as Array<[string, (s: any) => void]>)
+  cases.push({ name, expect: "FAIL", checks: ["X27"], mutate });
+cases.push({
+  name: "the route slot waiting on its JEV pass recreates a cycle",
+  expect: "FAIL",
+  checks: ["X03", "X14"],
+  mutate: (s) => {
+    s.tasks.find((t: any) => t.id === "T3.08").depends_on.push("T9.06");
+  },
+});
+
 let bad = 0;
 for (const c of cases) {
   const dir = mkdtempSync(join(tmpdir(), "ngspec-check-"));

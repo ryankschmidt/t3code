@@ -2221,7 +2221,7 @@ const OUTLINE: Task[] = [
     title:
       "Every command that can start a provider turn goes through one admission point; every bypass door closes",
     serves: ["NG-007", "NG-112", "NG-027"],
-    what: "Add the turn-admission module at apps/server/src/throughline/admission/ (fork namespace). CommandAdmission.ts defines TURN_EFFECT_COMMAND_TYPES = [\"thread.turn.start\", \"thread.user-input.respond\"] (the only decider cases that can start a provider turn, guarded by S3-G05), the six routes client-ws, client-http, comsnet, history-import, absurd-worker and server-reissue, the marker throughline.admission.v1 (logged at boot so the bundle keeps it), and the service CommandAdmission with admit, dispatch and startTurn. Provenance is object identity: admit() registers the command object in a module-private WeakSet and returns an AdmittedCommand; no serializable field can forge it (K01). Route rules: history-import admits thread.history.import and refuses thread.turn.start; server-reissue requires causationCommandId of an already admitted turn; client-ws, client-http, comsnet and absurd-worker admit both turn-effect types. EngineAdmissionGuard.ts decorates OrchestrationEngineService.dispatch and refuses an unadmitted turn-effect command with a typed error; other command types pass unchanged. TurnRail.ts takes spawnTurnOnAbsurdRail and its readiness gate out of ws.ts unchanged, keeping the Exclude-typed direct arm (S3-G01). Doors (E08-E14): ws.ts calls CommandAdmission.dispatch; http.ts stays unchanged, and a thread.turn.start sent through its handler reaches the engine unadmitted and is refused by the mounted EngineAdmissionGuard; comsnet dispatches through admission with route comsnet, a stable message id comsnet:<requestId>, and ComsNetRedrive.ts re-drives at boot any request marked dispatched whose turn-start event is absent, deduplicated by the stable command id (S3-G02); the reactor's after-compaction re-issue is admitted with route server-reissue; user-input answers are admitted with route client-ws and dispatched to the engine (their nested turn becomes durable through the outbox in T3.03). History import (operator intent from the refinement: never replay old actions, never manufacture new admission for old work): the command-line importer writes thread.history.import with the message shape AgentSessionImporter.ts builds (E13) through the offline engine with route history-import, emits no turn-start event and no effect, and its live-server guard probes the port the selected profile's server is configured to use; the outside resume tool stops writing orchestration_events, projection_threads and provider_session_runtime rows and calls the importer instead. Admit accepts optional intent references (vocabulary.intent_metadata_carriage) and keeps them on the AdmittedCommand; T3.03 persists them. The turn-rail capability manifest with the new pinned tests goes under docs/throughline/capabilities/turn-rail/. Effect admission and K08 check-first (generation 3, Oct 9, 2026): the same module exposes admitEffect for per-effect requests from the provider adapters (interface I-01). classifyEffect builds and brands the request server-side and resolves its paths; an unbranded request is refused. Only the target-policy slot (T9.03) decides whether an effect is building or marking done, from engine-typed facts; T3.01 combines that answer with the K03 enforcement matrix, read as measured data, and records every decision with its inputs. Rules T3.01 enforces: (1) Prevention happens only before execution. A post-tool observation is recorded as observed-after-execution with prevented false; a building effect observed while check-first is pending is a recorded violation that stops the request and surfaces it, never counted as prevented. (2) An opaque effect whose write set the adapter cannot resolve before execution (shell, terminal input, an unknown tool call) is never admitted on its cwd. While check-first is pending, or with no target revision when it can reach protected product scope, it runs only under a read-only or design-and-test-writable mode that the K03 matrix measures as supported for that provider and host, or it is refused with a usable safe alternative named in the decision: run it under the enforced mode, write a design note, record the failing check first, or dispatch to a seat whose target has one. (3) No target revision is not permission. The default slot classifies engine-resolved paths against ProtectedScopeSlot (the bound product repository roots and the install and release step ids): writes inside, install steps and release steps are refused with the safe alternative 'admit a target and record its failing check'; writes outside, such as designs and scratch, are admitted, which is K08's own no-target test. (4) The test path stays open: writes to the target revision's declared check files and running its declared check command are admitted before the failing check is recorded. (5) Turn starts, seat launches, dispatches, reads and design writes are admitted in every state. A turn on a provider with no measured pre-execution control is admitted with enforcement none and preventable false recorded; its building effects are refused where the adapter sees them first and otherwise become violations; nothing is advertised as enforced that K03 has not measured. Caller fields such as exploration, mode, skip_gate or a file name never change an outcome; they are listed as ignoredCallerFields. The admission decorator admits shell starts as effect attempts with outcome unknown; live shell input is not admitted per keystroke and is never claimed gated; the thread's effect ledger receives the host's observed changed-path record for each open shell session, and the done computation reads it (K08). The decorator mounts once at the engine assembly point already edited by the fork; no new stock-file edit; the HTTP dispatch door is closed by that refusal; the comsnet door's retirement and its three fork-file removal proofs belong to T7.04.",
+    what: "Add the turn-admission module at apps/server/src/throughline/admission/ (fork namespace). CommandAdmission.ts defines TURN_EFFECT_COMMAND_TYPES = [\"thread.turn.start\", \"thread.user-input.respond\"] (the only decider cases that can start a provider turn, guarded by S3-G05), the six routes client-ws, client-http, comsnet, history-import, absurd-worker and server-reissue, the marker throughline.admission.v1 (logged at boot so the bundle keeps it), and the service CommandAdmission with admit, dispatch and startTurn. Provenance is object identity: admit() registers the command object in a module-private WeakSet and returns an AdmittedCommand; no serializable field can forge it (K01). Route rules: history-import admits thread.history.import and refuses thread.turn.start; server-reissue requires causationCommandId of an already admitted turn; client-ws, client-http, comsnet and absurd-worker admit both turn-effect types. EngineAdmissionGuard.ts decorates OrchestrationEngineService.dispatch and refuses an unadmitted turn-effect command with a typed error; other command types pass unchanged. TurnRail.ts takes spawnTurnOnAbsurdRail and its readiness gate out of ws.ts unchanged, keeping the Exclude-typed direct arm (S3-G01). Doors (E08-E14): ws.ts calls CommandAdmission.dispatch; http.ts stays unchanged, and a thread.turn.start sent through its handler reaches the engine unadmitted and is refused by the mounted EngineAdmissionGuard; comsnet dispatches through admission with route comsnet, a stable message id comsnet:<requestId>, and ComsNetRedrive.ts re-drives at boot any request marked dispatched whose turn-start event is absent, deduplicated by the stable command id (S3-G02); the reactor's after-compaction re-issue is admitted with route server-reissue; user-input answers are admitted with route client-ws and dispatched to the engine (their nested turn becomes durable through the outbox in T3.03). History import (operator intent from the refinement: never replay old actions, never manufacture new admission for old work): the command-line importer writes thread.history.import with the message shape AgentSessionImporter.ts builds (E13) through the offline engine with route history-import, emits no turn-start event and no effect, and its live-server guard probes the port the selected profile's server is configured to use; the outside resume tool stops writing orchestration_events, projection_threads and provider_session_runtime rows and calls the importer instead. Admit accepts optional intent references (vocabulary.intent_metadata_carriage) and keeps them on the AdmittedCommand; T3.03 persists them. The turn-rail capability manifest with the new pinned tests goes under docs/throughline/capabilities/turn-rail/. Effect admission and K08 check-first (generation 3, Oct 9, 2026): the same module exposes admitEffect for per-effect requests from the provider adapters (interface I-01). classifyEffect builds and brands the request server-side and resolves its paths; an unbranded request is refused. Only the target-policy slot (T9.03) decides whether an effect is building or marking done, from engine-typed facts; T3.01 combines that answer with the K03 enforcement matrix, read as measured data, and records every decision with its inputs. Rules T3.01 enforces: (1) Prevention happens only before execution. A post-tool observation is recorded as observed-after-execution with prevented false; a building effect observed while check-first is pending is a recorded violation that stops the request and surfaces it, never counted as prevented. (2) An opaque effect whose write set the adapter cannot resolve before execution (shell, terminal input, an unknown tool call) is never admitted on its cwd. While check-first is pending, or with no target revision when it can reach protected product scope, it runs only under a read-only or design-and-test-writable mode that the K03 matrix measures as supported for that provider and host, or it is refused with a usable safe alternative named in the decision: run it under the enforced mode, write a design note, record the failing check first, or dispatch to a seat whose target has one. (3) No target revision is not permission. The default slot classifies engine-resolved paths against ProtectedScopeSlot (the bound product repository roots and the install and release step ids): writes inside, install steps and release steps are refused with the safe alternative 'admit a target and record its failing check'; writes outside, such as designs and scratch, are admitted, which is K08's own no-target test. (4) The test path stays open: writes to the target revision's declared check files and running its declared check command are admitted before the failing check is recorded. (5) Turn starts, seat launches, dispatches, reads and design writes are admitted in every state. A turn on a provider with no measured pre-execution control is admitted with enforcement none and preventable false recorded; its building effects are refused where the adapter sees them first and otherwise become violations; nothing is advertised as enforced that K03 has not measured. Caller fields such as exploration, mode, skip_gate or a file name never change an outcome; they are listed as ignoredCallerFields. The admission decorator admits shell starts as effect attempts with outcome unknown; live shell input is not admitted per keystroke and is never claimed gated; the thread's effect ledger receives the host's observed changed-path record for each open shell session, and the done computation reads it (K08). The decorator mounts once at the engine assembly point already edited by the fork; no new stock-file edit; the HTTP dispatch door is closed by that refusal; the comsnet door's retirement and its three fork-file removal proofs belong to T7.04. Route slot (D25): admit() for the turn-effect command types and the comsnet route evaluates a route slot before dispatch, in the same transaction as the admission decision; the decision row records route (no_model | light | standard | lead_only), the pass that decided it (code | jev | default), the code facts used, the JEV step id when one exists, and the floor-file version. no_model dispatches no turn: the command is admitted, the event is recorded, a record-built reply is enqueued on the rail when the sender expects one, and the recipient's pending digest gains one entry. light, standard and lead_only dispatch a turn carrying the route so the provider adapter launches or resumes the recipient at the routed model and effort; a route the adapter cannot honour (no such model on this host) falls back to standard and records the fallback. The slot is a policy input exactly as the headroom slot (T11.04) and the target-policy slot (T9.03) are; it never changes a seat's launch setting and never edits the floor file.",
     files: [
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/checks/slice-3-admission-record.mts",
@@ -2387,13 +2387,15 @@ const OUTLINE: Task[] = [
       "test … › 'with no target revision, a write inside the bound product repository and an install step are refused with the safe alternative, while a design write outside it, a turn start, a seat launch and a dispatch are admitted' (specified, not yet implemented)",
       "test … › 'writes to the declared check files and the declared check command are admitted before the failing check is recorded; other writes in the deliverable scope wait' (specified, not yet implemented)",
       "test … › 'callerFields exploration=true, mode=design or a file name changes no outcome in any case above, and an unbranded request is refused' (specified, not yet implemented)",
+      "I-01 operation (Fable delta D25): routeTurn(admitted, recipient_generation, floor) -> RouteDecision { route: no_model | light | standard | lead_only; decided_by: code | jev | default; facts: CodeFacts; jev_step_id?: string; reply?: RecordReply; floor_version: string }",
+      "I-01 operation (Fable delta D25): coalesceWake(recipient_public_id, generation) -> WakeDigest { entries: AdmittedCommandRef[]; superseded: AdmittedCommandRef[]; one_turn: true }",
     ],
     failing_checks: ["S3-C01", "S3-C02", "S3-C03", "S3-C04", "S3-C05", "S3-C06", "S3-C12"],
     done_when: {
       command:
         "node /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/checks/slice-3-admission-record.mts --repo /Users/Admin/throughline --only S3-C01 S3-C02 S3-C03 S3-C04 S3-C05 S3-C06 S3-C12 S3-G01 S3-G02 S3-G03 S3-G05 && cd /Users/Admin/throughline/apps/server && pnpm exec vp test run src/throughline/admission/CommandAdmission.test.ts src/throughline/admission/ComsNetRedrive.test.ts src/throughline/admission/CheckFirstSeam.test.ts src/cli/import-claude-sessions.test.ts && pnpm -C /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-session-resume run test",
       expect:
-        "exit 0; every named test present and green; the guards stay green; the live-input counterexample in K03 runs against the installed admission service: the observed write is on the record as an effect, no veto is claimed, and the done computation refuses until reconciled; the stock upstream files the fork edits after T3.01, read from the slice-2 seam manifest against the pinned upstream and fork SHAs (T2.01), are no more than the admitted stock-file set and do not include apps/server/src/orchestration/http.ts; a turn start through the HTTP endpoint is refused with the signed-admission reason, counted",
+        "exit 0; every named test present and green; the guards stay green; the live-input counterexample in K03 runs against the installed admission service: the observed write is on the record as an effect, no veto is claimed, and the done computation refuses until reconciled; the stock upstream files the fork edits after T3.01, read from the slice-2 seam manifest against the pinned upstream and fork SHAs (T2.01), are no more than the admitted stock-file set and do not include apps/server/src/orchestration/http.ts; a turn start through the HTTP endpoint is refused with the signed-admission reason, counted; the six Oct 10, 2026 notice wakes replayed as fixtures through the admission module (observation mode, no provider) record route no_model with decided_by code and start zero turns; the lead ruling fixture records standard and starts one turn; Ryan's liveness fixture records no_model with a record-built reply",
     },
     depends_on: ["T2.01", "T2.02", "T3.07"],
     executor: {
@@ -2466,7 +2468,7 @@ const OUTLINE: Task[] = [
     title:
       "One short Absurd workflow per request under the conversation; one recorded step per finished message; large tool results in a blob table",
     serves: ["NG-003", "NG-009", "NG-011", "NG-015"],
-    what: "Build the record and the request workflow as a library with tests; T3.03 mounts it. New package packages/throughline-record (@throughline/record; it never imports server code, the same direction rule as absurd-runtime). Its migration creates schema throughline_record in the existing absurd database with seven tables: admitted_commands (command_id primary key, command_type, aggregate_kind, aggregate_id, route, admitted_at, origin, intent, causation_command_id, payload), events (the orchestration_events columns of E19, payload and metadata as jsonb, unique(stream_id, stream_version), command_id referencing admitted_commands), effect_attempts (effect_id, attempt, command_id, effect_kind, lease_owner, execution_generation, started_at, finished_at, outcome succeeded | failed | unknown, idempotent, detail; primary key effect_id and attempt), outbox (effect_id, command_id, effect_kind, request_id, generation, state pending | spawned | done, absurd_task_id), projection_cursors (consumer, last_sequence), admission_decisions (decision_id, command_id or effect_id, outcome, reason_code, policy_inputs_used, ignored_caller_fields, decided_at; written in the same transaction as the admitted row so a judge can replay a decision) and blobs (blob_id as sha256, size_bytes, media_type, custody, retention, bytes). RecordPort.appendAdmitted writes the command row, its events and their outbox rows in one transaction and is idempotent on command_id. An outbox row exists for every thread.turn-start-requested event (provider-turn effect); a settings-change command (alignment entry IA-04, NG-114) is admitted and recorded with events and no outbox row. beginEffect claims an attempt under a lease; an attempt whose lease expired without an outcome becomes unknown; a non-idempotent unknown stops its request and surfaces it, never retried silently (K01). Request workflow throughline.request (K02): one Absurd 0.5.0 run per admitted turn, with one step per managed model request, tool start and provider callback, the step id minted by I-01 before the action and carried by it, keyed request id (the admitted command id) and generation, steps ensure-started (claims the effect; starts the provider only if no attempt exists) then await-terminal (Absurd 0.5.0 durable event turn-terminal:<requestId>:<generation>, holding no worker slot), with ACK, progress, reply, terminal result and verified completion kept as distinct states, and a late or duplicate reply to a closed generation recorded and ignored. One recorded step per finished message: every finished assistant message is one event with its own effect id, so a crash mid-turn resumes after the last finished message. Tool results over the step payload limit are stored in blobs and the event carries the blob id; the limit is read from Absurd 0.5.0 or, if undocumented, set to the largest payload the record test proves stores and reloads, recorded as a named constant. The in-process transport derives created thread ids and command ids from the task id and step name (E16); the symphony campaign task t3.thread-run stays, now idempotent.",
+    what: "Build the record and the request workflow as a library with tests; T3.03 mounts it. New package packages/throughline-record (@throughline/record; it never imports server code, the same direction rule as absurd-runtime). Its migration creates schema throughline_record in the existing absurd database with seven tables: admitted_commands (command_id primary key, command_type, aggregate_kind, aggregate_id, route, admitted_at, origin, intent, causation_command_id, payload), events (the orchestration_events columns of E19, payload and metadata as jsonb, unique(stream_id, stream_version), command_id referencing admitted_commands), effect_attempts (effect_id, attempt, command_id, effect_kind, lease_owner, execution_generation, started_at, finished_at, outcome succeeded | failed | unknown, idempotent, detail; primary key effect_id and attempt), outbox (effect_id, command_id, effect_kind, request_id, generation, state pending | spawned | done, absurd_task_id), projection_cursors (consumer, last_sequence), admission_decisions (decision_id, command_id or effect_id, outcome, reason_code, policy_inputs_used, ignored_caller_fields, decided_at; written in the same transaction as the admitted row so a judge can replay a decision) and blobs (blob_id as sha256, size_bytes, media_type, custody, retention, bytes). RecordPort.appendAdmitted writes the command row, its events and their outbox rows in one transaction and is idempotent on command_id. An outbox row exists for every thread.turn-start-requested event (provider-turn effect); a settings-change command (alignment entry IA-04, NG-114) is admitted and recorded with events and no outbox row. beginEffect claims an attempt under a lease; an attempt whose lease expired without an outcome becomes unknown; a non-idempotent unknown stops its request and surfaces it, never retried silently (K01). Request workflow throughline.request (K02): one Absurd 0.5.0 run per admitted turn, with one step per managed model request, tool start and provider callback, the step id minted by I-01 before the action and carried by it, keyed request id (the admitted command id) and generation, steps ensure-started (claims the effect; starts the provider only if no attempt exists) then await-terminal (Absurd 0.5.0 durable event turn-terminal:<requestId>:<generation>, holding no worker slot), with ACK, progress, reply, terminal result and verified completion kept as distinct states, and a late or duplicate reply to a closed generation recorded and ignored. One recorded step per finished message: every finished assistant message is one event with its own effect id, so a crash mid-turn resumes after the last finished message. Tool results over the step payload limit are stored in blobs and the event carries the blob id; the limit is read from Absurd 0.5.0 or, if undocumented, set to the largest payload the record test proves stores and reloads, recorded as a named constant. The in-process transport derives created thread ids and command ids from the task id and step name (E16); the symphony campaign task t3.thread-run stays, now idempotent. Evidence pointer (D25): a tool result stored in blobs is addressable by the model through one read-back operation on the record, readBlob(blob_id, byte_range) -> bytes, so a provider adapter may hand the model an evidence summary with the blob id instead of the raw result and the model can still recover any original passage.",
     files: [
       {
         path: "packages/throughline-record/package.json",
@@ -2524,6 +2526,7 @@ const OUTLINE: Task[] = [
       "test packages/throughline-record/src/request-workflow.test.ts › K02 verbatim: 'saturate worker concurrency, then send reply-before-wait, duplicate reply, late reply, timeout then reply, cancellation then result, and two simultaneous asks in one conversation: exactly one intended resume per request and no false target completion' (specified, not yet implemented)",
       "test packages/absurd-runtime/src/thread-driver.test.ts › 'a crash after dispatch-turn ran and before its checkpoint commits yields one thread and one turn on resume' (specified, not yet implemented)",
       "test packages/throughline-record/src/record.test.ts › 'an admission decision is written with its policy inputs in the same transaction as its admitted row' (specified, not yet implemented)",
+      "RecordPort.readBlob(blobId: string, range?: { start: number; end: number }) -> Promise<{ bytes: Uint8Array; mediaType: string; size: number }>",
     ],
     failing_checks: ["S3-C08", "S3-C09"],
     done_when: {
@@ -4150,7 +4153,7 @@ const OUTLINE: Task[] = [
       "One rail: the message is a task for the recipient, the reply its result, the sender a wait row",
     serves: ["NG-019", "NG-020", "NG-021", "NG-088", "NG-013"],
     detail_state: "detailed",
-    what: "A message received on the socket is admitted as a command and enqueued as an Absurd task addressed to the recipient's public id in the same transaction (K01 outbox); the recipient's reply is the task's result; the sender holds a durable event wait keyed by request id and generation (K02, Absurd 0.5.0 durable event waits, whose migration is slice 3's named task). No watcher process and no poll loop exist; delivery is the recipient's worker picking up its task. JEV rides this rail (NG-088): each admitted send and each reply passes through the K07 condition port as a recorded step on the recipient task's workflow, carrying source ids, question version, model and confidence; the answer annotates the message and never blocks or releases delivery.",
+    what: "A message received on the socket is admitted as a command and enqueued as an Absurd task addressed to the recipient's public id in the same transaction (K01 outbox); the recipient's reply is the task's result; the sender holds a durable event wait keyed by request id and generation (K02, Absurd 0.5.0 durable event waits, whose migration is slice 3's named task). No watcher process and no poll loop exist; delivery is the recipient's worker picking up its task. JEV rides this rail (NG-088): each admitted send and each reply passes through the K07 condition port as a recorded step on the recipient task's workflow, carrying source ids, question version, model and confidence; the answer annotates the message and never blocks or releases delivery. Waiting ends the turn (D25): the sender's durable event wait is the seat's suspension, never a poll inside the model's turn; the coms wait tool returns to the provider adapter a suspend outcome that ends the model step, and the reply arrives as a new admitted command through the route slot (T3.08), which wakes the seat once with a digest when more than one task is pending. A broadcast is one admitted command with many recipients, classified once; each recipient's task carries the same route decision and JEV step id. An admitted send to a sleeping recipient whose route is no_model records the annotation and starts no task for that recipient.",
     files: [
       {
         path: "packages/absurd-runtime/src/",
@@ -4186,7 +4189,7 @@ const OUTLINE: Task[] = [
       command:
         "A sends to B; kill the server process at each K01 boundary in turn (five runs); then send a duplicate reply, a late reply after the wait closed, and reply-before-wait; then: read only registered service/cgroup identities and process comm names, never argv or environment; record zero watcher/poller units",
       expect:
-        "each run yields exactly one admitted command and one delivered reply or one recorded unknown, never two deliveries; the duplicate and late replies are recorded and ignored; reply-before-wait resumes exactly once; the process count for any watcher or poller is 0",
+        "each run yields exactly one admitted command and one delivered reply or one recorded unknown, never two deliveries; the duplicate and late replies are recorded and ignored; reply-before-wait resumes exactly once; the process count for any watcher or poller is 0; a notice sent to five idle recipients records one route decision, one JEV step when the port is bound, and zero provider turns; a seat that calls wait ends its model step and resumes exactly once when the reply and two queued notices are pending, with the notices in the digest",
     },
     depends_on: ["T7.02"],
     executor: {
@@ -4469,7 +4472,7 @@ const OUTLINE: Task[] = [
       "NG-035",
       "NG-036",
     ],
-    what: "One ThroughLine Claude mod in the fork namespace, loaded in every Claude session the launcher starts. Its hooks turn each model request and tool call into an I-01 admission request over the server's local socket and act on the decision: pre-tool refused means the tool does not run; unreachable admission means refuse (fail-closed). A mod handler that throws, overruns its budget or returns an invalid value falls through to the core by default, and a deny after await next is too late (G6 B03), so the mod obtains a validated decision before it calls next, returns a valid refusal on any error, installs a refusing catch on tool.call and turn.step, and writes a load witness so a missing mod is never counted as enforced. Agent spawn is vetoed before the spawn (SubagentStart only observes) and a cancellation is recorded as stop-requested until it settles; a post-tool event or an interrupt is never counted as prevented (G6 B06). Classes the hooks cannot veto are declared observe-only in the K03 row, never claimed. The mod never classifies an effect and never signs provenance. It carries the four coms tools over I-05. Target tools move to T8.03. No journal: every row goes through the server door, never to Postgres. Levels 6 and 7 of JEV (NG-087, NG-089): the mod passes each intercepted tool input, tool result and outgoing model request, and each turn end, to the K07 port; each answer is a recorded step with source ids, question version, model and confidence, and annotates without admitting or refusing. The mod's turn.step remains a pre-model check for the turn's own requests (supported, counted) and fails closed per B03; auxiliary and plugin-originated model calls are observed by the mod and enforced only by the broker token; the launcher-passed admission token is attached to every outbound model request. The mod attaches the step id to each tool.call and model request it observes; an action with no step id is refused by the mod (B03 fail-closed) and, independently, at the broker.",
+    what: "One ThroughLine Claude mod in the fork namespace, loaded in every Claude session the launcher starts. Its hooks turn each model request and tool call into an I-01 admission request over the server's local socket and act on the decision: pre-tool refused means the tool does not run; unreachable admission means refuse (fail-closed). A mod handler that throws, overruns its budget or returns an invalid value falls through to the core by default, and a deny after await next is too late (G6 B03), so the mod obtains a validated decision before it calls next, returns a valid refusal on any error, installs a refusing catch on tool.call and turn.step, and writes a load witness so a missing mod is never counted as enforced. Agent spawn is vetoed before the spawn (SubagentStart only observes) and a cancellation is recorded as stop-requested until it settles; a post-tool event or an interrupt is never counted as prevented (G6 B06). Classes the hooks cannot veto are declared observe-only in the K03 row, never claimed. The mod never classifies an effect and never signs provenance. It carries the four coms tools over I-05. Target tools move to T8.03. No journal: every row goes through the server door, never to Postgres. Levels 6 and 7 of JEV (NG-087, NG-089): the mod passes each intercepted tool input, tool result and outgoing model request, and each turn end, to the K07 port; each answer is a recorded step with source ids, question version, model and confidence, and annotates without admitting or refusing. The mod's turn.step remains a pre-model check for the turn's own requests (supported, counted) and fails closed per B03; auxiliary and plugin-originated model calls are observed by the mod and enforced only by the broker token; the launcher-passed admission token is attached to every outbound model request. The mod attaches the step id to each tool.call and model request it observes; an action with no step id is refused by the mod (B03 fail-closed) and, independently, at the broker. Evidence instead of raw output (D25, level 6): before a tool result enters the model's context the mod's tool.result hook sends the full result to the record (blob when over the step payload limit, T3.02) and asks the admission service for evidence: code facts (exit code, byte and line counts, changed paths, diff stats, the first and last lines) and, when the K07 port is bound, the passages JEV selects against the tool call's stated purpose and the bounded questions the call carried; the model receives the evidence with the blob id and recovers any original passage through readBlob. Whether the Claude mod can replace a tool result before the model sees it is measured in the K03 row, never assumed; where it cannot, the row says observe-only and the raw result enters context.",
     files: [
       {
         path: "packages/throughline-claude-mod/",
@@ -4941,7 +4944,7 @@ const OUTLINE: Task[] = [
       "NG-093",
       "NG-090",
     ],
-    what: "JEV through the one condition port of K07 (typed answers, question and state-builder versions, cache by input hash and generation, batching, distinct no-answer, timeout and refusal outcomes, request and attempt identity), served through the access broker, every answer a step. The promotion parameter starts at 0.80 and is marked unevaluated until T9.04 records the chosen value. A declined candidate leaves the thread exploring; JEV re-asks only when the thread's own text changes. Code admits; JEV never does. An admitted target carries the shape ids its first acts match; the add, fix and retract tools record shape changes as events (delta IA-02). The port lives in its own package (D-CAP-09). NG-090: the port keeps a registry of its consumers so each new JEV use is visible and kept once a consumer uses its answer; the daily cadence is an operating practice after install, not an install gate. Placement accepted by the integration decision: packages/throughline-conditions is a code package only. No new daemon, queue, policy store or credential client; it reuses the existing broker capability and its owning client contract, and targets, re-entry and delivery consume the port without importing one another. After a target is admitted (NG-078), every later message is evaluated automatically with a typed outcome, unchanged, replaces the target, constrains it, or a separate task, and each change is a revision event that keeps the old words and the reason.",
+    what: "JEV through the one condition port of K07 (typed answers, question and state-builder versions, cache by input hash and generation, batching, distinct no-answer, timeout and refusal outcomes, request and attempt identity), served through the access broker, every answer a step. The promotion parameter starts at 0.80 and is marked unevaluated until T9.04 records the chosen value. A declined candidate leaves the thread exploring; JEV re-asks only when the thread's own text changes. Code admits; JEV never does. An admitted target carries the shape ids its first acts match; the add, fix and retract tools record shape changes as events (delta IA-02). The port lives in its own package (D-CAP-09). NG-090: the port keeps a registry of its consumers so each new JEV use is visible and kept once a consumer uses its answer; the daily cadence is an operating practice after install, not an install gate. Placement accepted by the integration decision: packages/throughline-conditions is a code package only. No new daemon, queue, policy store or credential client; it reuses the existing broker capability and its owning client contract, and targets, re-entry and delivery consume the port without importing one another. After a target is admitted (NG-078), every later message is evaluated automatically with a typed outcome, unchanged, replaces the target, constrains it, or a separate task, and each change is a revision event that keeps the old words and the reason. The route slot (T3.08) is a registered consumer of the port (NG-090) through T9.06; its conditions are batched in one call per admitted message and cached by content hash plus recipient generation, so a broadcast is one call.",
     delta_carried: ["IA-02 append on T9.02"],
     files: [
       {
@@ -5980,7 +5983,7 @@ const OUTLINE: Task[] = [
     title:
       "Codex binds through its approval requests; the cost of one round trip per tool call is measured",
     serves: ["NG-031", "NG-038", "NG-035", "NG-036"],
-    what: "The adapter already maps each approval request to a typed kind (A19). Each becomes an I-01 admission request whose effect_kind comes from that typed kind; a refused decision declines the approval; an unreachable admission point declines (fail-closed). Under a launch policy that never asks for approval, approvals give no pre-tool veto (A20), but Codex native hooks do: hooks are stable and enabled on the Mac (Codex 0.161.0) and the tower (0.159.3) and support a scoped local-tool PreToolUse veto even under never (G6 B01). The binding therefore has two parts: approval requests for escalations, and a native PreToolUse hook bound to the same I-01 admission point, with mandatory loading and trust and a scoped coverage matrix in the K03 row. The Codex launch policy is not changed just to create approvals. The round-trip cost is measured, not assumed. There is one Codex provider; this task changes no seat's launch policy, and T10.10 removes the duplicate Codex provider entry (ryan-codex-worker) from ThroughLine's settings. Levels 6 and 7 of JEV (NG-087, NG-089) for Codex run on the inputs and results the native hooks and approval requests intercept and on each turn end, through the same K07 port, as recorded steps. Codex binds shell start through its native PreToolUse hook under the never approval policy (B01), counted; write_stdin and hosted or specialized tool paths are the live-input cell, observe-only, with their effects recorded from the host's changed-path record; the capability matrix row for Codex names both cells with their measured counts. Codex approvals never gate model requests; the Codex route carries the admission token the launcher passed, and the broker is the per-model gate. The Codex native PreToolUse hook attaches the step id to each tool start; a start with no step id is denied by the hook. Non-builder, installed Mac and tower: from a real codex seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses. Calls delegate to the common target interface; no provider owns target state. The launcher binds this adapter on every initial and replacement launch.",
+    what: "The adapter already maps each approval request to a typed kind (A19). Each becomes an I-01 admission request whose effect_kind comes from that typed kind; a refused decision declines the approval; an unreachable admission point declines (fail-closed). Under a launch policy that never asks for approval, approvals give no pre-tool veto (A20), but Codex native hooks do: hooks are stable and enabled on the Mac (Codex 0.161.0) and the tower (0.159.3) and support a scoped local-tool PreToolUse veto even under never (G6 B01). The binding therefore has two parts: approval requests for escalations, and a native PreToolUse hook bound to the same I-01 admission point, with mandatory loading and trust and a scoped coverage matrix in the K03 row. The Codex launch policy is not changed just to create approvals. The round-trip cost is measured, not assumed. There is one Codex provider; this task changes no seat's launch policy, and T10.10 removes the duplicate Codex provider entry (ryan-codex-worker) from ThroughLine's settings. Levels 6 and 7 of JEV (NG-087, NG-089) for Codex run on the inputs and results the native hooks and approval requests intercept and on each turn end, through the same K07 port, as recorded steps. Codex binds shell start through its native PreToolUse hook under the never approval policy (B01), counted; write_stdin and hosted or specialized tool paths are the live-input cell, observe-only, with their effects recorded from the host's changed-path record; the capability matrix row for Codex names both cells with their measured counts. Codex approvals never gate model requests; the Codex route carries the admission token the launcher passed, and the broker is the per-model gate. The Codex native PreToolUse hook attaches the step id to each tool start; a start with no step id is denied by the hook. Non-builder, installed Mac and tower: from a real codex seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses. Calls delegate to the common target interface; no provider owns target state. The launcher binds this adapter on every initial and replacement launch. Evidence instead of raw output (D25, level 6) for Codex: the native hook that observes a tool result sends it to the record and requests evidence as T8.01 does; whether a Codex native hook can replace the result before the model reads it is measured in the K03 row (the Oct 10 audit shows Codex seats re-reading 40,000-character truncated results on every later step); where it cannot, the row says observe-only and the adapter's only lever is the route slot and wake coalescing.",
     files: [
       {
         path: "apps/server/src/provider/Layers/CodexAdapter.ts",
@@ -7010,7 +7013,7 @@ const OUTLINE: Task[] = [
     title:
       "Calibrate the target-promotion parameter on real first messages, and publish the label glossary JEV questions use",
     serves: ["NG-077", "NG-078", "NG-092"],
-    what: "K07 test 1: a labelled corpus of real first messages, quotes, questions, retractions and agent-to-agent asks; measure false promotion, false omission, abstentions, p95 latency and cost at 0.80 and two neighbours; record the chosen value with its error costs. Labels by a seat that did not build the gate. Split from T9.02 because labelling and measuring is its own window. Also NG-092: every Absurd table, column, state value and option, and every Pi role, event and field, listed under one address scheme generated from the installed schemas, so JEV questions name them exactly.",
+    what: "K07 test 1: a labelled corpus of real first messages, quotes, questions, retractions and agent-to-agent asks; measure false promotion, false omission, abstentions, p95 latency and cost at 0.80 and two neighbours; record the chosen value with its error costs. Labels by a seat that did not build the gate. Split from T9.02 because labelling and measuring is its own window. Also NG-092: every Absurd table, column, state value and option, and every Pi role, event and field, listed under one address scheme generated from the installed schemas, so JEV questions name them exactly. The corpus adds the wake messages of the Oct 10, 2026 usage audit (the two RESUME LEAD MESSAGES notices, the lead ruling, Ryan's liveness question, and the other first messages of the seven cold wakes), labelled no_model, light, standard or lead_only by a non-builder with the reason; the route conditions are calibrated on this corpus at 0.80 and two neighbours alongside the target-promotion parameter, and the false-no_model rate is reported separately because its cost is a silenced seat.",
     files: [
       {
         path: "packages/throughline-conditions/calibration/",
@@ -8055,7 +8058,7 @@ const OUTLINE: Task[] = [
     parent: "T11.03",
     title: "Headroom from the broker's observer feeds the admission point and the Limits panel",
     serves: ["NG-039", "NG-141"],
-    what: "Delta IA-05 with the review's corrections: the model route reads the broker observer's headroom with its freshness and supplies it to the headroom slot of I-01 before each model-backed turn; unknown or stale never blocks; a known-empty account is not routed to until the observer reports its reset; a turn that cannot be served waits as a wait row. The Limits panel shows every account the observer reports, with freshness and unknown states; nothing counts or caps calls. The number of accounts is read at runtime (A30). Tests use controlled observer responses through the real consumer path; no real subscription is spent down. Under S5 it reads the broker's existing observer surface and adds no ThroughLine-only meter, endpoint or tool unless the observer lacks a field, which is then added to the observer itself. Preserve every currently configured broker identity, including unloaded/unknown accounts, by joining current configured-identity status with the observer. Loaded/available/configured are distinct; no fixed account count.",
+    what: "Delta IA-05 with the review's corrections: the model route reads the broker observer's headroom with its freshness and supplies it to the headroom slot of I-01 before each model-backed turn; unknown or stale never blocks; a known-empty account is not routed to until the observer reports its reset; a turn that cannot be served waits as a wait row. The Limits panel shows every account the observer reports, with freshness and unknown states; nothing counts or caps calls. The number of accounts is read at runtime (A30). Tests use controlled observer responses through the real consumer path; no real subscription is spent down. Under S5 it reads the broker's existing observer surface and adds no ThroughLine-only meter, endpoint or tool unless the observer lacks a field, which is then added to the observer itself. Preserve every currently configured broker identity, including unloaded/unknown accounts, by joining current configured-identity status with the observer. Loaded/available/configured are distinct; no fixed account count. Reset re-check (D25): when the observer reports an account's reset, the model route does not resume the seats that limit stopped on their queued messages as they stand; it asks the route slot (T3.08) to re-evaluate each queued message against current state and wakes each seat at most once with the digest of what survives; a wake whose digest is empty is recorded and not started.",
     delta_carried: ["IA-05 append on T11.03"],
     files: [
       {
@@ -11419,6 +11422,24 @@ export const DECISIONS: Decision[] = [
     serves: ["NG-035", "NG-036", "NG-038"],
     quote_from: "NG-035",
   },
+  {
+    id: "D25",
+    title:
+      "A turn is routed before any expensive model reads it: code first, JEV for meaning, a policy floor decides; Ryan's words travel whole",
+    statement:
+      "Every command that could start a provider turn (thread.turn.start, thread.user-input.respond, a comsnet send, an Agent Instruments wake) passes a route slot inside the one admission decision before any provider is called. The slot runs three passes in order. Code: sender class (operator, agent, system notice, instrument), the envelope kind and its structured no-reply flag, exact facts a record answers (thread liveness, counts, ids, generation), duplicate and superseded notices by content hash within the recipient's generation, and hold-flag changes, which are state writes and never turns. JEV, through the K07 port, only for what code cannot read: needs_new_work, notice_only, asks_recorded_fact, asks_judgment, names_deliverable, and the bounded spans of a message. Policy, read from a floor file only Ryan edits: no_model (record and code reply), light (the cheapest curated model at medium effort, a fresh minimal context of the operator's words plus record pointers), standard (the recipient thread's launch model and effort), lead_only (a named lead model, admitted only when the recipient thread's role is lead). The operator's original bytes travel unchanged in the envelope with every routed part; an operator message is never dropped: a no_model route must deliver a reply built from the record or it escalates to light. JEV classifies and annotates; code decides; a JEV no-answer, timeout or refusal falls to the code rules and the standard route and never blocks or approves a turn (K07).",
+    serves: ["NG-086", "NG-088", "NG-089", "NG-091"],
+    fable_call:
+      "The one measured cause of the Oct 10 drain was wakes, not reasoning: six seats re-read 215,000 to 409,000 uncached tokens each to absorb a notice that said no acknowledgment was required, and Ryan's one-line liveness question started a new expensive seat. Reasoning was 2.5 percent of the comparison. A router at the admission point is the only place that sees every turn start on every route (T3.01 names six) before a provider is called; a Stop hook or a mod-side filter sees it after the context is loaded. JEV sits between the operator and the expensive model exactly as Ryan asked, but as a classifier on the admission decision, never as the authority; the floor file is the Ship Warden and broker shape SHAPE-2026-09-16 names.",
+    alternative:
+      "A JEV filter inside each provider adapter (the Claude mod, the Codex hooks): it runs after the seat is woken and its context loaded, so it saves nothing on the measured cases; and a per-provider filter is three implementations of one policy.",
+    post_cutoff_ryan_words: {
+      note: "Ryan's Oct 10, 2026 words are after the ledger cutoff. The spec writer records them through the post-cutoff ledger lane (intent/ledger/Post-Cutoff-Delta.json) and binds the quote here; until that item exists, X07 is satisfied by the fable_call above.",
+      quote:
+        "Assign Fable with solving for this with first classs design perhaps putting Jev inbetween me Astra so that Jev classifies and route away the expensive parts of a prompt that would lead to expensive tools calls",
+      when: "Oct 10, 2026, about 12:15 PM PDT, lead thread abf5e046-bb33-4f0e-97bc-d1ccbba31693",
+    },
+  },
 ];
 
 export const RYAN_DECISIONS_PENDING: PendingDecision[] = [
@@ -12149,3 +12170,228 @@ Object.assign(INSTRUCTION_COVERAGE.upstream_reconciliation, {
       "The diagnosis is incomplete and the upstream change is only a candidate repair. Existing 97 tests, the warm capture and the isolated failure-state image do not prove this product fix.",
   },
 });
+
+// Fable delta JEV cost router (D25), applied verbatim: the route slot at admission (T3.08, after T3.02)
+// and the JEV conditions behind K07 (T9.06, after T9.04).
+TASKS.splice(TASKS.findIndex((t) => t.id === "T3.02") + 1, 0, {
+  id: "T3.08",
+  slice: "slice-3",
+  title:
+    "The route slot at admission: code-only rules, the policy floor, no wake on a notice, one wake per sleeping seat",
+  serves: ["NG-086", "NG-088", "NG-091"],
+  detail_state: "detailed",
+  what: "A fork-namespace package packages/throughline-route (code only; no daemon, queue, watcher or credential client) that T3.01's admit() calls through the I-01 operations routeTurn and coalesceWake. Code pass: sender class from the admitted command's origin (operator, agent, system notice, instrument); the T7.01 envelope kind (notice, acknowledgment, request, reply, result) and its structured no_reply flag; exact facts answered from the record (is thread X alive: last event time, generation, state; counts; ids); duplicate and superseded notices by content hash within the recipient's generation; hold-flag changes (send-hold lifted, quiet window ended) applied as state writes with no turn. Policy pass: a floor file contracts/Route-Policy.json (versioned, carried by T10.10's settings lane, editable only by Ryan on the Mac and twr) that maps (sender class, envelope kind, code facts, JEV conditions when present) to a route and names the light model from ryan model list; the default route is standard, which is today's behaviour. Wake coalescing: a recipient whose worker is not in a turn receives one turn per batch of pending tasks; the adapter resumes it once with a code-built digest (ids, kinds, record pointers, the operator's bytes for operator messages) and the superseded entries listed, never one turn per message. A notice routed no_model to a sleeping seat records an annotation and starts nothing. Reset re-check: when the broker observer reports an account's reset (T11.04), every queued message for a seat stopped by that limit is re-evaluated against current state before any wake; notices superseded by a later message, older than the recipient's generation cut, or already applied as state are recorded and excluded from the digest. The JEV pass is absent until T9.06 binds it; the slot's decided_by records code or default until then. An operator message routed no_model must carry a record-built reply or the slot escalates it to light; the operator's bytes are never rewritten.",
+  files: [
+    {
+      path: "packages/throughline-route/package.json",
+      side: "fork-namespace",
+      action: "add",
+      exists_now: false,
+      surface: "authoring",
+    },
+    {
+      path: "packages/throughline-route/src/route-slot.ts",
+      side: "fork-namespace",
+      action: "add",
+      exists_now: false,
+      surface: "authoring",
+    },
+    {
+      path: "packages/throughline-route/src/code-facts.ts",
+      side: "fork-namespace",
+      action: "add",
+      exists_now: false,
+      surface: "authoring",
+    },
+    {
+      path: "packages/throughline-route/src/wake-digest.ts",
+      side: "fork-namespace",
+      action: "add",
+      exists_now: false,
+      surface: "authoring",
+    },
+    {
+      path: "packages/throughline-route/src/route-slot.test.ts",
+      side: "fork-namespace",
+      action: "add",
+      exists_now: false,
+      surface: "authoring",
+    },
+    {
+      path: "packages/throughline-route/fixtures/oct-10-wakes/",
+      side: "fork-namespace",
+      action: "add",
+      exists_now: false,
+      surface: "authoring",
+    },
+    {
+      path: "contracts/Route-Policy.json",
+      side: "config",
+      action: "add",
+      exists_now: false,
+      surface: "authoring",
+    },
+    {
+      path: "apps/server/src/throughline/admission/CommandAdmission.ts",
+      side: "fork-namespace",
+      action: "edit",
+      exists_now: false,
+      surface: "authoring",
+    },
+  ],
+  signatures: [
+    "routeTurn(admitted: AdmittedCommand, recipientGeneration: number, floor: RoutePolicy) -> RouteDecision",
+    "coalesceWake(recipientPublicId: string, generation: number) -> WakeDigest",
+    "codeFacts(admitted: AdmittedCommand, record: RecordPort) -> CodeFacts { senderClass; envelopeKind; noReply: boolean; recordedFactAnswer?: string; duplicateOf?: string; supersededBy?: string; holdChange?: string }",
+    "contracts/Route-Policy.json: { version, default_route: 'standard', light_model: <from ryan model list>, rules: [{ when: {...}, route }], operator_floor: { never_drop: true, no_model_requires_reply: true } }",
+    "test packages/throughline-route/src/route-slot.test.ts › 'the six Oct 10 notice fixtures route no_model and start no turn' and › 'an operator liveness fixture routes no_model with a record-built reply' and › 'one sleeping recipient with four pending tasks wakes once with a digest' and › 'a JEV no-answer leaves the code decision and the standard route' (specified, not yet implemented)",
+  ],
+  planned_checks: [
+    {
+      id: "S3-C13",
+      kind: "real-disk",
+      command:
+        "node ./checks/slice-3-admission-record.mts --repo /Users/Admin/throughline --only S3-C13",
+      expect:
+        "packages/throughline-route exists with the four source files and the fixtures folder; CommandAdmission.ts calls routeTurn before dispatch for every turn-effect command type and the comsnet route; the admission_decisions row shape carries route, decided_by, jev_step_id and floor_version; contracts/Route-Policy.json parses with default_route standard",
+      spec_projection: {
+        kind: "real-disk",
+        expected_today: "FAIL",
+        file_ready: false,
+        note: "add to spec.checks only when the check file carries S3-C13 on disk (spec check X05); until then this task's failing check is S3-C05",
+      },
+    },
+  ],
+  failing_checks: ["S3-C05"],
+  failing_check_first:
+    "before the work, the six Oct 10 notice fixtures replayed through the admission module each start a turn (route is not a concept the module has); recorded at intake as the red",
+  done_when: {
+    host: "twr, non-builder",
+    command:
+      "cd /Users/Admin/throughline && pnpm -C packages/throughline-route test && node ./docs/throughline/next-gen-spec/checks/slice-3-admission-record.mts --repo /Users/Admin/throughline --only S3-C05 S3-C13; then on the installed tower server: send the m1 notice fixture to three live seats whose workers are idle, send Ryan's liveness fixture as an operator message to one of them, and read the admission_decisions rows and the provider turn counts",
+    expect:
+      "tests green; the three notice sends record route no_model, decided_by code, and the provider turn count for those seats does not change; the liveness message records no_model with a reply row delivered to the operator surface within the rail's delivery; the floor file version in every row equals the installed contracts/Route-Policy.json",
+    judge: "non-builder seat",
+  },
+  depends_on: ["T3.01", "T3.02"],
+  executor: { role: "implementer", model_preference: "gpt-6.1-sol", effort: "high" },
+  reviewer: { role: "reviewer", model_preference: "gpt-6-astra", effort: "medium" },
+  risk: [
+    "a wrong no_model silences a seat that needed the message: mitigated by the operator floor (never drop, reply required), by the default route standard, and by the recorded decision row a judge can replay",
+    "a cold-cache wake costs ten times a cached poll on Astra (250 vs 25 credits per million input): coalescing is what makes a suspended seat cheaper than a polling one; the digest test is the guard",
+  ],
+  rollback:
+    "remove the routeTurn call from CommandAdmission.ts and the package; every turn-effect command dispatches as before; the admission_decisions columns stay nullable",
+  failure_test:
+    "Fail if: any notice fixture starts a turn; an operator message is admitted no_model with no reply row; a recipient wakes more than once for one batch of pending tasks; the floor file is written by any code path",
+  ryan_act: "none",
+  governing_shapes: [
+    "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-09-16-ryan-transfer-the-gate-to-a-floor-governed-process-never-operator-tokens-and-fix-before-delivery-not-at-stop.yaml",
+    "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-09-30-ryan-jev-and-model-calls-have-no-limits-unless-ryan-mints-one.yaml",
+  ],
+  command_grammar: "IC-002",
+  delta_sources: [
+    "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-05/Fable-Delta-JEV-Cost-Router.json",
+  ],
+} as unknown as Task);
+TASKS.splice(TASKS.findIndex((t) => t.id === "T9.04") + 1, 0, {
+  id: "T9.06",
+  slice: "slice-9",
+  title: "JEV conditions feed the route slot through the K07 port; code still decides",
+  serves: ["NG-086", "NG-088", "NG-089", "NG-091"],
+  detail_state: "detailed",
+  what: "Bind the JEV pass of the route slot (T3.08) to the one condition port (T9.02). For every admitted message the code pass could not decide, the slot asks the port one batched call over the message state: needs_new_work, notice_only, asks_recorded_fact, asks_judgment, names_deliverable (noul), and bounded_spans (the character ranges of the message that are bounded work versus judgment; the operator's bytes are never rewritten, the spans only annotate). Answers are typed, versioned and cached by content hash plus recipient generation; the floor file maps them to a route; a no-answer, timeout or refusal records the outcome and leaves the code decision and the standard route. Every call is a step on the recipient task's workflow with source ids, question version, model and confidence (K07), so a retry reads the recorded answer. The route decision row records decided_by jev and the step id. The slot registers itself in the port's consumer registry (NG-090). JEV out of credit or the broker route down is an observer fact: the port returns the named outage outcome and the slot runs code-only; no turn waits on JEV.",
+  files: [
+    {
+      path: "packages/throughline-route/src/jev-pass.ts",
+      side: "fork-namespace",
+      action: "add",
+      exists_now: false,
+      surface: "authoring",
+    },
+    {
+      path: "packages/throughline-route/src/jev-pass.test.ts",
+      side: "fork-namespace",
+      action: "add",
+      exists_now: false,
+      surface: "authoring",
+    },
+    {
+      path: "packages/throughline-conditions/src/consumers/route-slot.ts",
+      side: "fork-namespace",
+      action: "add",
+      exists_now: false,
+      surface: "authoring",
+    },
+  ],
+  signatures: [
+    "jevPass(admitted: AdmittedCommand, port: ConditionPort, floor: RoutePolicy) -> { conditions: RouteConditions | NoAnswer | Timeout | Refusal | Outage; step_id?: string }",
+    "RouteConditions { needs_new_work: number; notice_only: number; asks_recorded_fact: number; asks_judgment: number; names_deliverable: number; bounded_spans: Array<{ start: number; end: number; kind: 'bounded' | 'judgment' }> }",
+    "test packages/throughline-route/src/jev-pass.test.ts › 'the Oct 10 corpus routes with decided_by jev and one step per message' and › 'a broadcast to five recipients makes one port call' and › 'outage, timeout, refusal and malformed each leave the code decision in force' (specified, not yet implemented)",
+  ],
+  planned_checks: [
+    {
+      id: "S9-C06",
+      kind: "contract-test",
+      command:
+        "send the Oct 10 corpus through the installed admission service with the port bound; read the recipient workflows' steps and the admission_decisions rows",
+      expect:
+        "one JEV step per message with source ids, question version, model and confidence; a broadcast makes one step shared by its recipients; the retry of a send reuses the step; every row's decided_by is jev or code, never a route the floor file does not map",
+      spec_projection: {
+        kind: "real-disk",
+        expected_today: "measure on first run",
+        file_ready: false,
+        note: "add to spec.checks only when the check file exists on disk (spec check X05)",
+      },
+    },
+  ],
+  failing_checks: ["S3-C05"],
+  failing_check_first:
+    "before the work, the route slot's decided_by is code or default on every row and the port's consumer registry has no route-slot entry; recorded at intake as the red",
+  done_when: {
+    host: "twr, non-builder",
+    command:
+      "K07 route test (the labelled wake corpus at 0.80 and two neighbours) on the installed tower, then the five-recipient broadcast and the outage, timeout, refusal and malformed cases from T9.02's done_when",
+    expect:
+      "false-no_model and false-wake rates recorded with the chosen value; one port call per broadcast; every outage case records its outcome and the code decision stands; no operator message is routed no_model without a reply row",
+    judge: "non-builder seat",
+  },
+  depends_on: ["T9.02", "T9.04", "T3.08"],
+  executor: { role: "implementer", model_preference: "gpt-6.1-sol", effort: "high" },
+  reviewer: { role: "reviewer", model_preference: "gpt-6-astra", effort: "medium" },
+  risk: [
+    "the route conditions are not yet calibrated: until T9.04 records the chosen value the JEV pass annotates and the floor file maps only the code facts to no_model",
+  ],
+  rollback:
+    "unbind the JEV pass; the slot runs code-only as in T3.08; recorded steps stay on the record",
+  failure_test:
+    "Fail if: a turn waits on a JEV call; a route the floor file does not map is applied; a broadcast makes one call per recipient; an operator message is silenced",
+  ryan_act: "none",
+  governing_shapes: [
+    "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-09-30-ryan-jev-and-model-calls-have-no-limits-unless-ryan-mints-one.yaml",
+    "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-09-16-ryan-transfer-the-gate-to-a-floor-governed-process-never-operator-tokens-and-fix-before-delivery-not-at-stop.yaml",
+  ],
+  command_grammar: "IC-002",
+  delta_sources: [
+    "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-05/Fable-Delta-JEV-Cost-Router.json",
+  ],
+} as unknown as Task);
+
+export const JEV_COST_ROUTER_DELTA = {
+  source_documents: [
+    {
+      path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-05/Fable-Delta-JEV-Cost-Router.json",
+      sha256: "aa20ea86062839e9bf973c99c9580a4d3d1190588898cca1727cc0bcd7ccb224",
+    },
+  ],
+  decision: "D25",
+  new_task_ids: ["T3.08", "T9.06"],
+  amended: ["K07", "T3.01", "T3.02", "T7.03", "T8.01", "T9.02", "T9.04", "T11.02", "T11.04"],
+  projection_notes: [
+    "D25's rejected_alternative is carried in the decision's alternative field.",
+    "New task file rows carry surface authoring; both new tasks carry command_grammar IC-002 like every task.",
+    "done_when appends land on done_when.expect, the convention for done_when appends since R2.",
+    "Ryan's Oct 10 words travel as D25.post_cutoff_ryan_words; the post-cutoff ledger item is outside the spec folder and not recorded in this pass, so D25 stands on its fable_call as the delta specifies.",
+    "S3-C13 and S9-C06 stay planned checks (file_ready false) and are not added to spec.checks.",
+  ],
+};

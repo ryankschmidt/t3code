@@ -5,9 +5,9 @@
     <title>ThroughLine next-generation implementation spec — map</title>
     <meta
       name="spec-sha256"
-      content="7504b94df3e48c758dbd0c0c51b878884b927caf2ea3a301efe249661b517483"
+      content="abc3ca3c395ee2cebda637ee15e89c7d52ca028add9428783af551757f9e964c"
     />
-    <meta name="spec-version" content="0.4.21" />
+    <meta name="spec-version" content="0.4.22" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
@@ -483,9 +483,9 @@
         installed in 24 hours.”
       </p>
       <p class="sub">
-        Machine-readable task graph <code>spec.json</code> version 0.4.21. Original design
+        Machine-readable task graph <code>spec.json</code> version 0.4.22. Original design
         authorship: fable-throughline-design (ThroughLine thread
-        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 9:27 AM PDT by
+        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 1:28 PM PDT by
         claude session c444cd86-00b3-4271-8234-db778fe7438b. Bound to ledger sha256 0b260e00b391
         (199 items). Every task names the ledger ids it serves. The technical execution lead,
         lead-execlead-1ad87c0b, works from the JSON; this page is rendered from it.
@@ -496,15 +496,15 @@
           <div class="l">slices, dependency-ordered</div>
         </div>
         <div class="kpi">
-          <div class="v">74</div>
-          <div class="l">tasks (74 detailed, 0 outline)</div>
+          <div class="v">76</div>
+          <div class="l">tasks (76 detailed, 0 outline)</div>
         </div>
         <div class="kpi" data-check-population="all-slices">
           <div class="v">47</div>
           <div class="l">checks across all slices · 18 slice-1 definitions</div>
         </div>
         <div class="kpi">
-          <div class="v">24</div>
+          <div class="v">25</div>
           <div class="l">decisions, 19 with Ryan's quote</div>
         </div>
         <div class="kpi">
@@ -3598,7 +3598,7 @@
             <div class="smeta">
               <span class="chip ok">fixed contract</span>
               <span class="after">after <a href="#slice-2">slice 2</a></span>
-              <span class="count">6 tasks</span>
+              <span class="count">7 tasks</span>
             </div>
             <p class="why">
               T3.07 is the first Phase 4 task after the 0.0.60 source/release foundation and seam
@@ -4200,7 +4200,20 @@
                   the done computation reads it (K08). The decorator mounts once at the engine
                   assembly point already edited by the fork; no new stock-file edit; the HTTP
                   dispatch door is closed by that refusal; the comsnet door's retirement and its
-                  three fork-file removal proofs belong to T7.04.
+                  three fork-file removal proofs belong to T7.04. Route slot (D25): admit() for the
+                  turn-effect command types and the comsnet route evaluates a route slot before
+                  dispatch, in the same transaction as the admission decision; the decision row
+                  records route (no_model | light | standard | lead_only), the pass that decided it
+                  (code | jev | default), the code facts used, the JEV step id when one exists, and
+                  the floor-file version. no_model dispatches no turn: the command is admitted, the
+                  event is recorded, a record-built reply is enqueued on the rail when the sender
+                  expects one, and the recipient's pending digest gains one entry. light, standard
+                  and lead_only dispatch a turn carrying the route so the provider adapter launches
+                  or resumes the recipient at the routed model and effort; a route the adapter
+                  cannot honour (no such model on this host) falls back to standard and records the
+                  fallback. The slot is a policy input exactly as the headroom slot (T11.04) and the
+                  target-policy slot (T9.03) are; it never changes a seat's launch setting and never
+                  edits the floor file.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -4733,6 +4746,21 @@
                         (specified, not yet implemented)</code
                       >
                     </li>
+                    <li>
+                      <code
+                        >I-01 operation (Fable delta D25): routeTurn(admitted, recipient_generation,
+                        floor) -&gt; RouteDecision { route: no_model | light | standard | lead_only;
+                        decided_by: code | jev | default; facts: CodeFacts; jev_step_id?: string;
+                        reply?: RecordReply; floor_version: string }</code
+                      >
+                    </li>
+                    <li>
+                      <code
+                        >I-01 operation (Fable delta D25): coalesceWake(recipient_public_id,
+                        generation) -&gt; WakeDigest { entries: AdmittedCommandRef[]; superseded:
+                        AdmittedCommandRef[]; one_turn: true }</code
+                      >
+                    </li>
                   </ul>
                 </div>
                 <p>
@@ -4765,7 +4793,11 @@
                     edits after T3.01, read from the slice-2 seam manifest against the pinned
                     upstream and fork SHAs (T2.01), are no more than the admitted stock-file set and
                     do not include apps/server/src/orchestration/http.ts; a turn start through the
-                    HTTP endpoint is refused with the signed-admission reason, counted</span
+                    HTTP endpoint is refused with the signed-admission reason, counted; the six Oct
+                    10, 2026 notice wakes replayed as fixtures through the admission module
+                    (observation mode, no provider) record route no_model with decided_by code and
+                    start zero turns; the lead ruling fixture records standard and starts one turn;
+                    Ryan's liveness fixture records no_model with a record-built reply</span
                   >
                 </p>
                 <p class="risk">
@@ -4848,7 +4880,11 @@
                   undocumented, set to the largest payload the record test proves stores and
                   reloads, recorded as a named constant. The in-process transport derives created
                   thread ids and command ids from the task id and step name (E16); the symphony
-                  campaign task t3.thread-run stays, now idempotent.
+                  campaign task t3.thread-run stays, now idempotent. Evidence pointer (D25): a tool
+                  result stored in blobs is addressable by the model through one read-back operation
+                  on the record, readBlob(blob_id, byte_range) -&gt; bytes, so a provider adapter
+                  may hand the model an evidence summary with the blob id instead of the raw result
+                  and the model can still recover any original passage.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -5019,6 +5055,13 @@
                         admitted row' (specified, not yet implemented)</code
                       >
                     </li>
+                    <li>
+                      <code
+                        >RecordPort.readBlob(blobId: string, range?: { start: number; end: number })
+                        -&gt; Promise&lt;{ bytes: Uint8Array; mediaType: string; size: number
+                        }&gt;</code
+                      >
+                    </li>
                   </ul>
                 </div>
                 <p>
@@ -5054,6 +5097,215 @@
                   transport edits; drop schema throughline_record (it holds only test data at this
                   point)
                 </p>
+              </div>
+            </details>
+            <details class="task detailed" id="T3.08">
+              <summary>
+                <span class="tid">T3.08</span
+                ><span class="ttitle"
+                  >The route slot at admission: code-only rules, the policy floor, no wake on a
+                  notice, one wake per sleeping seat</span
+                >
+                <span class="meta"
+                  ><span class="chip ok">fixed contract</span>
+                  <span class="chip exec">gpt-6.1-sol · high</span
+                  ><span class="chip exec">review gpt-6-astra</span></span
+                >
+                <span class="serves"
+                  ><span class="chip ng">NG-086</span><span class="chip ng">NG-088</span
+                  ><span class="chip ng">NG-091</span></span
+                >
+                <span class="sides"
+                  ><span class="chip ours">fork-namespace</span
+                  ><span class="chip config">config</span></span
+                >
+              </summary>
+              <div class="body">
+                <p class="what">
+                  A fork-namespace package packages/throughline-route (code only; no daemon, queue,
+                  watcher or credential client) that T3.01's admit() calls through the I-01
+                  operations routeTurn and coalesceWake. Code pass: sender class from the admitted
+                  command's origin (operator, agent, system notice, instrument); the T7.01 envelope
+                  kind (notice, acknowledgment, request, reply, result) and its structured no_reply
+                  flag; exact facts answered from the record (is thread X alive: last event time,
+                  generation, state; counts; ids); duplicate and superseded notices by content hash
+                  within the recipient's generation; hold-flag changes (send-hold lifted, quiet
+                  window ended) applied as state writes with no turn. Policy pass: a floor file
+                  contracts/Route-Policy.json (versioned, carried by T10.10's settings lane,
+                  editable only by Ryan on the Mac and twr) that maps (sender class, envelope kind,
+                  code facts, JEV conditions when present) to a route and names the light model from
+                  ryan model list; the default route is standard, which is today's behaviour. Wake
+                  coalescing: a recipient whose worker is not in a turn receives one turn per batch
+                  of pending tasks; the adapter resumes it once with a code-built digest (ids,
+                  kinds, record pointers, the operator's bytes for operator messages) and the
+                  superseded entries listed, never one turn per message. A notice routed no_model to
+                  a sleeping seat records an annotation and starts nothing. Reset re-check: when the
+                  broker observer reports an account's reset (T11.04), every queued message for a
+                  seat stopped by that limit is re-evaluated against current state before any wake;
+                  notices superseded by a later message, older than the recipient's generation cut,
+                  or already applied as state are recorded and excluded from the digest. The JEV
+                  pass is absent until T9.06 binds it; the slot's decided_by records code or default
+                  until then. An operator message routed no_model must carry a record-built reply or
+                  the slot escalates it to light; the operator's bytes are never rewritten.
+                </p>
+                <p>
+                  <b>Command changes:</b>
+                  <a href="#instruction-coverage"
+                    >IC-002 grammar, caller preservation and drain proof apply before any command
+                    change.</a
+                  >
+                </p>
+
+                <p>
+                  <b>Design sources</b>
+                  <code
+                    >/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-05/Fable-Delta-JEV-Cost-Router.json</code
+                  >
+                </p>
+                <p class="deps">
+                  <b>After</b> <a href="#T3.01">T3.01</a> <a href="#T3.02">T3.02</a>
+                </p>
+                <table class="files">
+                  <thead>
+                    <tr>
+                      <th>file</th>
+                      <th>side</th>
+                      <th>act</th>
+                      <th>note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><code>packages/throughline-route/package.json</code></td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>add</td>
+                      <td></td>
+                    </tr>
+                    <tr>
+                      <td><code>packages/throughline-route/src/route-slot.ts</code></td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>add</td>
+                      <td></td>
+                    </tr>
+                    <tr>
+                      <td><code>packages/throughline-route/src/code-facts.ts</code></td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>add</td>
+                      <td></td>
+                    </tr>
+                    <tr>
+                      <td><code>packages/throughline-route/src/wake-digest.ts</code></td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>add</td>
+                      <td></td>
+                    </tr>
+                    <tr>
+                      <td><code>packages/throughline-route/src/route-slot.test.ts</code></td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>add</td>
+                      <td></td>
+                    </tr>
+                    <tr>
+                      <td><code>packages/throughline-route/fixtures/oct-10-wakes/</code></td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>add</td>
+                      <td></td>
+                    </tr>
+                    <tr>
+                      <td><code>contracts/Route-Policy.json</code></td>
+                      <td><span class="chip config">config</span></td>
+                      <td>add</td>
+                      <td></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>apps/server/src/throughline/admission/CommandAdmission.ts</code>
+                      </td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>edit</td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="sig">
+                  <b>Fixed contract signatures</b>
+                  <ul>
+                    <li>
+                      <code
+                        >routeTurn(admitted: AdmittedCommand, recipientGeneration: number, floor:
+                        RoutePolicy) -&gt; RouteDecision</code
+                      >
+                    </li>
+                    <li>
+                      <code
+                        >coalesceWake(recipientPublicId: string, generation: number) -&gt;
+                        WakeDigest</code
+                      >
+                    </li>
+                    <li>
+                      <code
+                        >codeFacts(admitted: AdmittedCommand, record: RecordPort) -&gt; CodeFacts {
+                        senderClass; envelopeKind; noReply: boolean; recordedFactAnswer?: string;
+                        duplicateOf?: string; supersededBy?: string; holdChange?: string }</code
+                      >
+                    </li>
+                    <li>
+                      <code
+                        >contracts/Route-Policy.json: { version, default_route: 'standard',
+                        light_model: &lt;from ryan model list&gt;, rules: [{ when: {...}, route }],
+                        operator_floor: { never_drop: true, no_model_requires_reply: true } }</code
+                      >
+                    </li>
+                    <li>
+                      <code
+                        >test packages/throughline-route/src/route-slot.test.ts › 'the six Oct 10
+                        notice fixtures route no_model and start no turn' and › 'an operator
+                        liveness fixture routes no_model with a record-built reply' and › 'one
+                        sleeping recipient with four pending tasks wakes once with a digest' and ›
+                        'a JEV no-answer leaves the code decision and the standard route'
+                        (specified, not yet implemented)</code
+                      >
+                    </li>
+                  </ul>
+                </div>
+                <p><b>Failing check first</b> <a href="#S3-C05" class="chip fail">S3-C05 —</a></p>
+                <p>
+                  <b>Done when</b>
+                  <code class="cmd"
+                    >cd /Users/Admin/throughline &amp;&amp; pnpm -C packages/throughline-route test
+                    &amp;&amp; node
+                    ./docs/throughline/next-gen-spec/checks/slice-3-admission-record.mts --repo
+                    /Users/Admin/throughline --only S3-C05 S3-C13; then on the installed tower
+                    server: send the m1 notice fixture to three live seats whose workers are idle,
+                    send Ryan's liveness fixture as an operator message to one of them, and read the
+                    admission_decisions rows and the provider turn counts</code
+                  >
+                  <span class="expect"
+                    >→ tests green; the three notice sends record route no_model, decided_by code,
+                    and the provider turn count for those seats does not change; the liveness
+                    message records no_model with a reply row delivered to the operator surface
+                    within the rail's delivery; the floor file version in every row equals the
+                    installed contracts/Route-Policy.json</span
+                  >
+                </p>
+                <p class="risk">
+                  <b>Risk</b>
+                  <span
+                    >a wrong no_model silences a seat that needed the message: mitigated by the
+                    operator floor (never drop, reply required), by the default route standard, and
+                    by the recorded decision row a judge can replay</span
+                  ><br /><span
+                    >a cold-cache wake costs ten times a cached poll on Astra (250 vs 25 credits per
+                    million input): coalescing is what makes a suspended seat cheaper than a polling
+                    one; the digest test is the guard</span
+                  >
+                </p>
+                <p class="rb">
+                  <b>Rollback</b> remove the routeTurn call from CommandAdmission.ts and the
+                  package; every turn-effect command dispatches as before; the admission_decisions
+                  columns stay nullable
+                </p>
+                <p class="ryan"><b>Ryan's act</b> none</p>
               </div>
             </details>
             <details class="task detailed" id="T3.03">
@@ -9849,7 +10101,15 @@
                   rail (NG-088): each admitted send and each reply passes through the K07 condition
                   port as a recorded step on the recipient task's workflow, carrying source ids,
                   question version, model and confidence; the answer annotates the message and never
-                  blocks or releases delivery.
+                  blocks or releases delivery. Waiting ends the turn (D25): the sender's durable
+                  event wait is the seat's suspension, never a poll inside the model's turn; the
+                  coms wait tool returns to the provider adapter a suspend outcome that ends the
+                  model step, and the reply arrives as a new admitted command through the route slot
+                  (T3.08), which wakes the seat once with a digest when more than one task is
+                  pending. A broadcast is one admitted command with many recipients, classified
+                  once; each recipient's task carries the same route decision and JEV step id. An
+                  admitted send to a sleeping recipient whose route is no_model records the
+                  annotation and starts no task for that recipient.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -9904,7 +10164,11 @@
                     >→ each run yields exactly one admitted command and one delivered reply or one
                     recorded unknown, never two deliveries; the duplicate and late replies are
                     recorded and ignored; reply-before-wait resumes exactly once; the process count
-                    for any watcher or poller is 0</span
+                    for any watcher or poller is 0; a notice sent to five idle recipients records
+                    one route decision, one JEV step when the port is bound, and zero provider
+                    turns; a seat that calls wait ends its model step and resumes exactly once when
+                    the reply and two queued notices are pending, with the notices in the
+                    digest</span
                   >
                 </p>
 
@@ -10282,7 +10546,17 @@
                   broker token; the launcher-passed admission token is attached to every outbound
                   model request. The mod attaches the step id to each tool.call and model request it
                   observes; an action with no step id is refused by the mod (B03 fail-closed) and,
-                  independently, at the broker.
+                  independently, at the broker. Evidence instead of raw output (D25, level 6):
+                  before a tool result enters the model's context the mod's tool.result hook sends
+                  the full result to the record (blob when over the step payload limit, T3.02) and
+                  asks the admission service for evidence: code facts (exit code, byte and line
+                  counts, changed paths, diff stats, the first and last lines) and, when the K07
+                  port is bound, the passages JEV selects against the tool call's stated purpose and
+                  the bounded questions the call carried; the model receives the evidence with the
+                  blob id and recovers any original passage through readBlob. Whether the Claude mod
+                  can replace a tool result before the model sees it is measured in the K03 row,
+                  never assumed; where it cannot, the row says observe-only and the raw result
+                  enters context.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -10860,7 +11134,7 @@
               <span class="after"
                 >after <a href="#slice-5">slice 5</a>, <a href="#slice-7">slice 7</a></span
               >
-              <span class="count">5 tasks</span>
+              <span class="count">6 tasks</span>
             </div>
             <p class="why">
               A target is a task on the record keyed by the public id; JEV rides the messaging rail.
@@ -11230,7 +11504,10 @@
                   without importing one another. After a target is admitted (NG-078), every later
                   message is evaluated automatically with a typed outcome, unchanged, replaces the
                   target, constrains it, or a separate task, and each change is a revision event
-                  that keeps the old words and the reason.
+                  that keeps the old words and the reason. The route slot (T3.08) is a registered
+                  consumer of the port (NG-090) through T9.06; its conditions are batched in one
+                  call per admitted message and cached by content hash plus recipient generation, so
+                  a broadcast is one call.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -11480,7 +11757,13 @@
                   from T9.02 because labelling and measuring is its own window. Also NG-092: every
                   Absurd table, column, state value and option, and every Pi role, event and field,
                   listed under one address scheme generated from the installed schemas, so JEV
-                  questions name them exactly.
+                  questions name them exactly. The corpus adds the wake messages of the Oct 10, 2026
+                  usage audit (the two RESUME LEAD MESSAGES notices, the lead ruling, Ryan's
+                  liveness question, and the other first messages of the seven cold wakes), labelled
+                  no_model, light, standard or lead_only by a non-builder with the reason; the route
+                  conditions are calibrated on this corpus at 0.80 and two neighbours alongside the
+                  target-promotion parameter, and the false-no_model rate is reported separately
+                  because its cost is a silenced seat.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -11531,6 +11814,149 @@
                 </p>
 
                 <p class="rb"><b>Rollback</b> Restore the 0.80 unevaluated parameter.</p>
+              </div>
+            </details>
+            <details class="task detailed" id="T9.06">
+              <summary>
+                <span class="tid">T9.06</span
+                ><span class="ttitle"
+                  >JEV conditions feed the route slot through the K07 port; code still decides</span
+                >
+                <span class="meta"
+                  ><span class="chip ok">fixed contract</span>
+                  <span class="chip exec">gpt-6.1-sol · high</span
+                  ><span class="chip exec">review gpt-6-astra</span></span
+                >
+                <span class="serves"
+                  ><span class="chip ng">NG-086</span><span class="chip ng">NG-088</span
+                  ><span class="chip ng">NG-089</span><span class="chip ng">NG-091</span></span
+                >
+                <span class="sides"><span class="chip ours">fork-namespace</span></span>
+              </summary>
+              <div class="body">
+                <p class="what">
+                  Bind the JEV pass of the route slot (T3.08) to the one condition port (T9.02). For
+                  every admitted message the code pass could not decide, the slot asks the port one
+                  batched call over the message state: needs_new_work, notice_only,
+                  asks_recorded_fact, asks_judgment, names_deliverable (noul), and bounded_spans
+                  (the character ranges of the message that are bounded work versus judgment; the
+                  operator's bytes are never rewritten, the spans only annotate). Answers are typed,
+                  versioned and cached by content hash plus recipient generation; the floor file
+                  maps them to a route; a no-answer, timeout or refusal records the outcome and
+                  leaves the code decision and the standard route. Every call is a step on the
+                  recipient task's workflow with source ids, question version, model and confidence
+                  (K07), so a retry reads the recorded answer. The route decision row records
+                  decided_by jev and the step id. The slot registers itself in the port's consumer
+                  registry (NG-090). JEV out of credit or the broker route down is an observer fact:
+                  the port returns the named outage outcome and the slot runs code-only; no turn
+                  waits on JEV.
+                </p>
+                <p>
+                  <b>Command changes:</b>
+                  <a href="#instruction-coverage"
+                    >IC-002 grammar, caller preservation and drain proof apply before any command
+                    change.</a
+                  >
+                </p>
+
+                <p>
+                  <b>Design sources</b>
+                  <code
+                    >/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-05/Fable-Delta-JEV-Cost-Router.json</code
+                  >
+                </p>
+                <p class="deps">
+                  <b>After</b> <a href="#T9.02">T9.02</a> <a href="#T9.04">T9.04</a>
+                  <a href="#T3.08">T3.08</a>
+                </p>
+                <table class="files">
+                  <thead>
+                    <tr>
+                      <th>file</th>
+                      <th>side</th>
+                      <th>act</th>
+                      <th>note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><code>packages/throughline-route/src/jev-pass.ts</code></td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>add</td>
+                      <td></td>
+                    </tr>
+                    <tr>
+                      <td><code>packages/throughline-route/src/jev-pass.test.ts</code></td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>add</td>
+                      <td></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>packages/throughline-conditions/src/consumers/route-slot.ts</code>
+                      </td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>add</td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="sig">
+                  <b>Fixed contract signatures</b>
+                  <ul>
+                    <li>
+                      <code
+                        >jevPass(admitted: AdmittedCommand, port: ConditionPort, floor: RoutePolicy)
+                        -&gt; { conditions: RouteConditions | NoAnswer | Timeout | Refusal | Outage;
+                        step_id?: string }</code
+                      >
+                    </li>
+                    <li>
+                      <code
+                        >RouteConditions { needs_new_work: number; notice_only: number;
+                        asks_recorded_fact: number; asks_judgment: number; names_deliverable:
+                        number; bounded_spans: Array&lt;{ start: number; end: number; kind:
+                        'bounded' | 'judgment' }&gt; }</code
+                      >
+                    </li>
+                    <li>
+                      <code
+                        >test packages/throughline-route/src/jev-pass.test.ts › 'the Oct 10 corpus
+                        routes with decided_by jev and one step per message' and › 'a broadcast to
+                        five recipients makes one port call' and › 'outage, timeout, refusal and
+                        malformed each leave the code decision in force' (specified, not yet
+                        implemented)</code
+                      >
+                    </li>
+                  </ul>
+                </div>
+                <p><b>Failing check first</b> <a href="#S3-C05" class="chip fail">S3-C05 —</a></p>
+                <p>
+                  <b>Done when</b>
+                  <code class="cmd"
+                    >K07 route test (the labelled wake corpus at 0.80 and two neighbours) on the
+                    installed tower, then the five-recipient broadcast and the outage, timeout,
+                    refusal and malformed cases from T9.02's done_when</code
+                  >
+                  <span class="expect"
+                    >→ false-no_model and false-wake rates recorded with the chosen value; one port
+                    call per broadcast; every outage case records its outcome and the code decision
+                    stands; no operator message is routed no_model without a reply row</span
+                  >
+                </p>
+                <p class="risk">
+                  <b>Risk</b>
+                  <span
+                    >the route conditions are not yet calibrated: until T9.04 records the chosen
+                    value the JEV pass annotates and the floor file maps only the code facts to
+                    no_model</span
+                  >
+                </p>
+                <p class="rb">
+                  <b>Rollback</b> unbind the JEV pass; the slot runs code-only as in T3.08; recorded
+                  steps stay on the record
+                </p>
+                <p class="ryan"><b>Ryan's act</b> none</p>
               </div>
             </details>
             <details class="task detailed" id="T9.05">
@@ -13167,7 +13593,13 @@
                   retraction event. Verify one admitted change/event per operation and the
                   authenticated caller/generation. A stale revision or direct record write refuses.
                   Calls delegate to the common target interface; no provider owns target state. The
-                  launcher binds this adapter on every initial and replacement launch.
+                  launcher binds this adapter on every initial and replacement launch. Evidence
+                  instead of raw output (D25, level 6) for Codex: the native hook that observes a
+                  tool result sends it to the record and requests evidence as T8.01 does; whether a
+                  Codex native hook can replace the result before the model reads it is measured in
+                  the K03 row (the Oct 10 audit shows Codex seats re-reading 40,000-character
+                  truncated results on every later step); where it cannot, the row says observe-only
+                  and the adapter's only lever is the route slot and wake coalescing.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -13490,7 +13922,12 @@
                   is then added to the observer itself. Preserve every currently configured broker
                   identity, including unloaded/unknown accounts, by joining current
                   configured-identity status with the observer. Loaded/available/configured are
-                  distinct; no fixed account count.
+                  distinct; no fixed account count. Reset re-check (D25): when the observer reports
+                  an account's reset, the model route does not resume the seats that limit stopped
+                  on their queued messages as they stand; it asks the route slot (T3.08) to
+                  re-evaluate each queued message against current state and wakes each seat at most
+                  once with the digest of what survives; a wake whose digest is empty is recorded
+                  and not started.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -18548,6 +18985,56 @@
             ><span class="chip ng">NG-038</span>
           </p>
         </article>
+        <article class="decision" id="D25">
+          <div class="dhead">
+            <span class="did">D25</span>
+            <h4>
+              A turn is routed before any expensive model reads it: code first, JEV for meaning, a
+              policy floor decides; Ryan's words travel whole
+            </h4>
+          </div>
+          <p>
+            Every command that could start a provider turn (thread.turn.start,
+            thread.user-input.respond, a comsnet send, an Agent Instruments wake) passes a route
+            slot inside the one admission decision before any provider is called. The slot runs
+            three passes in order. Code: sender class (operator, agent, system notice, instrument),
+            the envelope kind and its structured no-reply flag, exact facts a record answers (thread
+            liveness, counts, ids, generation), duplicate and superseded notices by content hash
+            within the recipient's generation, and hold-flag changes, which are state writes and
+            never turns. JEV, through the K07 port, only for what code cannot read: needs_new_work,
+            notice_only, asks_recorded_fact, asks_judgment, names_deliverable, and the bounded spans
+            of a message. Policy, read from a floor file only Ryan edits: no_model (record and code
+            reply), light (the cheapest curated model at medium effort, a fresh minimal context of
+            the operator's words plus record pointers), standard (the recipient thread's launch
+            model and effort), lead_only (a named lead model, admitted only when the recipient
+            thread's role is lead). The operator's original bytes travel unchanged in the envelope
+            with every routed part; an operator message is never dropped: a no_model route must
+            deliver a reply built from the record or it escalates to light. JEV classifies and
+            annotates; code decides; a JEV no-answer, timeout or refusal falls to the code rules and
+            the standard route and never blocks or approves a turn (K07).
+          </p>
+
+          <p class="fable">
+            <b>Design call</b> The one measured cause of the Oct 10 drain was wakes, not reasoning:
+            six seats re-read 215,000 to 409,000 uncached tokens each to absorb a notice that said
+            no acknowledgment was required, and Ryan's one-line liveness question started a new
+            expensive seat. Reasoning was 2.5 percent of the comparison. A router at the admission
+            point is the only place that sees every turn start on every route (T3.01 names six)
+            before a provider is called; a Stop hook or a mod-side filter sees it after the context
+            is loaded. JEV sits between the operator and the expensive model exactly as Ryan asked,
+            but as a classifier on the admission decision, never as the authority; the floor file is
+            the Ship Warden and broker shape SHAPE-2026-09-16 names.
+          </p>
+          <p class="alt">
+            <b>Alternative</b> A JEV filter inside each provider adapter (the Claude mod, the Codex
+            hooks): it runs after the seat is woken and its context loaded, so it saves nothing on
+            the measured cases; and a per-provider filter is three implementations of one policy.
+          </p>
+          <p class="serves">
+            <span class="chip ng">NG-086</span><span class="chip ng">NG-088</span
+            ><span class="chip ng">NG-089</span><span class="chip ng">NG-091</span>
+          </p>
+        </article>
       </div>
 
       <h2>Decisions that are Ryan's (carried, never done first)</h2>
@@ -18654,7 +19141,7 @@
             answers <span class="chip pre">A03</span><span class="chip pre">F05</span> · binds
             <a href="#slice-3">slice 3</a>, <a href="#slice-4">slice 4</a>,
             <a href="#slice-7">slice 7</a>, <a href="#slice-8">slice 8</a>,
-            <a href="#slice-11">slice 11</a> · 27 tasks inherit it
+            <a href="#slice-11">slice 11</a> · 28 tasks inherit it
           </p>
           <p class="serves">
             <span class="chip ng">NG-002</span><span class="chip ng">NG-003</span
@@ -18698,7 +19185,7 @@
           <p class="serves">
             answers <span class="chip pre">A04</span> · binds <a href="#slice-3">slice 3</a>,
             <a href="#slice-7">slice 7</a>, <a href="#slice-9">slice 9</a>,
-            <a href="#slice-10">slice 10</a> · 26 tasks inherit it
+            <a href="#slice-10">slice 10</a> · 28 tasks inherit it
           </p>
           <p class="serves">
             <span class="chip ng">NG-013</span><span class="chip ng">NG-014</span
@@ -19017,21 +19504,34 @@
             socket sends and replies (T7.03); never to stock-provider activity observed afterwards.
             Every call and answer is an Absurd step on the request's own workflow carrying source
             ids, question version, model and confidence, so a retry reads the recorded answer
-            instead of calling again. JEV classifies and annotates; code decides.
+            instead of calling again. JEV classifies and annotates; code decides. The route slot of
+            the admission decision (D25, T3.08) is a named consumer of this port: its conditions
+            (needs_new_work, notice_only, asks_recorded_fact, asks_judgment, names_deliverable,
+            bounded_spans) are asked in one batched call over the single admitted message, cached by
+            content hash plus the recipient's generation, so a broadcast to many recipients is
+            classified once. The answers annotate the route decision; the floor-file policy decides;
+            a no-answer, timeout or refusal leaves the code rules and the standard route in force.
+            The calibration corpus of T9.04 includes the wake messages of the Oct 10, 2026 audit
+            (coordination notices, lead rulings, operator liveness questions) labelled by a
+            non-builder.
           </p>
           <p class="sub">
             <b>Tests</b><br />· a labelled corpus of real first messages, quotes, questions,
             retractions and agent-to-agent asks: measure false promotion, false omission,
             abstentions, p95 latency and cost at 0.80 and two neighbours; record the chosen value
             with its error costs<br />· malformed answers, outage, duplicates and cache invalidation
-            after a rewind each produce the named outcome
+            after a rewind each produce the named outcome<br />· route conditions on the labelled
+            wake corpus: false no_model (a message that needed the seat routed away) and false wake
+            (a notice that woke a seat) are measured at 0.80 and two neighbours; the chosen value is
+            recorded with its error costs; an operator message routed no_model must show a delivered
+            record-built reply in every case
           </p>
 
           <p class="serves">
             answers <span class="chip pre">A09</span><span class="chip pre">A17</span
             ><span class="chip pre">F07</span><span class="chip pre">IA-14</span> · binds
             <a href="#slice-8">slice 8</a>, <a href="#slice-9">slice 9</a>,
-            <a href="#slice-10">slice 10</a> · 19 tasks inherit it
+            <a href="#slice-10">slice 10</a> · 20 tasks inherit it
           </p>
           <p class="serves">
             <span class="chip ng">NG-051</span><span class="chip ng">NG-077</span
@@ -19086,7 +19586,7 @@
           <p class="serves">
             answers <span class="chip pre">F06</span><span class="chip pre">F10</span
             ><span class="chip pre">IA-08</span><span class="chip pre">IA-14</span> · binds
-            <a href="#slice-9">slice 9</a>, <a href="#slice-10">slice 10</a> · 15 tasks inherit it
+            <a href="#slice-9">slice 9</a>, <a href="#slice-10">slice 10</a> · 16 tasks inherit it
           </p>
           <p class="serves">
             <span class="chip ng">NG-074</span><span class="chip ng">NG-075</span
@@ -19333,7 +19833,7 @@
           <p class="serves">
             answers <span class="chip pre">A14</span><span class="chip pre">F04</span
             ><span class="chip pre">IA-10</span> · binds <a href="#slice-9">slice 9</a>,
-            <a href="#slice-10">slice 10</a> · 15 tasks inherit it
+            <a href="#slice-10">slice 10</a> · 16 tasks inherit it
           </p>
           <p class="serves">
             <span class="chip ng">NG-071</span><span class="chip ng">NG-084</span
@@ -19475,7 +19975,7 @@
           grammar/caller-preservation receipt or an explicit not-applicable reason.
         </p>
         <p class="sub">
-          depends on 74 tasks, 13 slices, 1 precondition(s) and 55 required device cells · test: K10
+          depends on 76 tasks, 13 slices, 1 precondition(s) and 55 required device cells · test: K10
           test
         </p>
       </article>
@@ -22783,6 +23283,8 @@
           ["T3.07", "T3.01"],
           ["T3.01", "T3.02"],
           ["T3.04", "T3.02"],
+          ["T3.01", "T3.08"],
+          ["T3.02", "T3.08"],
           ["T3.02", "T3.03"],
           ["T3.03", "T4.01"],
           ["T4.01", "T4.02"],
@@ -22851,6 +23353,9 @@
           ["T8.02", "T8.04"],
           ["T9.02", "T8.04"],
           ["T9.02", "T9.04"],
+          ["T9.02", "T9.06"],
+          ["T9.04", "T9.06"],
+          ["T3.08", "T9.06"],
           ["T9.02", "T9.05"],
           ["T10.01", "T10.05"],
           ["T10.03", "T10.06"],
@@ -22925,7 +23430,7 @@
           {
             id: "slice-3",
             n: 3,
-            tasks: ["T3.07", "T3.01", "T3.02", "T3.03", "T3.04", "T3.05"],
+            tasks: ["T3.07", "T3.01", "T3.02", "T3.08", "T3.03", "T3.04", "T3.05"],
             deps: ["slice-2"],
           },
           {
@@ -22946,7 +23451,7 @@
           {
             id: "slice-9",
             n: 9,
-            tasks: ["T9.01", "T9.02", "T9.03", "T9.04", "T9.05"],
+            tasks: ["T9.01", "T9.02", "T9.03", "T9.04", "T9.06", "T9.05"],
             deps: ["slice-5", "slice-7"],
           },
           {
@@ -23151,6 +23656,7 @@
               "T3.07": "detailed",
               "T3.01": "detailed",
               "T3.02": "detailed",
+              "T3.08": "detailed",
               "T3.03": "detailed",
               "T4.01": "detailed",
               "T4.02": "detailed",
@@ -23185,6 +23691,7 @@
               "T8.03": "detailed",
               "T8.04": "detailed",
               "T9.04": "detailed",
+              "T9.06": "detailed",
               "T9.05": "detailed",
               "T10.05": "detailed",
               "T10.06": "detailed",

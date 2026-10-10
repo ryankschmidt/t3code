@@ -1726,6 +1726,100 @@ check(
   },
 );
 
+check(
+  "X27",
+  "the JEV cost-router delta (D25) stays bound to its pinned source: the route slot at admission, the operator floor and the K07-only JEV pass",
+  () => {
+    const f: Fail[] = [],
+      b = spec.jev_cost_router_delta;
+    const src = b?.source_documents?.[0];
+    if (!src?.path || !existsSync(src.path)) return ["JEV cost-router source binding absent"];
+    const bytes = readFileSync(src.path);
+    if (createHash("sha256").update(bytes).digest("hex") !== src.sha256)
+      return ["JEV cost-router source hash mismatch"];
+    const delta = JSON.parse(bytes.toString("utf8"));
+    const item = (id: string) => delta.items.find((i: any) => i.id === id);
+    const task = (id: string) => spec.tasks.find((t: any) => t.id === id);
+    const same = (a: any, c: any) => JSON.stringify(a) === JSON.stringify(c);
+    const k07 = spec.contracts.find((c: any) => c.id === "K07");
+    if (!k07?.statement.includes(item("K07").statement_append))
+      f.push("K07 lost the route slot as a named consumer");
+    if (!item("K07").tests_append.every((x: string) => k07?.tests.includes(x)))
+      f.push("K07 lost the route-condition calibration test");
+    const d25 = spec.decisions.find((d: any) => d.id === "D25"),
+      D25 = item("D25");
+    if (
+      !d25 ||
+      d25.title !== D25.title ||
+      d25.statement !== D25.statement ||
+      d25.fable_call !== D25.fable_call ||
+      d25.alternative !== D25.rejected_alternative ||
+      !same(d25.post_cutoff_ryan_words, D25.post_cutoff_ryan_words)
+    )
+      f.push("D25 differs from the source author's decision");
+    for (const id of b.amended.filter((x: string) => x !== "K07")) {
+      const d = item(id),
+        t = task(id);
+      if (d.what_append && !t?.what.includes(d.what_append))
+        f.push(id + ": route-slot text missing");
+      if (
+        d.signatures_append &&
+        !d.signatures_append.every((x: string) => t?.signatures.includes(x))
+      )
+        f.push(id + ": route-slot signature missing");
+      if (d.done_when_append && !t?.done_when.expect.includes(d.done_when_append))
+        f.push(id + ": route-slot acceptance missing");
+    }
+    for (const id of b.new_task_ids) {
+      const d = item(id),
+        t = task(id);
+      if (!t) {
+        f.push(id + ": new task absent");
+        continue;
+      }
+      for (const k of [
+        "slice",
+        "title",
+        "serves",
+        "detail_state",
+        "what",
+        "signatures",
+        "planned_checks",
+        "failing_checks",
+        "failing_check_first",
+        "done_when",
+        "depends_on",
+        "executor",
+        "reviewer",
+        "risk",
+        "rollback",
+        "failure_test",
+        "ryan_act",
+        "governing_shapes",
+      ])
+        if (!same(t[k], d[k])) f.push(id + ": authored " + k + " changed");
+      if (
+        !same(
+          t.files.map(({ surface, ...x }: any) => x),
+          d.files,
+        ) ||
+        t.files.some((x: any) => x.surface !== "authoring")
+      )
+        f.push(id + ": authored files changed");
+    }
+    const s3 = spec.slices.find((s: any) => s.id === "slice-3")?.tasks ?? [],
+      s9 = spec.slices.find((s: any) => s.id === "slice-9")?.tasks ?? [];
+    if (
+      s3.indexOf("T3.08") !== s3.indexOf("T3.02") + 1 ||
+      s9.indexOf("T9.06") !== s9.indexOf("T9.04") + 1
+    )
+      f.push("new tasks are not in the source author's dependency order");
+    if (spec.checks.some((c: any) => c.id === "S3-C13" || c.id === "S9-C06"))
+      f.push("a planned check entered spec.checks before its file exists");
+    return f;
+  },
+);
+
 let green = 0;
 for (const r of results) {
   if (r.fails.length === 0) {
