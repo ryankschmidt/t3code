@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - These fixtures exercise synchronous git snapshots before an Effect runtime exists.
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
