@@ -1999,6 +1999,19 @@ async function runRepositoryMoveFixtures(): Promise<void> {
       else assert.equal(calls.find((x) => x.args?.includes("install"))?.cwd, core);
     });
 
+  for (const name of ["toString", "constructor"]) {
+    test(`fixture selector refuses inherited ${name} without running tests`, () => {
+      const result = spawnSync(
+        process.execPath,
+        [join(HERE, "slice-1-repository-move.mts"), "--fixtures", name],
+        { encoding: "utf8" },
+      );
+      assert.equal(result.status, 2, result.stdout + result.stderr);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /Unknown fixture suite/);
+    });
+  }
+
   let bad = 0;
   try {
     for (const [name, fn] of cases) {
@@ -2823,12 +2836,12 @@ async function runDeferredRpiFixtures(): Promise<void> {
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const fixtureFlag = process.argv.indexOf("--fixtures");
   if (fixtureFlag >= 0) {
-    const suites: Record<string, () => Promise<void>> = {
-      "repository-move": runRepositoryMoveFixtures,
-      "archive-readers": runArchiveReaderFixtures,
-      "deferred-rpi": runDeferredRpiFixtures,
-    };
-    const suite = suites[process.argv[fixtureFlag + 1]];
+    const suites = new Map<string, () => Promise<void>>([
+      ["repository-move", runRepositoryMoveFixtures],
+      ["archive-readers", runArchiveReaderFixtures],
+      ["deferred-rpi", runDeferredRpiFixtures],
+    ]);
+    const suite = suites.get(process.argv[fixtureFlag + 1] ?? "");
     if (!suite) {
       console.error("Unknown fixture suite");
       process.exitCode = 2;
