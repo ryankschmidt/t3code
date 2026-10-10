@@ -156,13 +156,20 @@ function callIntoNamespace(masked: string, bindings: Set<string>): boolean {
 function addedLines(diff: string): AddedLine[] {
   const added: AddedLine[] = [];
   let line = 0;
+  let inHunk = false;
   for (const row of diff.split("\n")) {
+    if (row.startsWith("diff --git ")) {
+      inHunk = false;
+      continue;
+    }
     const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(row);
     if (hunk) {
       line = Number(hunk[1]);
+      inHunk = true;
       continue;
     }
-    if (row.startsWith("+++") || row.startsWith("---") || !line) continue;
+    // File headers precede the hunk. Inside it, +++counter is an added ++counter line.
+    if (!inHunk) continue;
     if (row.startsWith("+")) added.push({ line: line++, text: row.slice(1) });
     else if (row.startsWith(" ")) line++;
   }
