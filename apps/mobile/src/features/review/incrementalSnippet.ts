@@ -1,12 +1,16 @@
 import type { HighlighterCore } from "@shikijs/core";
 
+// Cold JavaScript grammar compilation can exceed Shiki's 500ms line budget under load.
+// Keep tokenization bounded without returning a partially colored source line.
+export const REVIEW_TOKENIZE_TIME_LIMIT = 1_000;
+
 /** A code block owns this session. Only completed lines survive the next update. */
 export function createIncrementalSnippet(
   highlighter: HighlighterCore,
   language: string,
   theme: string,
 ) {
-  const options = { lang: language, theme };
+  const options = { lang: language, theme, tokenizeTimeLimit: REVIEW_TOKENIZE_TIME_LIMIT };
   let cached:
     | {
         prefix: string;

@@ -52,11 +52,13 @@ describe("highlightSourceFile", () => {
     const highlighter = await import("./shikiReviewHighlighter");
     const source = "const answer: number = 42;";
 
+    const sourceStarted = performance.now();
     const highlighted = await highlighter.highlightSourceFile({
       path: "example.ts",
       contents: source,
       theme: "dark",
     });
+    const sourceMs = performance.now() - sourceStarted;
 
     expect(
       highlighted
@@ -65,9 +67,27 @@ describe("highlightSourceFile", () => {
         .join(""),
     ).toBe(source);
     expect(highlighted.flat().some((token) => token.color !== null)).toBe(true);
-    expect(
-      await highlighter.highlightCodeSnippet({ code: source, language: "ts", theme: "dark" }),
-    ).toEqual(highlighted);
+    const snippetStarted = performance.now();
+    const snippet = await highlighter.highlightCodeSnippet({
+      code: source,
+      language: "ts",
+      theme: "dark",
+    });
+    const snippetMs = performance.now() - snippetStarted;
+    expect(snippet).toEqual(highlighted);
+    if (process.env.MOBILE_SHIKI_TRACE_FILE) {
+      // @effect-diagnostics-next-line nodeBuiltinImport:off - Node-only test evidence, not mobile runtime IO.
+      const { appendFileSync } = await import("node:fs");
+      appendFileSync(
+        process.env.MOBILE_SHIKI_TRACE_FILE,
+        JSON.stringify({
+          sourceMs,
+          snippetMs,
+          tokenCount: highlighted[0]?.length,
+          complete: true,
+        }) + "\n",
+      );
+    }
   });
 });
 
