@@ -1,0 +1,113 @@
+{
+  "schema": "throughline.capability.v1",
+  "name": "rewind",
+  "version": "1.2.0",
+  "rule": "rewind keeps the same Claude native session, like the CLI's /rewind; adopt upstream types around it",
+  "baseline": {
+    "throughline": "0.0.51",
+    "source_commit": "09359517f651808b9f7b5f9cc91dea4b8a5b72c3",
+    "version": "1.0.0"
+  },
+  "origin_commits": [
+    {
+      "sha": "faf8ba84fc6ae8869e9ab7f0da50d29bd7940b39",
+      "release": "0.0.49",
+      "subject": "feat(chat): /rewind and /config menus for Claude on desktop and phone (WCC-127)"
+    },
+    {
+      "sha": "7b47de72f86bb79a37abfcf642b00289f1f9d850",
+      "release": "0.0.50",
+      "subject": "fix(server): Claude rewind admits a fork that dropped an early message after a compaction summary (WCC-127)"
+    }
+  ],
+  "paths": [
+    "apps/mobile/src/features/threads/ClaudeRewindMenu.tsx",
+    "apps/mobile/src/features/threads/ThreadComposer.tsx",
+    "apps/mobile/src/features/threads/ThreadSettingsSheet.tsx",
+    "apps/mobile/src/features/threads/use-composer-command-menu.test.ts",
+    "apps/mobile/src/features/threads/use-composer-command-menu.ts",
+    "apps/mobile/src/lib/composerContextClipboard.ts",
+    "apps/server/src/orchestration/Layers/CheckpointReactor.test.ts",
+    "apps/server/src/orchestration/Layers/CheckpointReactor.ts",
+    "apps/server/src/orchestration/Layers/ProjectionPipeline.ts",
+    "apps/server/src/orchestration/decider.ts",
+    "apps/server/src/orchestration/projector.ts",
+    "apps/server/src/provider/Layers/ClaudeAdapter.test.ts",
+    "apps/server/src/provider/Layers/ClaudeAdapter.ts",
+    "apps/server/src/provider/Layers/ProviderService.ts",
+    "apps/server/src/provider/Services/ProviderAdapter.ts",
+    "apps/server/src/provider/Services/ProviderService.ts",
+    "apps/web/src/components/ChatView.logic.ts",
+    "apps/web/src/components/ChatView.tsx",
+    "apps/web/src/components/chat/ChatComposer.tsx",
+    "apps/web/src/components/chat/ClaudeConfigMenu.tsx",
+    "apps/web/src/components/chat/RewindConfirmation.tsx",
+    "apps/web/src/components/chat/RewindMenu.tsx",
+    "packages/client-runtime/src/operations/commands.test.ts",
+    "packages/client-runtime/src/operations/commands.ts",
+    "packages/client-runtime/src/state/threadReducer.test.ts",
+    "packages/client-runtime/src/state/threadReducer.ts",
+    "packages/contracts/src/orchestration.ts",
+    "packages/shared/package.json",
+    "packages/shared/src/claudeComposerMenus.test.ts",
+    "packages/shared/src/claudeComposerMenus.ts",
+    "apps/server/src/throughline/rewind/claudeTranscriptParent.ts"
+  ],
+  "regression": [
+    {
+      "file": "apps/server/src/provider/Layers/ClaudeAdapter.test.ts",
+      "package": "apps/server",
+      "cases": [
+        "refuses an unknown native message without forking or restarting",
+        "a later turn-count rollback cuts at the right message",
+        "unknown markers stay unknown, so a later turn-count rollback refuses",
+        "refuses a message it cannot line up with the saved markers",
+        "rewinds again and again in the same native session",
+        "rewinds a compacted session in place and keeps its markers",
+        "rewinds to the first message by resuming the same session where it hangs",
+        "refuses a first-message rewind when nothing precedes it and keeps the session",
+        "keeps the cut through a restart until the next reply commits it"
+      ]
+    },
+    {
+      "file": "apps/server/src/orchestration/Layers/CheckpointReactor.test.ts",
+      "package": "apps/server",
+      "cases": [
+        "conversation rewind preserves earlier history with zero checkpoint counts",
+        "conversation rewind keeps message-less turn work recorded before it"
+      ]
+    },
+    {
+      "file": "packages/client-runtime/src/operations/commands.test.ts",
+      "package": "packages/client-runtime",
+      "cases": [
+        "sends exact-message rewind through a command older hosts cannot mistake for file restore"
+      ]
+    },
+    {
+      "file": "packages/client-runtime/src/state/threadReducer.test.ts",
+      "package": "packages/client-runtime",
+      "cases": [
+        "keeps work from message-less turns recorded before the rewind boundary",
+        "retains explicit earlier messages without file checkpoints"
+      ]
+    },
+    {
+      "file": "packages/shared/src/claudeComposerMenus.test.ts",
+      "package": "packages/shared",
+      "cases": [
+        "recognizes only whole commands, not requests mentioning commands",
+        "uses absolute checkpoint counts, never the index of a paginated message"
+      ]
+    },
+    {
+      "file": "apps/mobile/src/features/threads/use-composer-command-menu.test.ts",
+      "package": "apps/mobile",
+      "cases": [
+        "offers Claude client menus once, only in an existing thread"
+      ]
+    }
+  ],
+  "version_file": "VERSION.md",
+  "changelog_file": "CHANGELOG.md"
+}
