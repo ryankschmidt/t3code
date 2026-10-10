@@ -8,7 +8,7 @@ import {
   type SendInput,
   type SubscribeOptions,
   type WaitForResultOptions,
-} from "@ryan/coms-net";
+} from "@ryan/agent-mcp-relay";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";

@@ -4,4 +4,4 @@ type: reference
 status: active
 ---
 
-This tarball is the agent-built MCP relay, which is not ComsNet. Design task T7.04 deletes it together with the MCP comsnet tools.
+This tarball, agent-mcp-relay-0.3.0.tgz, is the agent-built MCP relay, which is not ComsNet. It is deleted when the MCP comsnet tools retire (design task T7.04).

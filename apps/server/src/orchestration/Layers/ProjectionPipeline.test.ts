@@ -50,7 +50,7 @@ import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
 import { ServerConfig } from "../../config.ts";
-import type { ComsNetRequest } from "@ryan/coms-net";
+import type { ComsNetRequest } from "@ryan/agent-mcp-relay";
 import { ComsNetTransport, type ComsNetTransportShape } from "../../mcp/ComsNetTransport.ts";
 
 const makeProjectionPipelinePrefixedTestLayer = (prefix: string) =>

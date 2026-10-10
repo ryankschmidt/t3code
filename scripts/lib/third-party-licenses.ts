@@ -123,7 +123,7 @@ const NOTICE_TEXT_EXTENSIONS = new Set([
 const FIRST_PARTY_PACKAGE_PREFIX = "@t3tools/";
 // ThroughLine: ComsNet is our private transport; this classifies ownership, not licensing.
 function isFirstPartyPackage(name: string): boolean {
-  return name.startsWith(FIRST_PARTY_PACKAGE_PREFIX) || name === "@ryan/coms-net";
+  return name.startsWith(FIRST_PARTY_PACKAGE_PREFIX) || name === "@ryan/agent-mcp-relay";
 }
 
 function isNoticeTextFile(fileName: string): boolean {

@@ -2,7 +2,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { JsonFileComsNetStore } from "@ryan/coms-net";
+import { JsonFileComsNetStore } from "@ryan/agent-mcp-relay";
 
 import {
   ApprovalRequestId,

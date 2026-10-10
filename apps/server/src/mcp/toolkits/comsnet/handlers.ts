@@ -1,6 +1,6 @@
 import { CommandId, MessageId, ThreadId } from "@t3tools/contracts";
 import type { OrchestrationCommand } from "@t3tools/contracts";
-import type { PeerIdentity } from "@ryan/coms-net";
+import type { PeerIdentity } from "@ryan/agent-mcp-relay";
 import * as NodeCrypto from "node:crypto";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";

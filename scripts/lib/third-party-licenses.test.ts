@@ -80,13 +80,13 @@ describe("third-party license generation", () => {
   // ThroughLine: private first-party transport is not a third-party license grant.
   it("excludes exact ComsNet ownership but retains its third-party dependencies", async () => {
     const fixture = await createFixture();
-    const root = NodePath.join(fixture.root, "node_modules/@ryan/coms-net");
+    const root = NodePath.join(fixture.root, "node_modules/@ryan/agent-mcp-relay");
     await writeJson(fixture.appManifest, {
       name: "fixture-app",
-      dependencies: { "@ryan/coms-net": "0.3.0" },
+      dependencies: { "@ryan/agent-mcp-relay": "0.3.0" },
     });
     await writeJson(NodePath.join(root, "package.json"), {
-      name: "@ryan/coms-net",
+      name: "@ryan/agent-mcp-relay",
       version: "0.3.0",
       private: true,
       main: "index.js",
@@ -97,7 +97,7 @@ describe("third-party license generation", () => {
       configFile: fixture.configFile,
       packageManifests: [{ bundle: "web", path: fixture.appManifest }],
     });
-    expect(manifest.entries.some((entry) => entry.name === "@ryan/coms-net")).toBe(false);
+    expect(manifest.entries.some((entry) => entry.name === "@ryan/agent-mcp-relay")).toBe(false);
     expect(manifest.entries.some((entry) => entry.name === "demo-dependency")).toBe(true);
   });
 

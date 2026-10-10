@@ -8,7 +8,7 @@ import {
   withComsNetDispatchAckTimeout,
 } from "./handlers.ts";
 import { COMSNET_REQUEST_LEASE_MS, ComsNetTransportError } from "../../ComsNetTransport.ts";
-import type { PeerIdentity } from "@ryan/coms-net";
+import type { PeerIdentity } from "@ryan/agent-mcp-relay";
 import type { McpInvocationScope } from "../../McpInvocationContext.ts";
 
 describe("ComsNet peer roster caller relation", () => {
