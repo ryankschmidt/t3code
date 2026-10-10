@@ -38,6 +38,7 @@ function computeHermeticTestPath(): string {
 }
 
 const repoEnv = loadRepoEnv();
+const configuredAppCommit = process.env.APP_COMMIT?.trim() || null;
 const cliBuildChannel = /^[^-+]+-(?:nightly|preview)\./.test(packageJson.version)
   ? "nightly"
   : "latest";
@@ -127,6 +128,7 @@ export default mergeConfig(
         js: "#!/usr/bin/env node\n",
       },
       define: {
+        __T3CODE_APP_COMMIT__: JSON.stringify(configuredAppCommit),
         __T3CODE_BUILD_CHANNEL__: JSON.stringify(cliBuildChannel),
         __T3CODE_BUILD_RELAY_URL__: JSON.stringify(repoEnv.T3CODE_RELAY_URL?.trim() ?? ""),
         __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(

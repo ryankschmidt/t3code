@@ -36,14 +36,16 @@ export const existingTransportCapabilities = [
 ] as const;
 
 /** No app-track minimum has been admitted for this first cut: keep the legacy floor. */
-export function existingTransportPolicy(serverRelease: string): HelloPolicy {
+export function existingTransportPolicy(
+  serverRelease: string,
+  serverCommit: string | null = null,
+): HelloPolicy {
   return {
     protocol_version: 1,
     min_protocol_version: 1,
     server_release: serverRelease,
-    // The current environment descriptor witnesses release, not build commit.
-    // A null witness must not be replaced with a guessed checkout hash.
-    server_commit: null,
+    // Only the server's compiled identity is a witness, never the current checkout hash.
+    server_commit: serverCommit,
     min_supported_client: "0.0.0",
     capabilities: existingTransportCapabilities,
   };

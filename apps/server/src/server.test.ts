@@ -1794,6 +1794,38 @@ const EMPTY_DEVICE_STATE: DeviceServiceState = {
 };
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it.effect.each([
+    { name: "compiled", commit: "0123456789abcdef0123456789abcdef01234567" },
+    { name: "absent", commit: null },
+  ])("server commit identity: both endpoints report the $name commit", ({ commit }) =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          serverEnvironment: {
+            getDescriptor: Effect.succeed({ ...testEnvironmentDescriptor, serverCommit: commit }),
+          },
+        },
+      });
+      const response = yield* fetchEffect(yield* getHttpServerUrl("/.well-known/t3/environment"));
+      const descriptor = yield* responseJsonEffect<{ serverCommit: string | null }>(response);
+      assert.equal(response.status, 200);
+      assert.strictEqual(descriptor.serverCommit, commit);
+      const hello = yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          client[WS_METHODS.throughlineHello]({
+            protocol_version: 1,
+            release: "0.0.56",
+            commit: null,
+            platform: "test",
+            capabilities: [],
+            last_cursor: null,
+          }),
+        ),
+      );
+      assert.strictEqual(hello.server_commit, commit);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect(
     "ThroughLine hello compatibility: shared client session negotiates against the real server route",
     () =>
