@@ -1,0 +1,8 @@
+{
+  "name": "@ryan/throughline-next-gen-spec",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "js-yaml": "4.1.1"
+  }
+}
