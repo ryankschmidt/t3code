@@ -15,7 +15,10 @@ import * as Schema from "effect/Schema";
 import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 
 import { ServerConfig } from "../config.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import {
+  OrchestrationEngineService,
+  type OrchestrationEngineShape,
+} from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as Transport from "./ComsNetTransport.ts";
 import { ComsNetToolkitRegistrationLive } from "./McpHttpServer.ts";
@@ -68,14 +71,15 @@ const projection = Layer.mock(ProjectionSnapshotQuery)({
   getThreadShellById: (id) =>
     Effect.succeed(Option.fromUndefinedOr(snapshot.threads.find((thread) => thread.id === id))),
 });
-const makeTestLayer = (transportLayer = Transport.layer) =>
+const makeTestLayer = (
+  transportLayer = Transport.layer,
+  dispatch: OrchestrationEngineShape["dispatch"] = () => Effect.succeed({ sequence: 1 }),
+) =>
   ComsNetToolkitRegistrationLive.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provideMerge(transportLayer),
     Layer.provideMerge(projection),
-    Layer.provide(
-      Layer.mock(OrchestrationEngineService)({ dispatch: () => Effect.succeed({ sequence: 1 }) }),
-    ),
+    Layer.provide(Layer.mock(OrchestrationEngineService)({ dispatch })),
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "comsnet-response-test-" })),
     Layer.provide(NodeServices.layer),
   );
@@ -155,10 +159,18 @@ it.effect.each(toolNames)(
             { peerId: "codex:mcp-b", isSelf: false },
           ],
         });
-      if (name === "comsnet_subscribe")
+      if (name === "comsnet_subscribe") {
         expect(result.structuredContent).toMatchObject({
           requests: [{ requestId: request.requestId, receiverTurnId: "turn-b" }],
         });
+        expect(
+          yield* transport.listFinishedTurnRequests(receiver.threadId, "turn-b"),
+        ).toMatchObject([{ requestId: request.requestId }]);
+        expect(yield* transport.listFinishedTurnRequests(sender.threadId, "turn-b")).toEqual([]);
+        expect(yield* transport.listFinishedTurnRequests(receiver.threadId, "other-turn")).toEqual(
+          [],
+        );
+      }
       if (name === "comsnet_send" || name === "comsnet_status") {
         expect(result.structuredContent).toMatchObject({
           senderPeerId: "codex:mcp-a",
@@ -182,6 +194,51 @@ it.effect.each(toolNames)(
         expect(waited.structuredContent).toEqual(result.structuredContent);
       }
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+);
+
+it.effect(
+  "keeps installed 0.0.56 behavior: a subscriber-delivered request is not dispatched twice",
+  () => {
+    let dispatches = 0;
+    const subscriberWins = Layer.effect(
+      Transport.ComsNetTransport,
+      Effect.gen(function* () {
+        const transport = yield* Transport.ComsNetTransport;
+        return Transport.ComsNetTransport.of({
+          ...transport,
+          send: (scope, input) =>
+            Effect.gen(function* () {
+              const request = yield* transport.send(scope, input);
+              // Deterministically exercise the subscription that wins before the
+              // send handler checks its durable status; no timing sleep or mock status.
+              yield* transport.subscribe(receiver, { receiverTurnId: "turn-b" });
+              return request;
+            }),
+        });
+      }),
+    ).pipe(Layer.provide(Transport.layer));
+    return Effect.gen(function* () {
+      yield* sessions;
+      const server = yield* McpServer.McpServer;
+      const result = yield* server
+        .callTool({ name: "comsnet_send", arguments: sendInput })
+        .pipe(
+          Effect.provideService(Invocation.McpInvocationContext, sender),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+      expect(result.isError).toBe(false);
+      expect(result.structuredContent).toMatchObject({
+        status: "delivered",
+        receiverTurnId: "turn-b",
+      });
+      expect(dispatches).toBe(0);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        makeTestLayer(subscriberWins, () => Effect.sync(() => ({ sequence: ++dispatches }))),
+      ),
+    );
+  },
 );
 
 it.effect.each(toolNames)("%s keeps capability failures protocol-valid and unsuccessful", (name) =>

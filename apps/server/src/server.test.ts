@@ -1,4 +1,4 @@
-import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import * as NodeHttpServerPlatform from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "node:crypto";
@@ -95,6 +95,14 @@ import { PrimaryConnectionTarget } from "../../../packages/client-runtime/src/co
 import * as NetAddress from "effect/unstable/net/NetAddress";
 import * as Socket from "effect/unstable/socket/Socket";
 import { vi } from "vite-plus/test";
+
+// The platform's port-0 test layer listens on IPv6, while this file's clients
+// use 127.0.0.1. On macOS a different IPv4 listener can own the same port.
+// Keep the familiar test-layer call sites, but reserve the family clients use.
+const NodeHttpServer = {
+  ...NodeHttpServerPlatform,
+  layerTest: makeNodeHttpServerTest(),
+};
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 const SUCCESSFUL_GIT_EXECUTION = {
@@ -1759,27 +1767,31 @@ const getWsServerUrl = (
     );
   });
 
-// Mirrors NodeHttpServer.layerTest, which does not expose server options,
-// with the production `websocket: { perMessageDeflate: true }` setting.
-const NodeHttpServerTestWithWsDeflate = HttpServer.layerTestClient.pipe(
-  Layer.provide(
-    Layer.fresh(FetchHttpClient.layer).pipe(
-      Layer.provide(Layer.succeed(FetchHttpClient.RequestInit)({ keepalive: false })),
-    ),
-  ),
-  Layer.provideMerge(
-    Layer.unwrap(
-      Effect.map(
-        Effect.promise(() => import("node:http")),
-        (NodeHttp) =>
-          NodeHttpServer.layer(NodeHttp.createServer, {
-            port: 0,
-            websocket: { perMessageDeflate: true },
-          }),
+// Mirrors the platform test layer, whose listener options are not configurable.
+function makeNodeHttpServerTest(perMessageDeflate = false) {
+  return HttpServer.layerTestClient.pipe(
+    Layer.provide(
+      Layer.fresh(FetchHttpClient.layer).pipe(
+        Layer.provide(Layer.succeed(FetchHttpClient.RequestInit)({ keepalive: false })),
       ),
     ),
-  ),
-);
+    Layer.provideMerge(
+      Layer.unwrap(
+        Effect.map(
+          Effect.promise(() => import("node:http")),
+          (NodeHttp) =>
+            NodeHttpServerPlatform.layer(NodeHttp.createServer, {
+              port: 0,
+              host: "127.0.0.1",
+              websocket: { perMessageDeflate },
+            }),
+        ),
+      ),
+    ),
+  );
+}
+
+const NodeHttpServerTestWithWsDeflate = makeNodeHttpServerTest(true);
 
 const EMPTY_DEVICE_STATE: DeviceServiceState = {
   hosts: [],
@@ -1826,6 +1838,36 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("binds the test listener to the same IPv4 namespace as its clients", () =>
+    Effect.gen(function* () {
+      const NodeHttp = yield* Effect.promise(() => import("node:http"));
+      const port = Number(new URL(yield* getHttpServerUrl()).port);
+      const result = yield* Effect.acquireUseRelease(
+        Effect.sync(() =>
+          NodeHttp.createServer((_request, response) => response.end("foreign listener")),
+        ),
+        (probe) =>
+          Effect.promise(
+            () =>
+              new Promise<string>((resolve) => {
+                probe.once("error", (error) =>
+                  resolve("code" in error ? String(error.code) : error.message),
+                );
+                probe.listen(port, "127.0.0.1", () => resolve("listened"));
+              }),
+          ),
+        (probe) =>
+          Effect.promise(
+            () =>
+              new Promise<void>((resolve, reject) => {
+                if (!probe.listening) return resolve();
+                probe.close((error) => (error ? reject(error) : resolve()));
+              }),
+          ),
+      );
+      assert.equal(result, "EADDRINUSE");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
   it.effect(
     "ThroughLine hello compatibility: shared client session negotiates against the real server route",
     () =>

@@ -1,14 +1,16 @@
 import {
-  ComsNet,
   ComsNetError,
   JsonFileComsNetStore,
-  type ComsNetRequest,
   type PeerDirectory,
   type PeerIdentity,
   type SendInput,
-  type SubscribeOptions,
   type WaitForResultOptions,
 } from "@ryan/agent-mcp-relay";
+import {
+  ReceiverTurnRelay as ComsNet,
+  type ReceiverTurnRequest as ComsNetRequest,
+  type ReceiverTurnSubscribeOptions as SubscribeOptions,
+} from "../throughline/legacyRelay.ts";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
