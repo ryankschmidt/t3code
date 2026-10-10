@@ -21,8 +21,9 @@ node render-spec.mts
 node check-spec.mts
 node test-check-spec.mts
 node checks/test-slice-1-checks.mts
-node checks/test-repository-move.mts
-node checks/test-archive-readers.mts
+node checks/slice-1-repository-move.mts --fixtures repository-move
+node checks/slice-1-repository-move.mts --fixtures archive-readers
+node checks/slice-1-repository-move.mts --fixtures deferred-rpi
 node checks/slice-1-repository-move.mts --only S1-C10
 ```
 

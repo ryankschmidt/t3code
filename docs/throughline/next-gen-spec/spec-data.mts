@@ -1605,7 +1605,31 @@ const T1: Task[] = [
       "Measured Oct 9, 2026 at the move base 47065c2a65: pnpm typecheck fails with one error in packages/contracts/src/rpc.test.ts line 58 (TS2353, future_field). The tests step refuses until the reviewed unknown-field decoder correction from the 059 type-repair branches lands on main (T3.04/T3.05 rework rows in fork_state). Release 0.0.60 never carries the 0.0.57 or 0.0.58 version stamps.",
     serves: ["NG-120", "NG-122", "NG-199", "NG-119"],
     detail_state: "detailed",
-    what: "Ryan's rule: every later slice ships through the new pipeline. The proof that the pipeline works from the new home is one release through it: 0.0.60, built from main at the commit that carries T1.09 and the spec (T1.08), in the same build-from-main mode 0.0.56 used (preserve-base). It runs the new vault-clean step, builds in the release worktree inside the collection with every output under that worktree's release/ folder, installs on the Mac, the tower, the Raspberry Pi and the iPhone through the existing steps, runs publish-docs after the Mac install, and ends at the rewind proof. After the install, a seat that did not build the fix records the staging probe for S1-C14: the installed server bundle carries the new operation ids, and the staged set of a project an idle thread points at does not change over thirty samples two seconds apart.",
+    what: "Ryan's rule: every later slice ships through the new pipeline. The proof that the pipeline works from the new home is one release through it: 0.0.60, built from main at the commit that carries T1.09 and the spec (T1.08), in the same build-from-main mode 0.0.56 used (preserve-base). It runs the new vault-clean step, builds in the release worktree inside the collection with every output under that worktree's release/ folder, installs on the tower, then the iPhone, then the Mac through the existing steps; the Raspberry Pi contract and its five actions (build-rpi, gate-rpi, stage-rpi-headless, install-rpi-headless, rpi-cold-turn) are removed from the 0.0.60 pipeline and recorded under deferred.rpi with Ryan's Oct 9, 2026 pause, template and history kept, never counted as passed, runs publish-docs after the Mac install, and ends at the rewind proof. After the install, a seat that did not build the fix records the staging probe for S1-C14: the installed server bundle carries the new operation ids, and the staged set of a project an idle thread points at does not change over thirty samples two seconds apart.",
+    deferred_rpi_pipeline: {
+      field: "Ship-Pipeline.json deferred.rpi",
+      shape: {
+        ruling: '{date: "2026-10-09", words: Ryan\'s pause in his own words}',
+        contract: "the removed rpi section, kept unchanged as a template",
+        steps:
+          "the five removed step records, kept unchanged as templates: build-rpi, gate-rpi, stage-rpi-headless, install-rpi-headless, rpi-cold-turn",
+        counted_as_passed: false,
+      },
+      rules: [
+        "none of the five step ids appears in steps or required_steps",
+        "no receipt is written or synthesized for a deferred step, and a deferred step never counts as passed",
+        "prior run receipts that mention the Raspberry Pi stay as history",
+        "required_steps install order: install-tower, then install-phone, then install-mac",
+      ],
+      ruling: {
+        date: "2026-10-09",
+        time: "Oct 9, 2026, about 7:45 PM PDT",
+        words:
+          "I would prefer we take Raspberry Pi off the list and focus on Mac, tower, and iOS as priority, and when those three are done, then Android, number four. For Raspberry Pi, I think I want to pause",
+        words_2:
+          "We don't really have a use case for Raspberry Pi right now... I just think maybe we pause the Raspberry Pi aspect of this build and focus on the important things: the tower, Mac, iOS. Then android",
+      },
+    },
     files: [
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/Ship-Pipeline.json",
@@ -1657,7 +1681,7 @@ const T1: Task[] = [
       effort: "medium",
     },
     risk: [
-      "this is a full release: it restarts ThroughLine on Ryan's Mac under the pipeline's own presence and courtesy steps, installs on the tower and the Raspberry Pi under the agent accounts, and uploads to TestFlight; the pipeline's rollback snapshot and the Mac installer's retained previous build are the rollback",
+      "this is a full release: it restarts ThroughLine on Ryan's Mac under the pipeline's own presence and courtesy steps, installs on the tower under the agent account (the Raspberry Pi is deferred by Ryan's Oct 9, 2026 pause), and uploads to TestFlight; the pipeline's rollback snapshot and the Mac installer's retained previous build are the rollback",
       "the staging probe needs a seat that did not build T1.09, at medium effort or lower",
     ],
     rollback:

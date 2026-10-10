@@ -5,9 +5,9 @@
     <title>ThroughLine next-generation implementation spec — map</title>
     <meta
       name="spec-sha256"
-      content="bf94d345038f527ecfa80a6582345d0a0a2e056454e35af42f75603763813f6e"
+      content="d6e0503a80d3a9e466acd15e8e79f15bd12ab671cedf1a0f965a940b45e0b92a"
     />
-    <meta name="spec-version" content="0.4.15" />
+    <meta name="spec-version" content="0.4.16" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
@@ -483,9 +483,9 @@
         installed in 24 hours.”
       </p>
       <p class="sub">
-        Machine-readable task graph <code>spec.json</code> version 0.4.15. Original design
+        Machine-readable task graph <code>spec.json</code> version 0.4.16. Original design
         authorship: fable-throughline-design (ThroughLine thread
-        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 1:49 AM PDT by
+        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 2:46 AM PDT by
         codex session 01a124c9-641b-79f2-9460-63aa9ccfa238. Bound to ledger sha256 0b260e00b391 (199
         items). Every task names the ledger ids it serves. The technical execution lead,
         lead-execlead-1ad87c0b, works from the JSON; this page is rendered from it.
@@ -2492,12 +2492,16 @@
                   main at the commit that carries T1.09 and the spec (T1.08), in the same
                   build-from-main mode 0.0.56 used (preserve-base). It runs the new vault-clean
                   step, builds in the release worktree inside the collection with every output under
-                  that worktree's release/ folder, installs on the Mac, the tower, the Raspberry Pi
-                  and the iPhone through the existing steps, runs publish-docs after the Mac
-                  install, and ends at the rewind proof. After the install, a seat that did not
-                  build the fix records the staging probe for S1-C14: the installed server bundle
-                  carries the new operation ids, and the staged set of a project an idle thread
-                  points at does not change over thirty samples two seconds apart.
+                  that worktree's release/ folder, installs on the tower, then the iPhone, then the
+                  Mac through the existing steps; the Raspberry Pi contract and its five actions
+                  (build-rpi, gate-rpi, stage-rpi-headless, install-rpi-headless, rpi-cold-turn) are
+                  removed from the 0.0.60 pipeline and recorded under deferred.rpi with Ryan's Oct
+                  9, 2026 pause, template and history kept, never counted as passed, runs
+                  publish-docs after the Mac install, and ends at the rewind proof. After the
+                  install, a seat that did not build the fix records the staging probe for S1-C14:
+                  the installed server bundle carries the new operation ids, and the staged set of a
+                  project an idle thread points at does not change over thirty samples two seconds
+                  apart.
                 </p>
                 <p class="deps">
                   <b>After</b> <a href="#T1.03">T1.03</a> <a href="#T1.04">T1.04</a>
@@ -2625,10 +2629,10 @@
                   <b>Risk</b>
                   <span
                     >this is a full release: it restarts ThroughLine on Ryan's Mac under the
-                    pipeline's own presence and courtesy steps, installs on the tower and the
-                    Raspberry Pi under the agent accounts, and uploads to TestFlight; the pipeline's
-                    rollback snapshot and the Mac installer's retained previous build are the
-                    rollback</span
+                    pipeline's own presence and courtesy steps, installs on the tower under the
+                    agent account (the Raspberry Pi is deferred by Ryan's Oct 9, 2026 pause), and
+                    uploads to TestFlight; the pipeline's rollback snapshot and the Mac installer's
+                    retained previous build are the rollback</span
                   ><br /><span
                     >the staging probe needs a seat that did not build T1.09, at medium effort or
                     lower</span

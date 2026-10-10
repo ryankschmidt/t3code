@@ -480,21 +480,15 @@ for (const c of cases) {
 console.log(
   `\n${cases.length - bad} of ${cases.length} fixtures behaved  (${new Date().toISOString()})`,
 );
-// These fixtures exercise the real repository-move CLI without touching operator state.
-const moveFixtures = spawnSync(process.execPath, [join(HERE, "checks/test-repository-move.mts")], {
-  encoding: "utf8",
-});
-process.stdout.write(moveFixtures.stdout ?? "");
-process.stderr.write(moveFixtures.stderr ?? "");
-if (moveFixtures.status !== 0) bad++;
-const archiveFixtures = spawnSync(
-  process.execPath,
-  [join(HERE, "checks/test-archive-readers.mts")],
-  {
-    encoding: "utf8",
-  },
-);
-process.stdout.write(archiveFixtures.stdout ?? "");
-process.stderr.write(archiveFixtures.stderr ?? "");
-if (archiveFixtures.status !== 0) bad++;
+// Fixture bodies live in their admitted owning checker; no extra source paths are needed.
+for (const suite of ["repository-move", "archive-readers", "deferred-rpi"]) {
+  const result = spawnSync(
+    process.execPath,
+    [join(HERE, "checks/slice-1-repository-move.mts"), "--fixtures", suite],
+    { encoding: "utf8" },
+  );
+  process.stdout.write(result.stdout ?? "");
+  process.stderr.write(result.stderr ?? "");
+  if (result.status !== 0) bad++;
+}
 process.exit(bad ? 1 : 0);

@@ -378,6 +378,44 @@ const archiveFindings = (m: any, rows: any[]): { fails: Fail[]; archivedContaine
     ],
   };
 };
+const rpiPipelineFindings = (p: any): Fail[] => {
+  const f: Fail[] = [];
+  // spec 0.4.12: the Raspberry Pi contract is either present at its root or removed and recorded under deferred.rpi with Ryan's pause
+  {
+    const RPI_STEPS = [
+        "build-rpi",
+        "gate-rpi",
+        "stage-rpi-headless",
+        "install-rpi-headless",
+        "rpi-cold-turn",
+      ],
+      d = p.deferred?.rpi;
+    if (p.rpi) {
+      if (!same(p.rpi?.remote_root, R.rpi_build_root)) f.push("exact pipeline field mismatch: rpi");
+    } else {
+      if (
+        !d?.ruling?.words ||
+        d.ruling?.date !== "2026-10-09" ||
+        !d.contract ||
+        d.counted_as_passed !== false
+      )
+        f.push(
+          "Raspberry Pi contract removed without its deferred.rpi record (ruling, template, counted_as_passed false)",
+        );
+      if (!same([...(d?.steps ?? []).map((s: any) => s.id)].sort(), [...RPI_STEPS].sort()))
+        f.push("deferred.rpi does not keep the five Raspberry Pi step templates");
+      for (const id of RPI_STEPS)
+        if ((p.steps ?? []).some((s: any) => s.id === id) || (p.required_steps ?? []).includes(id))
+          f.push(`deferred Raspberry Pi step still active: ${id}`);
+      const order = ["install-tower", "install-phone", "install-mac"].map((id) =>
+        (p.required_steps ?? []).indexOf(id),
+      );
+      if (order.some((i) => i < 0) || !(order[0] < order[1] && order[1] < order[2]))
+        f.push("install order is not tower, then iPhone, then Mac");
+    }
+  }
+  return f;
+};
 const installedVersion = () => {
   const r = spawnSync(
     "defaults",
@@ -728,9 +766,9 @@ export async function runSliceChecks() {
       ["patterns", p.vault_copy?.patterns, R.vault_copy.patterns],
       ["exclude", p.vault_copy?.exclude, R.vault_copy.exclude],
       ["tower", p.tower?.remote_root, R.tower_build_root],
-      ["rpi", p.rpi?.remote_root, R.rpi_build_root],
     ] as const)
       if (!same(got, want)) f.push(`exact pipeline field mismatch: ${field}`);
+    f.push(...rpiPipelineFindings(p));
     if (p.source?.upstream_mode_by_release?.[NEXT_RELEASE] !== "preserve-base")
       f.push("admitted next release is not preserve-base");
     const byId = new Map<string, any>((p.steps ?? []).map((s: any) => [s.id, s]));
@@ -1322,6 +1360,8 @@ export async function runSliceChecks() {
       return [`installed ${version}, acceptance release is ${NEXT_RELEASE}`];
     const run = EVIDENCE_ROOT + "/release-" + version.replaceAll(".", "-");
     if (!existsSync(run)) return ["release evidence absent"];
+    const pipeline = readJson(PIPELINE);
+    f.push(...rpiPipelineFindings(pipeline));
     const sc = readJson(join(run, "source-commit.json")),
       commit = sc.commit,
       closure = readJson(join(run, "Release-Closure.json"));
@@ -1343,7 +1383,7 @@ export async function runSliceChecks() {
       "vault-clean",
       "install-tower",
       "install-tower-headless",
-      "install-rpi-headless",
+      ...(pipeline.rpi ? ["install-rpi-headless"] : []),
       "install-phone",
       "install-mac",
       "publish-docs",
@@ -1534,7 +1574,1267 @@ export async function runSliceChecks() {
   );
   return { exit: green === results.length ? 0 : 1, results };
 }
+
+// Isolated repository-move fixture suite; no operator state is written.
+async function runRepositoryMoveFixtures(): Promise<void> {
+  const { default: assert } = await import("node:assert/strict");
+  const {
+    chmodSync,
+    lstatSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    rmdirSync,
+    symlinkSync,
+    unlinkSync,
+    writeFileSync,
+  } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const { manifestOf } = await import("./slice-1-contracts.mts");
+  // Real disposable repositories and files; no operator repository or archive is mutated.
+
+  const HERE = dirname(fileURLToPath(import.meta.url));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "repository-move-fixtures-")));
+  const originalSpec = JSON.parse(readFileSync(join(HERE, "../spec.json"), "utf8"));
+  const file = (p: string, text: string) => {
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, text);
+  };
+  const json = (p: string, value: unknown) => file(p, JSON.stringify(value));
+  const git = (repo: string, ...args: string[]) =>
+    execFileSync("git", ["-C", repo, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  const home = join(root, "home"),
+    trees = join(root, "worktrees"),
+    records = join(root, "records");
+  mkdirSync(home);
+  mkdirSync(trees);
+  mkdirSync(records);
+  git(home, "init", "-q", "-b", "main");
+  git(home, "config", "user.name", "Move fixture");
+  git(home, "config", "user.email", "fixture@example.invalid");
+  file(join(home, "file.txt"), "initial\n");
+  git(home, "add", "--", "file.txt");
+  git(home, "commit", "-qm", "initial");
+  const a = git(home, "rev-parse", "HEAD");
+  const release = join(trees, "1.2.3"),
+    task = join(trees, "task");
+  git(home, "worktree", "add", "-qb", "release/1.2.3", release);
+  git(home, "worktree", "add", "-qb", "task", task);
+  // Two rewritten tips: neither is a descendant of the frozen commit.
+  const tree = git(home, "rev-parse", "HEAD^{tree}");
+  const b = git(home, "commit-tree", tree, "-m", "first replay");
+  const c = git(home, "commit-tree", tree, "-m", "second replay");
+  git(task, "update-ref", "refs/heads/task", c);
+  const defaults = join(root, "bin/defaults");
+  file(defaults, '#!/usr/bin/env node\nconsole.log("1.2.3");\n');
+  chmodSync(defaults, 0o755);
+  const movePath = join(records, "Move-Record.json"),
+    annotations = join(records, "Worktree-Move-Annotations.jsonl");
+  const reviewB = join(records, "review-b.json"),
+    reviewC = join(records, "review-c.json"),
+    custody = join(records, "custody.json");
+  json(reviewB, { verdict: "PASS", head: b });
+  json(reviewC, { verdict: "PASS", head: c });
+  json(custody, { previous_head: a, new_head: b });
+  const schema = "throughline.worktree-move-annotation.v1",
+    at = "2026-10-10T08:00:00.000Z";
+  const freeze = {
+    schema,
+    kind: "addition-freeze",
+    path: task,
+    head: a,
+    branch: "task",
+    observed_at: at,
+    reason: "fixture",
+    evidence: { command: "git worktree list --porcelain", output_path: custody },
+  };
+  const chain = [
+    freeze,
+    {
+      schema,
+      kind: "rebased",
+      path: task,
+      previous_head: a,
+      new_head: b,
+      review: reviewB,
+      custody_evidence: custody,
+      observed_at: at,
+    },
+    {
+      schema,
+      kind: "rebased",
+      path: task,
+      previous_head: b,
+      new_head: c,
+      review: reviewC,
+      custody_evidence: custody,
+      observed_at: at,
+    },
+  ];
+  const move = {
+    worktrees: [
+      { path: home, head: a, branch: "main" },
+      { path: release, head: a, branch: "release/1.2.3" },
+    ],
+    worktree_mapping: [
+      { before: home, after: home, frozen_head: a, branch: "main" },
+      { before: release, after: release, frozen_head: a, branch: "release/1.2.3" },
+    ],
+    fingerprints: [],
+  };
+  const spec = structuredClone(originalSpec);
+  Object.assign(spec.repository, {
+    home,
+    worktrees: trees,
+    move_record: movePath,
+    archive_ledger: join(records, "archive.json"),
+    evidence_root: join(root, "evidence"),
+    old_backup_root: join(root, "backup"),
+    retired_folder: join(root, "retired"),
+    old_home: join(root, "retired/old-home"),
+  });
+  const rr = spec.tasks.find((t: any) => t.id === "T1.05").record_retention;
+  rr.address = join(root, "retained");
+  rr.manifest = join(records, "retained.jsonl");
+  const specPath = join(root, "spec.json");
+  json(specPath, spec);
+  const rows = (values: unknown[]) =>
+    file(annotations, values.map((x) => JSON.stringify(x)).join("\n") + "\n");
+  const run = (id: string, expected: number, reason?: string) => {
+    const r = spawnSync(
+      process.execPath,
+      [join(HERE, "slice-1-repository-move.mts"), "--spec", specPath, "--only", id],
+      {
+        encoding: "utf8",
+        env: { ...process.env, PATH: join(root, "bin") + ":" + process.env.PATH },
+      },
+    );
+    assert.equal(r.status, expected, r.stdout + r.stderr);
+    assert.match(r.stdout, new RegExp(`^${expected === 0 ? "PASS" : "FAIL"}  ${id} `, "m"));
+    if (reason) assert.ok(r.stdout.includes(reason), r.stdout);
+  };
+  const cases: Array<[string, () => void]> = [];
+  const test = (name: string, fn: () => void) => cases.push([name, fn]);
+  test("S1-C03 valid two-rebase chain with exact passing reviews", () => {
+    json(movePath, move);
+    rows(chain);
+    run("S1-C03", 0);
+  });
+  test("S1-C03 an existing frozen mapping accepts the same reviewed chain", () => {
+    json(movePath, {
+      ...move,
+      worktree_mapping: [
+        ...move.worktree_mapping,
+        { before: task, after: task, frozen_head: a, branch: "task" },
+      ],
+    });
+    rows(chain.slice(1));
+    run("S1-C03", 0);
+  });
+  test("S1-C03 ordinary frozen mapping still passes without a rebase", () => {
+    git(task, "update-ref", "refs/heads/task", a);
+    try {
+      json(movePath, move);
+      rows([freeze]);
+      run("S1-C03", 0);
+    } finally {
+      git(task, "update-ref", "refs/heads/task", c);
+    }
+  });
+  for (const [name, patch] of [
+    ["missing review", { review: undefined }],
+    ["nonexistent review", { review: join(records, "absent.json") }],
+    ["missing custody evidence", { custody_evidence: join(records, "absent.json") }],
+    ["head does not match current HEAD", { new_head: b }],
+    ["disconnected chain", { previous_head: a }],
+  ] as const)
+    test(`S1-C03 ${name} refuses`, () => {
+      json(movePath, move);
+      rows([chain[0], chain[1], { ...chain[2], ...patch }]);
+      run("S1-C03", 1, "rebase");
+    });
+  test("S1-C03 an earlier failing review cannot be hidden by a newer pass", () => {
+    json(movePath, move);
+    rows(chain);
+    json(reviewB, { verdict: "FAIL", head: b });
+    try {
+      run("S1-C03", 1, "review");
+    } finally {
+      json(reviewB, { verdict: "PASS", head: b });
+    }
+  });
+  test("S1-C03 passing review for a different head refuses", () => {
+    json(movePath, move);
+    rows(chain);
+    json(reviewC, { verdict: "PASS", head: b });
+    try {
+      run("S1-C03", 1, "review");
+    } finally {
+      json(reviewC, { verdict: "PASS", head: c });
+    }
+  });
+  test("S1-C03 duplicate freeze cannot reset a bad chain", () => {
+    json(movePath, move);
+    rows([freeze, { ...chain[1], review: join(records, "absent.json") }, { ...freeze, head: c }]);
+    run("S1-C03", 1);
+  });
+  test("S1-C03 frozen detached addition stays valid at its head", () => {
+    git(task, "checkout", "--detach", c);
+    try {
+      json(movePath, move);
+      rows([{ ...freeze, head: c, branch: null }]);
+      run("S1-C03", 0);
+    } finally {
+      git(task, "checkout", "task");
+    }
+  });
+
+  for (const id of ["S1-C03", "S1-M01", "S1-C06"]) {
+    test(id + " moved stage requires the compatibility alias", () => {
+      json(movePath, { ...move, admission_state: "moved" });
+      rows(chain);
+      run(id, 1, "alias");
+    });
+    test(id + " moved stage accepts the compatibility alias pointing to the repository", () => {
+      mkdirSync(dirname(spec.repository.old_home), { recursive: true });
+      symlinkSync(home, spec.repository.old_home);
+      try {
+        json(movePath, { ...move, admission_state: "moved" });
+        rows(chain);
+        run(id, 0);
+      } finally {
+        unlinkSync(spec.repository.old_home);
+      }
+    });
+    test(id + " closed stage requires the alias gone", () => {
+      json(movePath, { ...move, admission_state: "closed" });
+      rows(chain);
+      run(id, 0);
+      symlinkSync(home, spec.repository.old_home);
+      try {
+        run(id, 1, "alias");
+      } finally {
+        unlinkSync(spec.repository.old_home);
+      }
+    });
+  }
+  test("S1-C03 alias-removed is not an accepted row kind", () => {
+    json(movePath, { ...move, admission_state: "moved" });
+    rows([
+      ...chain,
+      {
+        schema,
+        kind: "alias-removed",
+        path: spec.repository.old_home,
+        observed_at: at,
+        evidence: { command: "unlink", output_path: custody },
+      },
+    ]);
+    run("S1-C03", 1);
+  });
+
+  const oldRelease = join(root, "old-release"),
+    preserved = join(release, "release");
+  file(join(preserved, "app.dmg"), "preserved bytes\n");
+  const fp = {
+    path: join(oldRelease, "release"),
+    target: join(oldRelease, "release"),
+    disposition: "moved-and-preserved",
+    ...manifestOf(preserved),
+  };
+  const moved = {
+    schema,
+    kind: "disposition",
+    before: oldRelease,
+    after: release,
+    frozen_head: a,
+    branch: "release/1.2.3",
+    disposition: "moved",
+    observed_at: at,
+    evidence: { command: "git worktree move", output_path: custody },
+  };
+  const preservedMove = {
+    ...move,
+    worktrees: [...move.worktrees, { path: oldRelease, head: a, branch: "release/1.2.3" }],
+    fingerprints: [fp],
+  };
+  test("S1-C06 preserved release follows its move annotation", () => {
+    json(movePath, preservedMove);
+    rows([moved]);
+    run("S1-C06", 0);
+  });
+  test("S1-C06 moved release with changed bytes refuses", () => {
+    json(movePath, preservedMove);
+    rows([moved]);
+    file(join(preserved, "app.dmg"), "changed bytes\n");
+    try {
+      run("S1-C06", 1, "fingerprint drift");
+    } finally {
+      file(join(preserved, "app.dmg"), "preserved bytes\n");
+    }
+  });
+  test("S1-C06 unbound move annotation refuses", () => {
+    json(movePath, preservedMove);
+    rows([{ ...moved, frozen_head: b }]);
+    run("S1-C06", 1);
+  });
+
+  const alias = join(root, "staging/Applications"),
+    target = join(root, "applications");
+  mkdirSync(target);
+  file(join(target, "untouched.txt"), "do not follow\n");
+  mkdirSync(dirname(alias));
+  symlinkSync(target, alias);
+  const aliasFp = {
+    path: alias,
+    target: alias,
+    disposition: "moved-and-preserved",
+    ...manifestOf(alias),
+  };
+  unlinkSync(alias);
+  const archived = {
+    source: alias,
+    archive: "rpi:/mnt/storage/archives/staging/Applications",
+    ...manifestOf(target),
+    ...aliasFp,
+    status: "ARCHIVED_AND_REMOVED",
+    verify_result: "PASS",
+    rsync_checksum_verified: true,
+    remote_file_count: aliasFp.file_count,
+    remote_symlink_count: aliasFp.symlink_count,
+  };
+  test("S1-C06 removed staging link with exact passing archive ledger is archived", () => {
+    json(movePath, { ...move, fingerprints: [aliasFp] });
+    rows([]);
+    json(spec.repository.archive_ledger, {
+      schema: "mac-disk-archive-ledger.v1",
+      moves: [archived],
+    });
+    run("S1-C06", 0);
+    assert.equal(readFileSync(join(target, "untouched.txt"), "utf8"), "do not follow\n");
+  });
+  test("S1-C06 staging link with failed archive proof refuses", () => {
+    json(movePath, { ...move, fingerprints: [aliasFp] });
+    rows([]);
+    json(spec.repository.archive_ledger, {
+      schema: "mac-disk-archive-ledger.v1",
+      moves: [{ ...archived, verify_result: "FAIL" }],
+    });
+    run("S1-C06", 1);
+  });
+  test("S1-C06 retained dangling staging link is not archived", () => {
+    symlinkSync(join(root, "absent-target"), alias);
+    try {
+      json(movePath, { ...move, fingerprints: [aliasFp] });
+      rows([]);
+      json(spec.repository.archive_ledger, {
+        schema: "mac-disk-archive-ledger.v1",
+        moves: [archived],
+      });
+      run("S1-C06", 1);
+    } finally {
+      unlinkSync(alias);
+    }
+  });
+
+  test("every done_when has safe core-root install and server-relative checker folders", () => {
+    for (const task of originalSpec.tasks) {
+      const command = task.done_when.command;
+      if (command.includes("pnpm -C /Users/Admin/core-root install")) {
+        assert.ok(command.startsWith("cd /Users/Admin/core-root && "), task.id);
+        assert.ok(
+          !/node \.\/checks\//.test(command),
+          task.id + " checker would run from core-root",
+        );
+      }
+      if (/cd [^&]*apps\/server.*node \.\/checks\//.test(command))
+        assert.match(command, /\(cd [^&]*apps\/server && [^)]*\) && node \.\/checks\//, task.id);
+    }
+  });
+  for (const id of ["T1.04", "T1.09", "T2.03"])
+    test(`${id} literal done_when executes each command in its intended folder`, () => {
+      const d = join(root, id),
+        repo = join(d, "repo"),
+        core = join(d, "core"),
+        design = join(repo, "docs/throughline/next-gen-spec"),
+        log = join(d, "calls.jsonl");
+      mkdirSync(join(repo, "apps/server"), { recursive: true });
+      mkdirSync(core);
+      mkdirSync(design, { recursive: true });
+      const recordCall =
+        '#!/usr/bin/env node\nrequire("node:fs").appendFileSync(process.env.CALL_LOG, JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2),file:process.argv[1]})+"\\n");\n';
+      const pnpm = join(d, "bin/pnpm");
+      file(pnpm, recordCall);
+      chmodSync(pnpm, 0o755);
+      for (const checker of ["slice-1-repository-move.mts", "slice-2-seam.mts"])
+        file(
+          join(design, "checks", checker),
+          'import fs from "node:fs"; fs.appendFileSync(process.env.CALL_LOG, JSON.stringify({cwd:process.cwd(),checker:import.meta.url})+"\\n");\n',
+        );
+      const command = originalSpec.tasks
+        .find((t: any) => t.id === id)
+        .done_when.command.replaceAll("/Users/Admin/throughline", repo)
+        .replaceAll("/Users/Admin/core-root", core);
+      const r = spawnSync("/bin/sh", ["-c", command], {
+        cwd: design,
+        encoding: "utf8",
+        env: { ...process.env, CALL_LOG: log, PATH: dirname(pnpm) + ":" + process.env.PATH },
+      });
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      const calls = readFileSync(log, "utf8")
+        .trim()
+        .split("\n")
+        .map((x) => JSON.parse(x));
+      assert.equal(calls.filter((x) => x.checker).length, 1);
+      if (id === "T1.09")
+        assert.equal(calls.find((x) => x.args?.includes("test"))?.cwd, join(repo, "apps/server"));
+      else assert.equal(calls.find((x) => x.args?.includes("install"))?.cwd, core);
+    });
+
+  let bad = 0;
+  try {
+    for (const [name, fn] of cases) {
+      try {
+        fn();
+        console.log("OK   " + name);
+      } catch (e) {
+        bad++;
+        console.log("BAD  " + name + ": " + (e as Error).message);
+      }
+    }
+  } finally {
+    const clean = (p: string) => {
+      const s = lstatSync(p);
+      if (s.isDirectory() && !s.isSymbolicLink()) {
+        for (const n of readdirSync(p)) clean(join(p, n));
+        rmdirSync(p);
+      } else unlinkSync(p);
+    };
+    clean(root);
+  }
+  console.log(`\n${cases.length - bad} of ${cases.length} repository-move fixtures behaved`);
+  process.exitCode = bad ? 1 : 0;
+}
+
+// Isolated archive-readers fixture suite; no operator state is written.
+async function runArchiveReaderFixtures(): Promise<void> {
+  const { default: assert } = await import("node:assert/strict");
+  const {
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    writeFileSync,
+    unlinkSync,
+    rmdirSync,
+    readdirSync,
+    lstatSync,
+    realpathSync,
+  } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const { createHash } = await import("node:crypto");
+  const { spawnSync } = await import("node:child_process");
+  const { manifestOf } = await import("./slice-1-contracts.mts");
+  // Archive-reader regressions use disposable recorded evidence; no real archive or witness is edited.
+
+  const HERE = dirname(fileURLToPath(import.meta.url));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "archive-reader-fixtures-")));
+  const template = JSON.parse(readFileSync(join(HERE, "../spec.json"), "utf8"));
+  const sha = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
+  const file = (p: string, text: string) => {
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, text);
+  };
+  const json = (p: string, x: unknown) => file(p, JSON.stringify(x));
+  const jsonl = (p: string, rows: unknown[]) =>
+    file(p, rows.map((x) => JSON.stringify(x)).join("\n") + "\n");
+  const head = "a".repeat(40),
+    at = "2026-10-10T08:40:00.000Z";
+  const cases: Array<[string, () => void]> = [];
+  const test = (name: string, fn: () => void) => cases.push([name, fn]);
+  let count = 0;
+  const fixture = () => {
+    const d = join(root, String(++count)),
+      spec = structuredClone(template);
+    mkdirSync(d);
+    const R = spec.repository;
+    Object.assign(R, {
+      home: join(d, "home"),
+      worktrees: join(d, "worktrees"),
+      old_home: join(d, "old-home"),
+      evidence_root: join(d, "evidence"),
+      old_backup_root: join(d, "backup-old"),
+      backup_root: join(d, "backup"),
+      retired_folder: join(d, "retired"),
+      move_record: join(d, "Move-Record.json"),
+      archive_ledger: join(d, "Archive-Ledger.jsonl"),
+    });
+    const source = join(d, "container"),
+      child = join(source, "payload.bin");
+    file(child, "frozen archive payload\n");
+    const fingerprint = manifestOf(source),
+      childFingerprint = manifestOf(child);
+    unlinkSync(child);
+    rmdirSync(source);
+    const fp = { path: source, ...fingerprint, disposition: "moved-and-preserved", target: source };
+    const archive = "rpi:/mnt/storage/archives/disposable-container";
+    const annotation = {
+      schema: "throughline.archive-annotation.v1",
+      path: source,
+      fingerprint,
+      disposition: "archived-and-removed",
+      archive,
+      record_container: source,
+      is_container: true,
+      verification: "PASS",
+      archive_ledger_source: source,
+    };
+    const ledger = {
+      source,
+      archive,
+      ...fingerprint,
+      status: "ARCHIVED_AND_REMOVED",
+      verify_result: "PASS",
+      rsync_checksum_verified: true,
+      remote_file_count: fingerprint.file_count,
+      remote_symlink_count: fingerprint.symlink_count,
+    };
+    const rr = spec.tasks.find((t: any) => t.id === "T1.05").record_retention;
+    Object.assign(rr, {
+      address: join(d, "retained"),
+      manifest: join(d, "Record-Manifest.jsonl"),
+      excluded_dependency_trees: [
+        "node_modules",
+        "Pods",
+        "SourcePackages",
+        "checkouts",
+        "Carthage",
+      ],
+    });
+    const detached = {
+      path: join(d, "old-detached"),
+      branch: null,
+      detached: true,
+      head,
+      clean: true,
+      ignored_entries: [],
+    };
+    const m: any = {
+      schema: "throughline.move-record.v1",
+      admission_state: "frozen",
+      head,
+      origin_url: R.origin,
+      origin_ahead: 0,
+      started_at: at,
+      repository_identity: { device: 1, inode: 2 },
+      branches: [{ name: "main", sha: head }],
+      tags: [],
+      worktrees: [
+        { path: R.old_home, branch: "main", head, clean: true, ignored_entries: [] },
+        detached,
+      ],
+      worktree_mapping: [{ before: R.old_home, after: R.home, branch: "main", frozen_head: head }],
+      fingerprints: [fp],
+      installed_app: {
+        payloads: [
+          { path: "/Applications/ThroughLine.app/Contents/MacOS/ThroughLine" },
+          { path: "/Applications/ThroughLine.app/Contents/Resources/app.asar" },
+        ],
+      },
+      old_paths: {
+        home: R.old_home,
+        release_checkout: R.old_release_checkout,
+        backup_root: R.old_backup_root,
+        tower_remote_root: "/home/twr/build/workbench/infra/t3code/t3-{release}",
+        rpi_remote_root: "/home/rpi/build/workbench/infra/t3code/t3-{release}",
+        spec_folder: R.spec_home_until_then,
+      },
+      new_paths: {
+        home: R.home,
+        release_checkout: R.release_checkout,
+        backup_root: R.backup_root,
+        tower_remote_root: R.tower_build_root,
+        rpi_remote_root: R.rpi_build_root,
+        spec_folder: R.home + "/" + R.spec_home_in_repository,
+      },
+    };
+    const output = join(d, "freeze-output.txt");
+    file(output, "Disposable fixture inventory\n");
+    const worktrees = [
+      {
+        schema: "throughline.worktree-move-annotation.v1",
+        kind: "disposition",
+        before: detached.path,
+        frozen_head: head,
+        branch: null,
+        disposition: "kept",
+        observed_at: at,
+        evidence: { command: "fixture inventory", output_path: output },
+      },
+    ];
+    const recordRows: any[] = [
+      {
+        schema: "throughline.retained-record.v1",
+        kind: "container",
+        container: source,
+        archive,
+        record_count: 0,
+      },
+    ];
+    const annotations: any[] = [annotation],
+      addendum: any[] = [],
+      ledgerRows: any[] = [ledger];
+    const run = (id: string, expected: number, reason?: string) => {
+      const witness: any = Object.fromEntries(
+        ["head", "origin_url", "branches", "tags", "worktrees", "fingerprints"].map((k) => [
+          k,
+          m[k],
+        ]),
+      );
+      witness.commands = [
+        {
+          argv: ["fixture", "inventory"],
+          exit_code: 0,
+          output_path: output,
+          output_sha256: sha(readFileSync(output)),
+        },
+      ];
+      const witnessPath = join(d, "frozen.json");
+      json(witnessPath, witness);
+      m.frozen_inventory = { path: witnessPath, sha256: sha(readFileSync(witnessPath)) };
+      json(R.move_record, m);
+      json(join(d, "spec.json"), spec);
+      jsonl(join(d, "Archive-Annotations.jsonl"), annotations);
+      jsonl(join(d, "Archive-Fingerprint-Addendum.jsonl"), addendum);
+      jsonl(join(d, "Worktree-Move-Annotations.jsonl"), worktrees);
+      jsonl(rr.manifest, recordRows);
+      json(R.archive_ledger, { schema: "mac-disk-archive-ledger.v1", moves: ledgerRows });
+      const frozenBefore = readFileSync(witnessPath),
+        recordBefore = readFileSync(R.move_record);
+      const r = spawnSync(
+        process.execPath,
+        [join(HERE, "slice-1-repository-move.mts"), "--spec", join(d, "spec.json"), "--only", id],
+        { encoding: "utf8" },
+      );
+      assert.equal(r.status, expected, r.stdout + r.stderr);
+      if (reason) assert.ok(r.stdout.includes(reason), r.stdout);
+      assert.deepEqual(readFileSync(witnessPath), frozenBefore);
+      assert.deepEqual(readFileSync(R.move_record), recordBefore);
+    };
+    return {
+      d,
+      m,
+      spec,
+      source,
+      child,
+      childFingerprint,
+      annotation,
+      fingerprint,
+      annotations,
+      addendum,
+      ledgerRows,
+      recordRows,
+      rr,
+      worktrees,
+      run,
+    };
+  };
+  test("S1-C06 formerly-preserved container follows its verified archive annotation", () =>
+    fixture().run("S1-C06", 0));
+  test("S1-C06 an annotated covered child follows its frozen ancestor container", () => {
+    const f = fixture();
+    f.m.fingerprints.push({
+      path: f.child,
+      ...f.childFingerprint,
+      disposition: "moved-and-preserved",
+      target: f.child,
+    });
+    f.annotations.push({
+      ...f.annotation,
+      path: f.child,
+      fingerprint: f.childFingerprint,
+      is_container: false,
+    });
+    f.run("S1-C06", 0);
+  });
+  test("S1-C06 changed annotation fingerprint refuses", () => {
+    const f = fixture();
+    f.annotation.fingerprint = { ...f.fingerprint, bytes: 999 };
+    f.run("S1-C06", 1, "fingerprint");
+  });
+  test("S1-C06 failed ledger verification refuses", () => {
+    const f = fixture();
+    f.ledgerRows[0].verify_result = "FAIL";
+    f.run("S1-C06", 1, "archive ledger");
+  });
+  test("S1-C06 archived path still present refuses", () => {
+    const f = fixture();
+    file(f.child, "still here");
+    f.run("S1-C06", 1, "still present");
+  });
+  test("S1-C06 container absent from the original freeze follows its addendum", () => {
+    const f = fixture();
+    f.m.fingerprints = [];
+    f.addendum.push({
+      schema: "throughline.archive-fingerprint-addendum.v1",
+      path: f.source,
+      fingerprint: f.fingerprint,
+      observed_at: at,
+      measurement: "fixture manifestOf before removal",
+    });
+    f.run("S1-C06", 0);
+  });
+  test("S1-C06 unbound new container without addendum refuses", () => {
+    const f = fixture();
+    f.m.fingerprints = [];
+    f.run("S1-C06", 1, "addendum");
+  });
+  test("S1-C06 new container with a mismatched pre-copy freeze refuses", () => {
+    const f = fixture();
+    f.m.fingerprints = [];
+    f.addendum.push({
+      schema: "throughline.archive-fingerprint-addendum.v1",
+      path: f.source,
+      fingerprint: { ...f.fingerprint, bytes: 999 },
+      observed_at: at,
+      measurement: "fixture",
+    });
+    f.run("S1-C06", 1, "pre-copy freeze");
+  });
+  const thirdParty = () => {
+    const f = fixture(),
+      p = join(f.rr.address, "vendor-README.md");
+    f.recordRows[0].record_count = 1;
+    f.recordRows.push({
+      schema: "throughline.retained-record.v1",
+      kind: "record",
+      container: f.source,
+      original_path: join(f.source, "node_modules/pkg/README.md"),
+      new_path: p,
+      sha256: sha("withdrawn copy"),
+      bytes: 14,
+    });
+    f.recordRows.push({
+      schema: "throughline.retained-record.v1",
+      kind: "dropped",
+      new_path: p,
+      reason: "Third-party payload remains in its verified whole-container archive.",
+    });
+    return { ...f, p };
+  };
+  test("S1-C06 dropped third-party copy remains counted historically but need not exist", () =>
+    thirdParty().run("S1-C06", 0));
+  test("S1-C06 third-party record without a dropped row refuses", () => {
+    const f = thirdParty();
+    f.recordRows.pop();
+    f.run("S1-C06", 1, "third-party dependency");
+  });
+  test("S1-C06 dropped row without a reason refuses", () => {
+    const f = thirdParty();
+    f.recordRows[2].reason = "";
+    f.run("S1-C06", 1, "without a one-line reason");
+  });
+  test("S1-C06 dropped copy still on disk refuses", () => {
+    const f = thirdParty();
+    file(f.p, "withdrawn copy");
+    f.run("S1-C06", 1, "dropped record still present");
+  });
+  test("S1-C06 own-run records cannot be exempted as third-party payload", () => {
+    const f = thirdParty();
+    f.recordRows[1].original_path = join(f.source, "own-run.json");
+    f.run("S1-C06", 1, "record missing or changed");
+  });
+  test("S1-C09 detached frozen worktree binds through its disposition", () =>
+    fixture().run("S1-C09", 0));
+  test("S1-C09 missing frozen-worktree disposition refuses", () => {
+    const f = fixture();
+    f.worktrees.length = 0;
+    f.run("S1-C09", 1, "unbound/unclean");
+  });
+  test("S1-C09 disposition for another frozen head refuses", () => {
+    const f = fixture();
+    f.worktrees[0].frozen_head = "b".repeat(40);
+    f.run("S1-C09", 1, "unbound/unclean");
+  });
+  test("S1-C09 duplicate archive annotation refuses", () => {
+    const f = fixture();
+    f.annotations.push({ ...f.annotation });
+    f.run("S1-C09", 1, "two annotation rows");
+  });
+  test("S1-C09 covered child without its ancestor container refuses", () => {
+    const f = fixture();
+    f.annotation.is_container = false;
+    f.run("S1-C09", 1, "ancestor container");
+  });
+  test("S1-C09 addendum cannot replace an original frozen entry", () => {
+    const f = fixture();
+    f.addendum.push({
+      schema: "throughline.archive-fingerprint-addendum.v1",
+      path: f.source,
+      fingerprint: f.fingerprint,
+      observed_at: at,
+      measurement: "fixture",
+    });
+    f.run("S1-C09", 1, "already in the frozen witness");
+  });
+
+  const annotatedPreserved = () => {
+    const f = fixture(),
+      target = join(f.spec.repository.worktrees, "preserved");
+    const worktreeRows = f.worktrees as Array<Record<string, any>>;
+    f.annotation.disposition = "moved-and-preserved";
+    f.ledgerRows.length = 0;
+    f.recordRows.length = 0;
+    f.m.worktrees.push({
+      path: f.source,
+      branch: "preserved",
+      head,
+      clean: true,
+      ignored_entries: [],
+    });
+    worktreeRows.push({
+      schema: "throughline.worktree-move-annotation.v1",
+      kind: "disposition",
+      before: f.source,
+      after: target,
+      frozen_head: head,
+      branch: "preserved",
+      fingerprint: { ...f.fingerprint },
+      disposition: "moved",
+      observed_at: at,
+      evidence: { command: "fixture worktree move", output_path: join(f.d, "freeze-output.txt") },
+    });
+    file(join(target, "payload.bin"), "frozen archive payload\n");
+    return { ...f, worktrees: worktreeRows, target };
+  };
+  test("S1-C06 annotated preserved target follows its move and proves actual bytes", () => {
+    annotatedPreserved().run("S1-C06", 0);
+  });
+  test("S1-C06 annotated preserved missing target refuses", () => {
+    const f = annotatedPreserved();
+    unlinkSync(join(f.target, "payload.bin"));
+    rmdirSync(f.target);
+    f.run("S1-C06", 1, "preserved target missing");
+  });
+  test("S1-C06 annotated preserved changed bytes refuse", () => {
+    const f = annotatedPreserved();
+    file(join(f.target, "payload.bin"), "changed bytes\n");
+    f.run("S1-C06", 1, "fingerprint drift");
+  });
+  test("S1-C06 annotated preserved target outside the worktree collection refuses", () => {
+    const f = annotatedPreserved(),
+      outside = join(f.d, "outside-collection");
+    file(join(outside, "payload.bin"), "frozen archive payload\n");
+    f.worktrees.at(-1)!.after = outside;
+    f.run("S1-C06", 1, "preserved target missing");
+  });
+  for (const key of ["sha256", "file_count", "symlink_count", "entry_count", "bytes"] as const)
+    test(`S1-C06 annotated preserved proof checks the actual ${key}`, () => {
+      const f = annotatedPreserved();
+      const wrong = key === "sha256" ? "b".repeat(64) : f.fingerprint[key] + 1;
+      f.m.fingerprints[0][key] = wrong;
+      f.annotation.fingerprint = { ...f.fingerprint, [key]: wrong };
+      f.worktrees.at(-1)!.fingerprint = { ...f.fingerprint, [key]: wrong };
+      f.run("S1-C06", 1, "fingerprint drift");
+    });
+
+  let bad = 0;
+  try {
+    for (const [name, fn] of cases) {
+      try {
+        fn();
+        console.log("OK   " + name);
+      } catch (e) {
+        bad++;
+        console.log("BAD  " + name + ": " + (e as Error).message);
+      }
+    }
+  } finally {
+    const clean = (p: string) => {
+      const st = lstatSync(p);
+      if (st.isDirectory() && !st.isSymbolicLink()) {
+        for (const n of readdirSync(p)) clean(join(p, n));
+        rmdirSync(p);
+      } else unlinkSync(p);
+    };
+    clean(root);
+  }
+  console.log(`\n${cases.length - bad} of ${cases.length} archive-reader fixtures behaved`);
+  process.exitCode = bad ? 1 : 0;
+}
+
+// Isolated deferred-rpi fixture suite; no operator state is written.
+async function runDeferredRpiFixtures(): Promise<void> {
+  const { default: assert } = await import("node:assert/strict");
+  const {
+    chmodSync,
+    lstatSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    rmdirSync,
+    unlinkSync,
+    writeFileSync,
+  } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const { createHash } = await import("node:crypto");
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const { expectedStep } = await import("./slice-1-contracts.mts");
+  // Reader fixtures only. All state, package metadata, receipts and Git repositories are disposable.
+  // The owning tool's validator is a fixture stand-in; its already-passing suite is not duplicated here.
+
+  const HERE = dirname(fileURLToPath(import.meta.url));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "deferred-rpi-reader-")));
+  const original = JSON.parse(readFileSync(join(HERE, "../spec.json"), "utf8"));
+  const RPI_STEPS = [
+    "build-rpi",
+    "gate-rpi",
+    "stage-rpi-headless",
+    "install-rpi-headless",
+    "rpi-cold-turn",
+  ];
+  const file = (p: string, text: string) => {
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, text);
+  };
+  const json = (p: string, value: unknown) => file(p, JSON.stringify(value));
+  const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("/usr/bin/git", ["-C", cwd, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  let sequence = 0;
+  const fixture = () => {
+    const d = join(root, String(++sequence)),
+      spec = structuredClone(original),
+      R = spec.repository;
+    mkdirSync(d);
+    Object.assign(R, {
+      home: join(d, "home"),
+      worktrees: join(d, "worktrees"),
+      monorepo: join(d, "monorepo"),
+      vault: join(d, "vault"),
+      old_home: join(d, "old-home"),
+      old_release_checkout: join(d, "old-release"),
+      evidence_root: join(d, "records"),
+      backup_root: join(d, "backups"),
+      retired_folder: join(d, "retired"),
+      move_record: join(d, "move.json"),
+      pipeline_definition: join(d, "pipeline.json"),
+      next_release: "0.0.60",
+      vault_copy: { ...R.vault_copy, destination: join(d, "vault-copy") },
+    });
+    const installed = join(R.monorepo, "src/tools/throughline-ship"),
+      core = join(installed, "dist/core.js");
+    json(join(installed, "package.json"), { type: "module", version: "0.4.6" });
+    file(
+      core,
+      "export function validatePipeline() { /* fixture stand-in: reader branch only */ }\n",
+    );
+    const deferred = {
+      ruling: {
+        words:
+          "Raspberry Pi paused, from Ryan: install nothing on the Raspberry Pi in this release.",
+        date: "2026-10-09",
+      },
+      contract: { remote_root: R.rpi_build_root },
+      counted_as_passed: false,
+      steps: RPI_STEPS.map((id) => ({ id })),
+    };
+    const p: any = {
+      checkout: R.home,
+      source: {
+        worktrees_root: R.worktrees,
+        release_checkout: R.worktrees + "/{release}",
+        upstream_mode_by_release: { "0.0.60": "preserve-base" },
+      },
+      backup_root: R.backup_root,
+      move_record: R.move_record,
+      evidence_root: R.evidence_root,
+      forbidden_roots: [R.vault],
+      vault_copy: R.vault_copy,
+      tower: { remote_root: R.tower_build_root },
+      deferred: { rpi: deferred },
+      steps: [
+        expectedStep("vault-clean", installed),
+        expectedStep("publish-docs", installed),
+        { id: "upstream-sync", requires: ["vault-clean"] },
+        { id: "restart-courtesy", requires: ["publish-docs"] },
+        {
+          id: "capture-phone",
+          command: ["node", R.retired_folder + "/src/ios-simulator-gate/run-gate.mts"],
+        },
+        {
+          id: "testflight-readback",
+          command: ["node", R.retired_folder + "/src/apple-signing/asc-testflight.mts"],
+        },
+      ],
+      required_steps: [
+        "preflight",
+        "vault-clean",
+        "install-tower",
+        "install-phone",
+        "install-mac",
+        "publish-docs",
+      ],
+    };
+    const output = join(d, "fixture-measurement.txt"),
+      proof = join(d, "fixture-rehearsal.json");
+    file(output, "Disposable fixture rehearsal record\n");
+    const defaults = join(d, "bin/defaults");
+    file(defaults, '#!/usr/bin/env node\nconsole.log("0.0.60");\n');
+    chmodSync(defaults, 0o755);
+    const run = (id: string, expected: number, reason?: string) => {
+      json(R.pipeline_definition, p);
+      json(proof, {
+        pipeline_sha256: sha(R.pipeline_definition),
+        core_sha256: sha(core),
+        commands: [
+          { exit_code: 0, measured_cases: 1, output_path: output, output_sha256: sha(output) },
+        ],
+        executed_steps: ["vault-clean", "publish-docs"],
+      });
+      json(R.move_record, { pipeline_rehearsal: { path: proof, sha256: sha(proof) } });
+      json(join(d, "spec.json"), spec);
+      const r = spawnSync(
+        process.execPath,
+        [join(HERE, "slice-1-repository-move.mts"), "--spec", join(d, "spec.json"), "--only", id],
+        {
+          encoding: "utf8",
+          env: { ...process.env, PATH: join(d, "bin") + ":" + process.env.PATH },
+        },
+      );
+      assert.equal(r.status, expected, r.stdout + r.stderr);
+      assert.match(r.stdout, new RegExp(`^${expected === 0 ? "PASS" : "FAIL"}  ${id} `, "m"));
+      if (reason) assert.ok(r.stdout.includes(reason), r.stdout);
+    };
+    const release = (includeRpiReceipt = false) => {
+      mkdirSync(R.home);
+      mkdirSync(R.worktrees);
+      git(R.home, "init", "-q", "-b", "main");
+      git(R.home, "config", "user.name", "Release reader fixture");
+      git(R.home, "config", "user.email", "fixture@example.invalid");
+      const sources = [
+        "apps/server/src/vcs/GitVcsDriverCore.ts",
+        R.spec_home_in_repository + "/spec.json",
+      ];
+      for (const source of sources) file(join(R.home, source), "fixture source\n");
+      git(R.home, "add", "--", ...sources);
+      git(R.home, "commit", "-qm", "disposable release fixture");
+      const commit = git(R.home, "rev-parse", "HEAD"),
+        wt = join(R.worktrees, "0.0.60"),
+        runId = "fixture-release",
+        runDir = join(R.evidence_root, "release-0-0-60");
+      git(R.home, "worktree", "add", "-qb", "release/0.0.60", wt);
+      json(join(runDir, "source-commit.json"), { commit, run_id: runId });
+      const artifact = join(wt, "release/fixture.dmg"),
+        readback = join(runDir, "readback.json");
+      file(artifact, "fixture installer bytes\n");
+      json(readback, { fixture: true });
+      json(join(runDir, "Release-Closure.json"), {
+        release: "0.0.60",
+        source_commit: commit,
+        run_id: runId,
+        outcome: "passed",
+        artifacts: [{ path: artifact, sha256: sha(artifact) }],
+        installed_readbacks: [
+          {
+            release: "0.0.60",
+            source_commit: commit,
+            payload_sha256: sha(artifact),
+            receipt_path: readback,
+            receipt_sha256: sha(readback),
+          },
+        ],
+        shipped_source_hashes: Object.fromEntries(
+          sources.map((source) => [source, sha(join(R.home, source))]),
+        ),
+      });
+      const steps = [
+        "vault-clean",
+        "install-tower",
+        "install-tower-headless",
+        "install-phone",
+        "install-mac",
+        "publish-docs",
+        "rewind-live-proof",
+        ...(includeRpiReceipt ? ["install-rpi-headless"] : []),
+      ];
+      for (const step of steps)
+        json(join(runDir, step + ".attempt-1.json"), {
+          row: { outcome: "passed" },
+          source_commit: commit,
+          release: "0.0.60",
+          run_id: runId,
+        });
+      json(join(R.vault_copy.destination, "repository.json"), { commit, release: "0.0.60" });
+    };
+    return { spec, p, deferred, run, release };
+  };
+  const cases: Array<[string, () => void]> = [];
+  const test = (name: string, fn: () => void) => cases.push([name, fn]);
+  test("S1-C05 explicit deferral with five retained templates is accepted without active hardware", () =>
+    fixture().run("S1-C05", 0));
+  test("S1-C05 existing active Raspberry Pi contract remains accepted at its declared root", () => {
+    const f = fixture();
+    f.p.rpi = { remote_root: f.spec.repository.rpi_build_root };
+    delete f.p.deferred;
+    f.run("S1-C05", 0);
+  });
+  test("S1-C05 active contract at the wrong root refuses", () => {
+    const f = fixture();
+    f.p.rpi = { remote_root: "/wrong" };
+    f.run("S1-C05", 1, "field mismatch: rpi");
+  });
+  for (const [name, mutate] of [
+    [
+      "missing deferral",
+      (f: any) => {
+        delete f.p.deferred;
+      },
+    ],
+    [
+      "missing ruling",
+      (f: any) => {
+        delete f.deferred.ruling;
+      },
+    ],
+    [
+      "wrong ruling date",
+      (f: any) => {
+        f.deferred.ruling.date = "2026-10-08";
+      },
+    ],
+    [
+      "missing retained contract",
+      (f: any) => {
+        delete f.deferred.contract;
+      },
+    ],
+    [
+      "deferral counted as passed",
+      (f: any) => {
+        f.deferred.counted_as_passed = true;
+      },
+    ],
+  ] as const)
+    test(`S1-C05 ${name} refuses`, () => {
+      const f = fixture();
+      mutate(f);
+      f.run("S1-C05", 1, "deferred.rpi record");
+    });
+  test("S1-C05 incomplete template set refuses", () => {
+    const f = fixture();
+    f.deferred.steps.pop();
+    f.run("S1-C05", 1, "five Raspberry Pi step templates");
+  });
+  test("S1-C05 duplicated template cannot replace a missing template", () => {
+    const f = fixture();
+    f.deferred.steps[0] = f.deferred.steps[1];
+    f.run("S1-C05", 1, "five Raspberry Pi step templates");
+  });
+  for (const step of RPI_STEPS) {
+    test(`S1-C05 deferred ${step} still active refuses`, () => {
+      const f = fixture();
+      f.p.steps.push({ id: step });
+      f.run("S1-C05", 1, "still active");
+    });
+    test(`S1-C05 deferred ${step} still required refuses`, () => {
+      const f = fixture();
+      f.p.required_steps.push(step);
+      f.run("S1-C05", 1, "still active");
+    });
+  }
+  test("S1-C05 missing admitted install target refuses", () => {
+    const f = fixture();
+    f.p.required_steps = f.p.required_steps.filter((id: string) => id !== "install-phone");
+    f.run("S1-C05", 1, "install order");
+  });
+  test("S1-C05 incorrect tower/iPhone/Mac order refuses", () => {
+    const f = fixture();
+    [f.p.required_steps[2], f.p.required_steps[3]] = [f.p.required_steps[3], f.p.required_steps[2]];
+    f.run("S1-C05", 1, "install order");
+  });
+  test("S1-C13 paused hardware needs no fabricated Raspberry Pi installation receipt", () => {
+    const f = fixture();
+    f.release();
+    f.run("S1-C13", 0);
+  });
+  test("S1-C13 active hardware still needs its actual installation receipt", () => {
+    const f = fixture();
+    f.p.rpi = { remote_root: f.spec.repository.rpi_build_root };
+    delete f.p.deferred;
+    f.release();
+    f.run("S1-C13", 1, "install-rpi-headless");
+  });
+  test("S1-C13 active hardware with its receipt still passes", () => {
+    const f = fixture();
+    f.p.rpi = { remote_root: f.spec.repository.rpi_build_root };
+    delete f.p.deferred;
+    f.release(true);
+    f.run("S1-C13", 0);
+  });
+  test("S1-C13 invalid deferral cannot waive required proof", () => {
+    const f = fixture();
+    f.deferred.counted_as_passed = true;
+    f.release();
+    f.run("S1-C13", 1, "deferred.rpi record");
+  });
+
+  let bad = 0;
+  try {
+    for (const [name, fn] of cases) {
+      try {
+        fn();
+        console.log("OK   " + name);
+      } catch (e) {
+        bad++;
+        console.log("BAD  " + name + ": " + (e as Error).message);
+      }
+    }
+  } finally {
+    const clean = (p: string) => {
+      const st = lstatSync(p);
+      if (st.isDirectory() && !st.isSymbolicLink()) {
+        for (const n of readdirSync(p)) clean(join(p, n));
+        rmdirSync(p);
+      } else unlinkSync(p);
+    };
+    clean(root);
+  }
+  console.log(`\n${cases.length - bad} of ${cases.length} deferred-Raspberry-Pi fixtures behaved`);
+  process.exitCode = bad ? 1 : 0;
+}
+
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
-  const result = await runSliceChecks();
-  process.exit(result.exit);
+  const fixtureFlag = process.argv.indexOf("--fixtures");
+  if (fixtureFlag >= 0) {
+    const suites: Record<string, () => Promise<void>> = {
+      "repository-move": runRepositoryMoveFixtures,
+      "archive-readers": runArchiveReaderFixtures,
+      "deferred-rpi": runDeferredRpiFixtures,
+    };
+    const suite = suites[process.argv[fixtureFlag + 1]];
+    if (!suite) {
+      console.error("Unknown fixture suite");
+      process.exitCode = 2;
+    } else await suite();
+  } else {
+    const result = await runSliceChecks();
+    process.exit(result.exit);
+  }
 }
