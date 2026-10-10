@@ -5,14 +5,14 @@
     "sha": "9f48092ec95dd9eab78931601de95be0107a930c"
   },
   "fork": {
-    "sha": "853fdc7a906cd9f60db41758e34a64a467c10331"
+    "sha": "25158b1e0bed29ae73abb9d7875b053004f13788"
   },
   "merge_base": "d15210cd3da79f9a1a495a6309d912d76362a046",
   "counts": {
-    "upstream_edit": 195,
+    "upstream_edit": 202,
     "upstream_removed": 0,
-    "fork_added": 222,
-    "fork_namespace": 52
+    "fork_added": 249,
+    "fork_namespace": 54
   },
   "entries": [
     {
@@ -260,7 +260,7 @@
     {
       "path": "apps/desktop/package.json",
       "class": "upstream-edit",
-      "reason": "a5429f8466f524910ae205b5f6dd4fb88ec42517 merge(release): inherit the verified installed-version source ancestry\nebedf4722dd9732b5afbace95f26d359c5a00c88 merge(release): include the independently checked sender and model repair batch\n2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\nf030dbe5439fab3442b2b89078f2590a4995864d Stamp ThroughLine 0.0.56 across declared version surfaces\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n09359517f651808b9f7b5f9cc91dea4b8a5b72c3 Stamp ThroughLine 0.0.51 across declared version surfaces\n20b80ddf451272a739d2b99bf387ee99de07d971 Stamp ThroughLine 0.0.50 across declared version surfaces\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\na08ad4388148846628c4ec8dce5b0989162fe7d4 Stamp ThroughLine 0.0.49 across declared version surfaces\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n5319c0a3697dfdb7ea11ba52f47f23d715495a08 Stamp ThroughLine 0.0.48 across declared version surfaces\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\nea5e78a13ad47fed1196bfc28751a559577526ab Stamp ThroughLine 0.0.47 across declared version surfaces\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nca709a07d0ba25359c9bc8a24b0686c68e1a4a67 chore(release): ThroughLine 0.0.46 on every version surface\nfc53045a0a589b2de211216697468de2dba81a30 fix(server): tolerate the retired turn-start-refused event on replay; 0.0.44\n039401234828ae37d50a66d934a26f3d389b03b6 merge: carry the company iOS signing lane, the product mark, and the one model catalogue into 0.0.43\nc3ca290ab62a995a08f24b5f3761b09054aeb359 chore(desktop): unify 0.0.43 for the build with no agent-turn budget check\necf678fcd4668000e750e806e1f21ec1a286c886 fix(desktop): unify 0.0.42 and require running-app install proof\n7c692007cd2acbaca6e333662170eae630bcf471 fix: post-merge typecheck and model tests; desktop 0.0.41\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\ndaf3c87e162a3846968968e568a6f0b20c54a1cb feat: offer Astra for Codex and Pi in ThroughLine 0.0.38\nf3f02e879806f1c33c64d42e4871d7b6c46a60bb build desktop platforms in lockstep\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18\n72f91a8b3ff72808903b88242f21979332026b26 feat(branding): ThroughLine product identity — TL icon, name, fork-owned bundle id",
+      "reason": "4e4fd33b37a88d244a757ccee846e5e30987eff8 build: serialize Electron in root preparation per lead ruling\n7138d746104274562cad92ae9f729a050244f482 test(desktop): serialize pinned Electron preparation before workers\na5429f8466f524910ae205b5f6dd4fb88ec42517 merge(release): inherit the verified installed-version source ancestry\nebedf4722dd9732b5afbace95f26d359c5a00c88 merge(release): include the independently checked sender and model repair batch\n2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\nf030dbe5439fab3442b2b89078f2590a4995864d Stamp ThroughLine 0.0.56 across declared version surfaces\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n09359517f651808b9f7b5f9cc91dea4b8a5b72c3 Stamp ThroughLine 0.0.51 across declared version surfaces\n20b80ddf451272a739d2b99bf387ee99de07d971 Stamp ThroughLine 0.0.50 across declared version surfaces\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\na08ad4388148846628c4ec8dce5b0989162fe7d4 Stamp ThroughLine 0.0.49 across declared version surfaces\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n5319c0a3697dfdb7ea11ba52f47f23d715495a08 Stamp ThroughLine 0.0.48 across declared version surfaces\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\nea5e78a13ad47fed1196bfc28751a559577526ab Stamp ThroughLine 0.0.47 across declared version surfaces\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nca709a07d0ba25359c9bc8a24b0686c68e1a4a67 chore(release): ThroughLine 0.0.46 on every version surface\nfc53045a0a589b2de211216697468de2dba81a30 fix(server): tolerate the retired turn-start-refused event on replay; 0.0.44\n039401234828ae37d50a66d934a26f3d389b03b6 merge: carry the company iOS signing lane, the product mark, and the one model catalogue into 0.0.43\nc3ca290ab62a995a08f24b5f3761b09054aeb359 chore(desktop): unify 0.0.43 for the build with no agent-turn budget check\necf678fcd4668000e750e806e1f21ec1a286c886 fix(desktop): unify 0.0.42 and require running-app install proof\n7c692007cd2acbaca6e333662170eae630bcf471 fix: post-merge typecheck and model tests; desktop 0.0.41\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\ndaf3c87e162a3846968968e568a6f0b20c54a1cb feat: offer Astra for Codex and Pi in ThroughLine 0.0.38\nf3f02e879806f1c33c64d42e4871d7b6c46a60bb build desktop platforms in lockstep\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18\n72f91a8b3ff72808903b88242f21979332026b26 feat(branding): ThroughLine product identity — TL icon, name, fork-owned bundle id",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -270,6 +270,8 @@
       "conflict_rule_inferred": true,
       "marker": false,
       "commits": [
+        "4e4fd33b37a88d244a757ccee846e5e30987eff8 build: serialize Electron in root preparation per lead ruling",
+        "7138d746104274562cad92ae9f729a050244f482 test(desktop): serialize pinned Electron preparation before workers",
         "a5429f8466f524910ae205b5f6dd4fb88ec42517 merge(release): inherit the verified installed-version source ancestry",
         "ebedf4722dd9732b5afbace95f26d359c5a00c88 merge(release): include the independently checked sender and model repair batch",
         "2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base",
@@ -1143,6 +1145,28 @@
       "mount_measurement": "added text lines excluding namespace import declarations"
     },
     {
+      "path": "apps/mobile/src/features/review/incrementalSnippet.ts",
+      "class": "upstream-edit",
+      "reason": "7610fe9b8d33db04e5072a4a2f1474f114657647 fix(mobile): compose measured cold highlighting repair\n757c48c69229cb29bff211bf317b4ad283b6b7f6 fix(mobile): finish cold highlighting within a measured budget\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "7610fe9b8d33db04e5072a4a2f1474f114657647 fix(mobile): compose measured cold highlighting repair",
+        "757c48c69229cb29bff211bf317b4ad283b6b7f6 fix(mobile): finish cold highlighting within a measured budget",
+        "c790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path",
+        "19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12"
+      ],
+      "legacy_rules": [],
+      "mount_lines": 5,
+      "mount_measurement": "added text lines excluding namespace import declarations"
+    },
+    {
       "path": "apps/mobile/src/features/review/nativeReviewDiffAdapter.test.ts",
       "class": "upstream-edit",
       "reason": "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nbcc03cccb9ca76b3fc5a703b165a586e3d436aec feat(mobile): the phone applies themes its environment publishes\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
@@ -1178,6 +1202,56 @@
         }
       ],
       "mount_lines": 9,
+      "mount_measurement": "added text lines excluding namespace import declarations"
+    },
+    {
+      "path": "apps/mobile/src/features/review/shikiReviewHighlighter.test.ts",
+      "class": "upstream-edit",
+      "reason": "7610fe9b8d33db04e5072a4a2f1474f114657647 fix(mobile): compose measured cold highlighting repair\n757c48c69229cb29bff211bf317b4ad283b6b7f6 fix(mobile): finish cold highlighting within a measured budget\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "7610fe9b8d33db04e5072a4a2f1474f114657647 fix(mobile): compose measured cold highlighting repair",
+        "757c48c69229cb29bff211bf317b4ad283b6b7f6 fix(mobile): finish cold highlighting within a measured budget",
+        "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history",
+        "09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs",
+        "52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47",
+        "c790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path",
+        "19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12"
+      ],
+      "legacy_rules": [],
+      "mount_lines": 23,
+      "mount_measurement": "added text lines excluding namespace import declarations"
+    },
+    {
+      "path": "apps/mobile/src/features/review/shikiReviewHighlighter.ts",
+      "class": "upstream-edit",
+      "reason": "7610fe9b8d33db04e5072a4a2f1474f114657647 fix(mobile): compose measured cold highlighting repair\n757c48c69229cb29bff211bf317b4ad283b6b7f6 fix(mobile): finish cold highlighting within a measured budget\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "7610fe9b8d33db04e5072a4a2f1474f114657647 fix(mobile): compose measured cold highlighting repair",
+        "757c48c69229cb29bff211bf317b4ad283b6b7f6 fix(mobile): finish cold highlighting within a measured budget",
+        "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history",
+        "09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs",
+        "52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47",
+        "c790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path",
+        "19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12"
+      ],
+      "legacy_rules": [],
+      "mount_lines": 2,
       "mount_measurement": "added text lines excluding namespace import declarations"
     },
     {
@@ -2054,7 +2128,7 @@
     {
       "path": "apps/mobile/src/features/threads/ThreadRouteScreen.tsx",
       "class": "upstream-edit",
-      "reason": "6d8274ecc68781f62e30dd60c76e80be764ff992 Merge commit '01037333364e59babeed334c0edd207f4da2d0d7' into upgrade/main-green-060-20261009\n01037333364e59babeed334c0edd207f4da2d0d7 fix(mobile): defer unfinished launcher family consumer\n0016ddec02b750f3304f676e4b0f7e5414d5f988 feat: compose checked voice and mobile source mounts\n2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\n2ca67b35db1308deb0169a5dbef5f9a91a40162e feat(mobile): mount owning-route copy and observed model controls\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\n3dedd8cd1a69158e27ceb75ce204786a39510b13 feat(mobile): put the context window meter on the shared client rail\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009\n6d8274ecc68781f62e30dd60c76e80be764ff992 Merge commit '01037333364e59babeed334c0edd207f4da2d0d7' into upgrade/main-green-060-20261009\n01037333364e59babeed334c0edd207f4da2d0d7 fix(mobile): defer unfinished launcher family consumer\n0016ddec02b750f3304f676e4b0f7e5414d5f988 feat: compose checked voice and mobile source mounts\n2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\n2ca67b35db1308deb0169a5dbef5f9a91a40162e feat(mobile): mount owning-route copy and observed model controls\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\n3dedd8cd1a69158e27ceb75ce204786a39510b13 feat(mobile): put the context window meter on the shared client rail\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -2064,6 +2138,8 @@
       "conflict_rule_inferred": true,
       "marker": false,
       "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009",
         "6d8274ecc68781f62e30dd60c76e80be764ff992 Merge commit '01037333364e59babeed334c0edd207f4da2d0d7' into upgrade/main-green-060-20261009",
         "01037333364e59babeed334c0edd207f4da2d0d7 fix(mobile): defer unfinished launcher family consumer",
         "0016ddec02b750f3304f676e4b0f7e5414d5f988 feat: compose checked voice and mobile source mounts",
@@ -3451,6 +3527,63 @@
       "mount_measurement": "added text lines excluding namespace import declarations"
     },
     {
+      "path": "apps/server/src/environment/ServerEnvironment.test.ts",
+      "class": "upstream-edit",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009\nf496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009",
+        "f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello",
+        "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history",
+        "09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs",
+        "ec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49",
+        "0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48",
+        "52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47",
+        "c790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path",
+        "19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12",
+        "2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18"
+      ],
+      "legacy_rules": [],
+      "mount_lines": 19,
+      "mount_measurement": "added text lines excluding namespace import declarations"
+    },
+    {
+      "path": "apps/server/src/environment/ServerEnvironment.ts",
+      "class": "upstream-edit",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009\nf496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009",
+        "f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello",
+        "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history",
+        "09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs",
+        "0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48",
+        "52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47",
+        "c790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path",
+        "19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12",
+        "2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18"
+      ],
+      "legacy_rules": [],
+      "mount_lines": 3,
+      "mount_measurement": "added text lines excluding namespace import declarations"
+    },
+    {
       "path": "apps/server/src/git/GitManager.test.ts",
       "class": "upstream-edit",
       "reason": "7aa4977bd703fabe26eeae97f47e1a1f14f95313 fix: carry reviewed type repairs onto current fork\n2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\n6fa7bda869a85ff8d4714651dea005e8fca3588c fix(server): preserve staged selection during commit preparation\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
@@ -3643,7 +3776,7 @@
     {
       "path": "apps/server/src/mcp/ComsNetToolkit.test.ts",
       "class": "fork-added",
-      "reason": "1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\n3c27dd96307ecf2f6f31291e28ce832f05a40878 Preserve staged ComsNet work from the interrupted cherry-pick\n5bda504bc844f419c6efff65f185b4050a20f5dd comsnet: object structured results, and stop masking known transport refusals\nccbbe6c748b0dbd84bffbf26c861a3561c337e08 comsnet: object structured results, and stop masking known transport refusals",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n1c6f7c9b965bef2ed6dc88c20050dbd7ff681478 fix(server): preserve installed relay receiver-turn behavior\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\n3c27dd96307ecf2f6f31291e28ce832f05a40878 Preserve staged ComsNet work from the interrupted cherry-pick\n5bda504bc844f419c6efff65f185b4050a20f5dd comsnet: object structured results, and stop masking known transport refusals\nccbbe6c748b0dbd84bffbf26c861a3561c337e08 comsnet: object structured results, and stop masking known transport refusals",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -3653,6 +3786,8 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "1c6f7c9b965bef2ed6dc88c20050dbd7ff681478 fix(server): preserve installed relay receiver-turn behavior",
         "1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50",
         "ec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49",
         "0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48",
@@ -3711,7 +3846,7 @@
     {
       "path": "apps/server/src/mcp/ComsNetTransport.ts",
       "class": "fork-added",
-      "reason": "e7af92f56d907ee1b4ab18a916d680b669e5c52b build: rename vendored relay to agent-mcp-relay\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\nc312d8a5e0782f945b91aa8b772229ea09958436 wip(fork): commit in-flight work before upstream sync 2026-09-12 (Astra model upgrade, ComsNet handlers, durable thread driver, mobile, web model picker)\n1e02f1bfd15d3ec5e1e677dea6ac40da55f727d9 fix(comsnet): join live MCP provider identities\n251bd6af023e5e290686d879552f33ed1f82b31a feat(server): integrate ComsNet transport rail",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n1c6f7c9b965bef2ed6dc88c20050dbd7ff681478 fix(server): preserve installed relay receiver-turn behavior\ne7af92f56d907ee1b4ab18a916d680b669e5c52b build: rename vendored relay to agent-mcp-relay\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\nc312d8a5e0782f945b91aa8b772229ea09958436 wip(fork): commit in-flight work before upstream sync 2026-09-12 (Astra model upgrade, ComsNet handlers, durable thread driver, mobile, web model picker)\n1e02f1bfd15d3ec5e1e677dea6ac40da55f727d9 fix(comsnet): join live MCP provider identities\n251bd6af023e5e290686d879552f33ed1f82b31a feat(server): integrate ComsNet transport rail",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -3721,6 +3856,8 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "1c6f7c9b965bef2ed6dc88c20050dbd7ff681478 fix(server): preserve installed relay receiver-turn behavior",
         "e7af92f56d907ee1b4ab18a916d680b669e5c52b build: rename vendored relay to agent-mcp-relay",
         "1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50",
         "ec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49",
@@ -6561,7 +6698,7 @@
     {
       "path": "apps/server/src/server.test.ts",
       "class": "upstream-edit",
-      "reason": "7aa4977bd703fabe26eeae97f47e1a1f14f95313 fix: carry reviewed type repairs onto current fork\n2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\nc6682e32f65752b1bdb2170793df12bba1cbed94 feat(rpc): negotiate compatible ThroughLine clients and servers\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\ne4415034c63aec3325a229a4541224c6c5f1b8a9 fmt: apply repository formatting to the nine files the merge hook left unformatted\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\nbdbbdb952a6d775e294dfdf710445b3b391178c6 fix: wait for bootstrap thread materialization\naa609f786566e4b6a4617c10b4e8afc5992e064f fix: preserve spawned bootstrap threads\n06ffff441fa318dfceaa5bfad75292d4fbb60ddb fix: converge interrupted first thread sends\nd6b9a94a2ed5faf11944650c60764bc076be853a Normalize fork seam markers to the uniform ThroughLine vocabulary\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18\n8941fbaa08894626e91633ba8eae4ce2e1fae6a3 test(server): model the absurd turn rail in the router-seam harness",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n14f082b29044e02bf3142dd7c5f72326d77f2ec4 test(server): bind fixtures to the client address family\n8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009\nf496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello\n7aa4977bd703fabe26eeae97f47e1a1f14f95313 fix: carry reviewed type repairs onto current fork\n2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\nc6682e32f65752b1bdb2170793df12bba1cbed94 feat(rpc): negotiate compatible ThroughLine clients and servers\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\ne4415034c63aec3325a229a4541224c6c5f1b8a9 fmt: apply repository formatting to the nine files the merge hook left unformatted\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\nbdbbdb952a6d775e294dfdf710445b3b391178c6 fix: wait for bootstrap thread materialization\naa609f786566e4b6a4617c10b4e8afc5992e064f fix: preserve spawned bootstrap threads\n06ffff441fa318dfceaa5bfad75292d4fbb60ddb fix: converge interrupted first thread sends\nd6b9a94a2ed5faf11944650c60764bc076be853a Normalize fork seam markers to the uniform ThroughLine vocabulary\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18\n8941fbaa08894626e91633ba8eae4ce2e1fae6a3 test(server): model the absurd turn rail in the router-seam harness",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -6571,6 +6708,10 @@
       "conflict_rule_inferred": true,
       "marker": true,
       "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "14f082b29044e02bf3142dd7c5f72326d77f2ec4 test(server): bind fixtures to the client address family",
+        "8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009",
+        "f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello",
         "7aa4977bd703fabe26eeae97f47e1a1f14f95313 fix: carry reviewed type repairs onto current fork",
         "2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base",
         "c6682e32f65752b1bdb2170793df12bba1cbed94 feat(rpc): negotiate compatible ThroughLine clients and servers",
@@ -6601,7 +6742,7 @@
           ]
         }
       ],
-      "mount_lines": 408,
+      "mount_lines": 501,
       "mount_measurement": "added text lines excluding namespace import declarations"
     },
     {
@@ -6873,7 +7014,7 @@
     {
       "path": "apps/server/src/throughline/headroom/observer.test.ts",
       "class": "fork-namespace",
-      "reason": "6d8274ecc68781f62e30dd60c76e80be764ff992 Merge commit '01037333364e59babeed334c0edd207f4da2d0d7' into upgrade/main-green-060-20261009\n7660911f17a5ce4f8e4979ea1ac49f9801110d5d fix(server): resolve headroom observer test import\n8822a86733df75541bea158737fee206c904b89e feat: integrate checked broker observer and limits panel",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n6d8274ecc68781f62e30dd60c76e80be764ff992 Merge commit '01037333364e59babeed334c0edd207f4da2d0d7' into upgrade/main-green-060-20261009\n7660911f17a5ce4f8e4979ea1ac49f9801110d5d fix(server): resolve headroom observer test import\n8822a86733df75541bea158737fee206c904b89e feat: integrate checked broker observer and limits panel",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -6883,6 +7024,7 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
         "6d8274ecc68781f62e30dd60c76e80be764ff992 Merge commit '01037333364e59babeed334c0edd207f4da2d0d7' into upgrade/main-green-060-20261009",
         "7660911f17a5ce4f8e4979ea1ac49f9801110d5d fix(server): resolve headroom observer test import",
         "8822a86733df75541bea158737fee206c904b89e feat: integrate checked broker observer and limits panel"
@@ -7138,6 +7280,42 @@
       "commits": [
         "ebedf4722dd9732b5afbace95f26d359c5a00c88 merge(release): include the independently checked sender and model repair batch",
         "30f8e3e388e3ad1ae57e05bef68a8bece1a0bedb feat(identity): preserve authenticated sender stamps and replay identity"
+      ],
+      "legacy_rules": []
+    },
+    {
+      "path": "apps/server/src/throughline/legacyRelay.test.ts",
+      "class": "fork-namespace",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n1c6f7c9b965bef2ed6dc88c20050dbd7ff681478 fix(server): preserve installed relay receiver-turn behavior",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "1c6f7c9b965bef2ed6dc88c20050dbd7ff681478 fix(server): preserve installed relay receiver-turn behavior"
+      ],
+      "legacy_rules": []
+    },
+    {
+      "path": "apps/server/src/throughline/legacyRelay.ts",
+      "class": "fork-namespace",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n1c6f7c9b965bef2ed6dc88c20050dbd7ff681478 fix(server): preserve installed relay receiver-turn behavior",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "1c6f7c9b965bef2ed6dc88c20050dbd7ff681478 fix(server): preserve installed relay receiver-turn behavior"
       ],
       "legacy_rules": []
     },
@@ -7546,7 +7724,7 @@
     {
       "path": "apps/server/src/ws.ts",
       "class": "upstream-edit",
-      "reason": "2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\nc6682e32f65752b1bdb2170793df12bba1cbed94 feat(rpc): negotiate compatible ThroughLine clients and servers\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\ne4415034c63aec3325a229a4541224c6c5f1b8a9 fmt: apply repository formatting to the nine files the merge hook left unformatted\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\nc312d8a5e0782f945b91aa8b772229ea09958436 wip(fork): commit in-flight work before upstream sync 2026-09-12 (Astra model upgrade, ComsNet handlers, durable thread driver, mobile, web model picker)\nbdbbdb952a6d775e294dfdf710445b3b391178c6 fix: wait for bootstrap thread materialization\naa609f786566e4b6a4617c10b4e8afc5992e064f fix: preserve spawned bootstrap threads\n06ffff441fa318dfceaa5bfad75292d4fbb60ddb fix: converge interrupted first thread sends\n876768d39ae747c4109d3963227dbdea66491a5b fix(post-merge): repair silent breakage the upstream sync introduced\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18\n70da208e2887941172c7730164e99a45bb34eab4 fix(symphony): spawn thread-run through the symphony worker's own app\n0a03144a552d3ae1fbdbc3b979e4eb1259df4f42 feat(symphony): Slice-1S session-boundary probe — dedicated lane + proven readiness (D1-D8)\n9590cc1c1e8b18e9c1f242c15b47f07dc842752e fix(server): scope the turn-rail readiness guard to its real preconditions\nc7c9745048ffaf8c5e05c1220ce80bf3a29c5704 feat(absurd): client turns run natively on the substrate — bypass unrepresentable\n9435ab082011f3559ae0c29bf6559ad4ca6f64eb feat(absurd): runtime readiness checks + fail-closed spawn guard (TQ-039 slice 1R)",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009\nf496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello\n2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\nc6682e32f65752b1bdb2170793df12bba1cbed94 feat(rpc): negotiate compatible ThroughLine clients and servers\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\ne4415034c63aec3325a229a4541224c6c5f1b8a9 fmt: apply repository formatting to the nine files the merge hook left unformatted\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\nc312d8a5e0782f945b91aa8b772229ea09958436 wip(fork): commit in-flight work before upstream sync 2026-09-12 (Astra model upgrade, ComsNet handlers, durable thread driver, mobile, web model picker)\nbdbbdb952a6d775e294dfdf710445b3b391178c6 fix: wait for bootstrap thread materialization\naa609f786566e4b6a4617c10b4e8afc5992e064f fix: preserve spawned bootstrap threads\n06ffff441fa318dfceaa5bfad75292d4fbb60ddb fix: converge interrupted first thread sends\n876768d39ae747c4109d3963227dbdea66491a5b fix(post-merge): repair silent breakage the upstream sync introduced\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18\n70da208e2887941172c7730164e99a45bb34eab4 fix(symphony): spawn thread-run through the symphony worker's own app\n0a03144a552d3ae1fbdbc3b979e4eb1259df4f42 feat(symphony): Slice-1S session-boundary probe — dedicated lane + proven readiness (D1-D8)\n9590cc1c1e8b18e9c1f242c15b47f07dc842752e fix(server): scope the turn-rail readiness guard to its real preconditions\nc7c9745048ffaf8c5e05c1220ce80bf3a29c5704 feat(absurd): client turns run natively on the substrate — bypass unrepresentable\n9435ab082011f3559ae0c29bf6559ad4ca6f64eb feat(absurd): runtime readiness checks + fail-closed spawn guard (TQ-039 slice 1R)",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -7556,6 +7734,9 @@
       "conflict_rule_inferred": false,
       "marker": true,
       "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009",
+        "f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello",
         "2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base",
         "c6682e32f65752b1bdb2170793df12bba1cbed94 feat(rpc): negotiate compatible ThroughLine clients and servers",
         "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history",
@@ -7589,7 +7770,7 @@
           ]
         }
       ],
-      "mount_lines": 365,
+      "mount_lines": 371,
       "mount_measurement": "added text lines excluding namespace import declarations"
     },
     {
@@ -7662,7 +7843,7 @@
     {
       "path": "apps/server/vite.config.ts",
       "class": "upstream-edit",
-      "reason": "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18\ne084a341a163f6ff8688a11cb14cbeeede0724e0 test(server): hermetic git for the vitest harness — PATH-excluded agent shims + null gitconfig",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009\nf496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18\ne084a341a163f6ff8688a11cb14cbeeede0724e0 test(server): hermetic git for the vitest harness — PATH-excluded agent shims + null gitconfig",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -7672,6 +7853,9 @@
       "conflict_rule_inferred": true,
       "marker": true,
       "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009",
+        "f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello",
         "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history",
         "09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs",
         "1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50",
@@ -7694,7 +7878,7 @@
           ]
         }
       ],
-      "mount_lines": 29,
+      "mount_lines": 31,
       "mount_measurement": "added text lines excluding namespace import declarations"
     },
     {
@@ -9716,9 +9900,447 @@
       "mount_measurement": "binary: no text-line representation"
     },
     {
+      "path": "docs/throughline/capabilities/rewind/Capability.json",
+      "class": "fork-added",
+      "reason": "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/capabilities/rewind/CHANGELOG.md",
+      "class": "fork-added",
+      "reason": "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/capabilities/rewind/VERSION.md",
+      "class": "fork-added",
+      "reason": "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/build-spec.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/check-spec.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/checks/phase2-contracts.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/checks/slice-1-contracts.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/checks/slice-1-repository-move.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/checks/slice-2-seam.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/checks/slice-3-admission-record.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/checks/test-slice-1-checks.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/contracts-data.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/package.json",
+      "class": "fork-added",
+      "reason": "ddf0e8d50f2b1696353e8ad6d635cb6f528fad18 docs(throughline): T1.08 own the spec checker dependency",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ddf0e8d50f2b1696353e8ad6d635cb6f528fad18 docs(throughline): T1.08 own the spec checker dependency"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/pnpm-lock.yaml",
+      "class": "fork-added",
+      "reason": "8084ab976989a8dcbba74b0d40b9f3316ed3e815 build(docs): pin spec checker dependencies",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "8084ab976989a8dcbba74b0d40b9f3316ed3e815 build(docs): pin spec checker dependencies"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/README.md",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/render-spec.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/Seam-Baseline.json",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/spec-data.mts",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/Spec-Map.html",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/Spec-Map.png",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/spec.json",
+      "class": "fork-added",
+      "reason": "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/next-gen-spec/test-check-spec.mts",
+      "class": "fork-added",
+      "reason": "1275183c661fc67d09ced27ca49804f61a589eff docs(throughline): T1.08 keep formatted fixture hash stamps valid\ned185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "1275183c661fc67d09ced27ca49804f61a589eff docs(throughline): T1.08 keep formatted fixture hash stamps valid",
+        "ed185b46d8d6795932335a69cd25ff33c8a0242e docs(throughline): T1.08 move design and bind portable checks"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "docs/throughline/seam-view.html",
+      "class": "fork-added",
+      "reason": "25158b1e0bed29ae73abb9d7875b053004f13788 feat(throughline): project and verify the fork seam decision view",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "25158b1e0bed29ae73abb9d7875b053004f13788 feat(throughline): project and verify the fork seam decision view"
+      ],
+      "legacy_rules": [],
+      "relocation": "planned",
+      "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
       "path": "package.json",
       "class": "upstream-edit",
-      "reason": "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\nf3f02e879806f1c33c64d42e4871d7b6c46a60bb build desktop platforms in lockstep\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
+      "reason": "7610fe9b8d33db04e5072a4a2f1474f114657647 fix(mobile): compose measured cold highlighting repair\n4e4fd33b37a88d244a757ccee846e5e30987eff8 build: serialize Electron in root preparation per lead ruling\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50\nec2eb31a813c373895e17d3bee0e3d151ae2f639 Merge pinned upstream de251fc2971a884cb5b1305ba4daf309dc8cccb0 for ThroughLine 0.0.49\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\nf3f02e879806f1c33c64d42e4871d7b6c46a60bb build desktop platforms in lockstep\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -9728,6 +10350,8 @@
       "conflict_rule_inferred": true,
       "marker": false,
       "commits": [
+        "7610fe9b8d33db04e5072a4a2f1474f114657647 fix(mobile): compose measured cold highlighting repair",
+        "4e4fd33b37a88d244a757ccee846e5e30987eff8 build: serialize Electron in root preparation per lead ruling",
         "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history",
         "09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs",
         "1f767d508b019aeaa95c8f723b282f9e1a2f1af4 Merge pinned upstream d15210cd3da79f9a1a495a6309d912d76362a046 for ThroughLine 0.0.50",
@@ -9750,7 +10374,7 @@
           ]
         }
       ],
-      "mount_lines": 1,
+      "mount_lines": 2,
       "mount_measurement": "added text lines excluding namespace import declarations"
     },
     {
@@ -11512,6 +12136,33 @@
       ],
       "relocation": "planned",
       "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
+    },
+    {
+      "path": "packages/contracts/src/environment.ts",
+      "class": "upstream-edit",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009\nf496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009",
+        "f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello",
+        "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history",
+        "09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs",
+        "52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47",
+        "c790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path",
+        "19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12",
+        "2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18"
+      ],
+      "legacy_rules": [],
+      "mount_lines": 2,
+      "mount_measurement": "added text lines excluding namespace import declarations"
     },
     {
       "path": "packages/contracts/src/index.ts",
@@ -13859,7 +14510,7 @@
     {
       "path": "packages/throughline-protocol/src/hello.ts",
       "class": "fork-namespace",
-      "reason": "2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\nc6682e32f65752b1bdb2170793df12bba1cbed94 feat(rpc): negotiate compatible ThroughLine clients and servers",
+      "reason": "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009\n8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009\nf496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello\n2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base\nc6682e32f65752b1bdb2170793df12bba1cbed94 feat(rpc): negotiate compatible ThroughLine clients and servers",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -13869,6 +14520,9 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
+        "f21e061c154a49e569fc9ce917db8130b1f1d5ae Merge commit '14f082b29044e02bf3142dd7c5f72326d77f2ec4' into upgrade/main-green-060-20261009",
+        "8ee7961ff320a238405b76534566542a92fa375f Merge commit 'f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2' into upgrade/main-green-060-20261009",
+        "f496f9c4e305c9a9e0bbf88f486dd4d6414e1cc2 fix(server): expose compiled commit in environment and hello",
         "2a1cc95b1cce3e68a2bde3052938947855295db4 merge(release): retain accepted upgrade source above the installed release base",
         "c6682e32f65752b1bdb2170793df12bba1cbed94 feat(rpc): negotiate compatible ThroughLine clients and servers"
       ],
@@ -13929,7 +14583,7 @@
     {
       "path": "README.md",
       "class": "upstream-edit",
-      "reason": "2c8173bb3736f9e24db11aebc3acc9b22f49d578 Merge branch 'main' into rewind-same-session\n8bcfab6d6f6ea11dd41dbc43cca0dd30231d2927 feat(desktop): archive the replaced Mac build to the Raspberry Pi drive on every install\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
+      "reason": "c14e0809dad0f06a3ad2205bd90ac0f844f139ff docs(throughline): T1.03 repository ownership boundary\n2c8173bb3736f9e24db11aebc3acc9b22f49d578 Merge branch 'main' into rewind-same-session\n8bcfab6d6f6ea11dd41dbc43cca0dd30231d2927 feat(desktop): archive the replaced Mac build to the Raspberry Pi drive on every install\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n0d288f84eafd02bad96abe4855874f1d1e844376 Merge pinned upstream e5a46d6c5d00b89afba5274a94d42428c8d79763 for ThroughLine 0.0.48\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -13939,6 +14593,7 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
+        "c14e0809dad0f06a3ad2205bd90ac0f844f139ff docs(throughline): T1.03 repository ownership boundary",
         "2c8173bb3736f9e24db11aebc3acc9b22f49d578 Merge branch 'main' into rewind-same-session",
         "8bcfab6d6f6ea11dd41dbc43cca0dd30231d2927 feat(desktop): archive the replaced Mac build to the Raspberry Pi drive on every install",
         "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history",
@@ -13950,7 +14605,7 @@
         "2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18"
       ],
       "legacy_rules": [],
-      "mount_lines": 6,
+      "mount_lines": 8,
       "mount_measurement": "added text lines excluding namespace import declarations"
     },
     {
@@ -14297,9 +14952,9 @@
       "relocation_reason": "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."
     },
     {
-      "path": "scripts/throughline/check-seam.ts",
+      "path": "scripts/throughline/capability-coverage.test.ts",
       "class": "fork-added",
-      "reason": "853fdc7a906cd9f60db41758e34a64a467c10331 test(throughline): measure exact mount fixture line counts\n1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission\n32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate\n0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
+      "reason": "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -14309,10 +14964,86 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
-        "853fdc7a906cd9f60db41758e34a64a467c10331 test(throughline): measure exact mount fixture line counts",
-        "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission",
-        "32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate",
-        "0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard"
+        "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions"
+      ],
+      "legacy_rules": [],
+      "relocation": "kept",
+      "relocation_reason": "Repository-level seam contract/control script explicitly placed here by T2.01/T2.02."
+    },
+    {
+      "path": "scripts/throughline/capability-coverage.ts",
+      "class": "fork-added",
+      "reason": "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions"
+      ],
+      "legacy_rules": [],
+      "relocation": "kept",
+      "relocation_reason": "Repository-level seam contract/control script explicitly placed here by T2.01/T2.02."
+    },
+    {
+      "path": "scripts/throughline/check-seam.ts",
+      "class": "fork-added",
+      "reason": "f0d34489d06f11d1c2e7ce6b1d56637f10fad362 test(throughline): measure exact mount fixture line counts\n2ff080f64bfa8e40902cee16673c1f3a09d7c812 feat(throughline): enforce namespace mounts and frozen seam admission\nb4e6a06d5f9ac66322c5e3f8748b678c2f927654 fix(throughline): keep seam count and mount policy separate\n6260775f761cababe48da248f04b51a70620b77b feat(throughline): add draft seam manifest and monotonic count guard",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "f0d34489d06f11d1c2e7ce6b1d56637f10fad362 test(throughline): measure exact mount fixture line counts",
+        "2ff080f64bfa8e40902cee16673c1f3a09d7c812 feat(throughline): enforce namespace mounts and frozen seam admission",
+        "b4e6a06d5f9ac66322c5e3f8748b678c2f927654 fix(throughline): keep seam count and mount policy separate",
+        "6260775f761cababe48da248f04b51a70620b77b feat(throughline): add draft seam manifest and monotonic count guard"
+      ],
+      "legacy_rules": [],
+      "relocation": "kept",
+      "relocation_reason": "Repository-level seam contract/control script explicitly placed here by T2.01/T2.02."
+    },
+    {
+      "path": "scripts/throughline/seam-side.ts",
+      "class": "fork-added",
+      "reason": "25158b1e0bed29ae73abb9d7875b053004f13788 feat(throughline): project and verify the fork seam decision view",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "25158b1e0bed29ae73abb9d7875b053004f13788 feat(throughline): project and verify the fork seam decision view"
+      ],
+      "legacy_rules": [],
+      "relocation": "kept",
+      "relocation_reason": "Repository-level seam contract/control script explicitly placed here by T2.01/T2.02."
+    },
+    {
+      "path": "scripts/throughline/seam-view.ts",
+      "class": "fork-added",
+      "reason": "25158b1e0bed29ae73abb9d7875b053004f13788 feat(throughline): project and verify the fork seam decision view",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "25158b1e0bed29ae73abb9d7875b053004f13788 feat(throughline): project and verify the fork seam decision view"
       ],
       "legacy_rules": [],
       "relocation": "kept",
@@ -14321,7 +15052,7 @@
     {
       "path": "scripts/throughline/seam/classify.ts",
       "class": "fork-added",
-      "reason": "0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
+      "reason": "6260775f761cababe48da248f04b51a70620b77b feat(throughline): add draft seam manifest and monotonic count guard",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -14331,7 +15062,7 @@
       "conflict_rule_inferred": false,
       "marker": true,
       "commits": [
-        "0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard"
+        "6260775f761cababe48da248f04b51a70620b77b feat(throughline): add draft seam manifest and monotonic count guard"
       ],
       "legacy_rules": [],
       "relocation": "kept",
@@ -14340,7 +15071,7 @@
     {
       "path": "scripts/throughline/seam/mount-lines.test.ts",
       "class": "fork-added",
-      "reason": "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission",
+      "reason": "708cb7e406e34df2c411ae086556566d711e4e40 fix(throughline): count prefix increments inside diff hunks\n2ff080f64bfa8e40902cee16673c1f3a09d7c812 feat(throughline): enforce namespace mounts and frozen seam admission",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -14350,7 +15081,8 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
-        "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission"
+        "708cb7e406e34df2c411ae086556566d711e4e40 fix(throughline): count prefix increments inside diff hunks",
+        "2ff080f64bfa8e40902cee16673c1f3a09d7c812 feat(throughline): enforce namespace mounts and frozen seam admission"
       ],
       "legacy_rules": [],
       "relocation": "kept",
@@ -14359,7 +15091,7 @@
     {
       "path": "scripts/throughline/seam/mount-lines.ts",
       "class": "fork-added",
-      "reason": "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission",
+      "reason": "708cb7e406e34df2c411ae086556566d711e4e40 fix(throughline): count prefix increments inside diff hunks\n2ff080f64bfa8e40902cee16673c1f3a09d7c812 feat(throughline): enforce namespace mounts and frozen seam admission",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -14369,7 +15101,8 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
-        "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission"
+        "708cb7e406e34df2c411ae086556566d711e4e40 fix(throughline): count prefix increments inside diff hunks",
+        "2ff080f64bfa8e40902cee16673c1f3a09d7c812 feat(throughline): enforce namespace mounts and frozen seam admission"
       ],
       "legacy_rules": [],
       "relocation": "kept",
@@ -14378,7 +15111,7 @@
     {
       "path": "scripts/throughline/seam/repo-binding.ts",
       "class": "fork-added",
-      "reason": "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission\n0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
+      "reason": "2ff080f64bfa8e40902cee16673c1f3a09d7c812 feat(throughline): enforce namespace mounts and frozen seam admission\n6260775f761cababe48da248f04b51a70620b77b feat(throughline): add draft seam manifest and monotonic count guard",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -14388,8 +15121,8 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
-        "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission",
-        "0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard"
+        "2ff080f64bfa8e40902cee16673c1f3a09d7c812 feat(throughline): enforce namespace mounts and frozen seam admission",
+        "6260775f761cababe48da248f04b51a70620b77b feat(throughline): add draft seam manifest and monotonic count guard"
       ],
       "legacy_rules": [],
       "relocation": "kept",
@@ -14398,7 +15131,7 @@
     {
       "path": "throughline-seam.json",
       "class": "fork-added",
-      "reason": "853fdc7a906cd9f60db41758e34a64a467c10331 test(throughline): measure exact mount fixture line counts\n1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission\n7c4242a921f7c04a0517f9216a6670ebe332569e chore(throughline): refresh unadmitted seam facts\n32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate\n0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
+      "reason": "0b118b921dea4cff13eeb3635185cfaa8de905c3 chore(throughline): refresh unadmitted namespace seam facts\nf0d34489d06f11d1c2e7ce6b1d56637f10fad362 test(throughline): measure exact mount fixture line counts\n2ff080f64bfa8e40902cee16673c1f3a09d7c812 feat(throughline): enforce namespace mounts and frozen seam admission\n35a529f8606704800205c47881c70efd9ca9502f chore(throughline): refresh unadmitted seam facts\nb4e6a06d5f9ac66322c5e3f8748b678c2f927654 fix(throughline): keep seam count and mount policy separate\n6260775f761cababe48da248f04b51a70620b77b feat(throughline): add draft seam manifest and monotonic count guard",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -14408,15 +15141,41 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
-        "853fdc7a906cd9f60db41758e34a64a467c10331 test(throughline): measure exact mount fixture line counts",
-        "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission",
-        "7c4242a921f7c04a0517f9216a6670ebe332569e chore(throughline): refresh unadmitted seam facts",
-        "32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate",
-        "0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard"
+        "0b118b921dea4cff13eeb3635185cfaa8de905c3 chore(throughline): refresh unadmitted namespace seam facts",
+        "f0d34489d06f11d1c2e7ce6b1d56637f10fad362 test(throughline): measure exact mount fixture line counts",
+        "2ff080f64bfa8e40902cee16673c1f3a09d7c812 feat(throughline): enforce namespace mounts and frozen seam admission",
+        "35a529f8606704800205c47881c70efd9ca9502f chore(throughline): refresh unadmitted seam facts",
+        "b4e6a06d5f9ac66322c5e3f8748b678c2f927654 fix(throughline): keep seam count and mount policy separate",
+        "6260775f761cababe48da248f04b51a70620b77b feat(throughline): add draft seam manifest and monotonic count guard"
       ],
       "legacy_rules": [],
       "relocation": "kept",
       "relocation_reason": "Repository-level seam contract/control script explicitly placed here by T2.01/T2.02."
+    },
+    {
+      "path": "vite.config.ts",
+      "class": "upstream-edit",
+      "reason": "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions\n40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history\n09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs\n52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47\nc790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path\n19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12\n2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18",
+      "reason_source": "commit-subjects",
+      "imported_private_symbols": [],
+      "schema_assumptions": [],
+      "contract_inspection": "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
+      "conflict_rule": "review",
+      "conflict_rule_source": "review",
+      "conflict_rule_inferred": false,
+      "marker": false,
+      "commits": [
+        "ca4e42fffca525c3f48d4c5a6b505d34fc5a33db feat(throughline): protect repository capability regressions",
+        "40b2705664b6dcf059bd357bfe60dc327c0009a3 merge: record already-folded ComsNet preservation history",
+        "09a5a203de6066ead00991bac2a90d2895ae025d merge: fold ThroughLine 0.0.51 and retain local workspace and Meridian repairs",
+        "52b952cfab5620418b8fa1b28aa9c105fcaf2ece Merge pinned upstream 91e53e501c9e7eb03f0ea4a5b72221d08eff9c5c for ThroughLine 0.0.47",
+        "c790ffeea219529f1d481d23187d6f63f8cc192a merge: upstream T3 Code sync 2026-09-12 (1,218 commits) onto fork main; conflicts resolved keeping the turn-start door and queued-turn logic; hook skipped once per lead ruling, vendored ignored path",
+        "19be48864e2702773b27922f644311a88793b3de merge upstream/main (a92161a05, 1,218 commits) into the ThroughLine fork, 2026-09-12",
+        "2164902aaf5ce7d5ff7a223bc2222b08b5bd4c32 Merge remote-tracking branch 'upstream/main' into claude/t3-upstream-sync-2026-08-18"
+      ],
+      "legacy_rules": [],
+      "mount_lines": 1,
+      "mount_measurement": "added text lines excluding namespace import declarations"
     }
   ],
   "upstream_changes": [
@@ -15187,6 +15946,32 @@
         "78552a8c6162c9b5248231bc70be8bffdb50cbd3 chore(deps): upgrade @effect/tsgo to 0.46.1 (#16360)",
         "194c73f3f991558ca540ef6fe0ce75223bbe87a7 chore(deps): upgrade Effect to stable 4.0.1 (#16138)",
         "fd7ee2c30a7eeef910c99e7bc92e944526555db7 chore(lint): forbid declaring tests inside for loops (#14921)",
+        "de343914273eceb852a1d1d739cd1d38df7796ee feat(orchestrator): introduce new orchestrator (#2829)"
+      ],
+      "decision": "defer",
+      "reason": "Review the current upstream change before choosing a resolution.",
+      "legacy_resolutions": []
+    },
+    {
+      "path": "apps/server/src/environment/ServerEnvironment.test.ts",
+      "upstream_commits": [
+        "ecfdda5fa804582066c1aa62afea419677c24883 refactor: layer variables are named layer or layerXyz (#16282)",
+        "3b0093d7164a59bea721e2582e385e984561cd41 fix(server): match manual update commands to installed cli (#15539)",
+        "de343914273eceb852a1d1d739cd1d38df7796ee feat(orchestrator): introduce new orchestrator (#2829)"
+      ],
+      "decision": "defer",
+      "reason": "Review the current upstream change before choosing a resolution.",
+      "legacy_resolutions": []
+    },
+    {
+      "path": "apps/server/src/environment/ServerEnvironment.ts",
+      "upstream_commits": [
+        "ac8e9453ca0948469ccf5651b765086d8d9ecd64 feat(preview): run the browser on the environment server (#15328)",
+        "ecfdda5fa804582066c1aa62afea419677c24883 refactor: layer variables are named layer or layerXyz (#16282)",
+        "1024941575067f68d909c6b98f56b02edac25b37 feat(server,web): choose where new worktrees are created (#16231)",
+        "3b0093d7164a59bea721e2582e385e984561cd41 fix(server): match manual update commands to installed cli (#15539)",
+        "b05adb70b00feac0883b2e364256100cfab4b6ca feat(usage): fold preview model IDs into the model they belong to (#15333)",
+        "18b21325c3ab1ff4f0ee7b017d9c4eefc2b2d307 feat(server): agents can watch a PR and get woken when checks, reviews, or conflicts need them (#15057)",
         "de343914273eceb852a1d1d739cd1d38df7796ee feat(orchestrator): introduce new orchestrator (#2829)"
       ],
       "decision": "defer",
@@ -16675,6 +17460,21 @@
       ]
     },
     {
+      "path": "packages/contracts/src/environment.ts",
+      "upstream_commits": [
+        "ac8e9453ca0948469ccf5651b765086d8d9ecd64 feat(preview): run the browser on the environment server (#15328)",
+        "017c9a0eb53b2c100b5be2d366d2374038da9241 fix(server): forks no longer merge into their upstream repo's project group (#16353)",
+        "1024941575067f68d909c6b98f56b02edac25b37 feat(server,web): choose where new worktrees are created (#16231)",
+        "3b0093d7164a59bea721e2582e385e984561cd41 fix(server): match manual update commands to installed cli (#15539)",
+        "b05adb70b00feac0883b2e364256100cfab4b6ca feat(usage): fold preview model IDs into the model they belong to (#15333)",
+        "18b21325c3ab1ff4f0ee7b017d9c4eefc2b2d307 feat(server): agents can watch a PR and get woken when checks, reviews, or conflicts need them (#15057)",
+        "de343914273eceb852a1d1d739cd1d38df7796ee feat(orchestrator): introduce new orchestrator (#2829)"
+      ],
+      "decision": "defer",
+      "reason": "Review the current upstream change before choosing a resolution.",
+      "legacy_resolutions": []
+    },
+    {
       "path": "packages/contracts/src/index.ts",
       "upstream_commits": [
         "4d976d1fc233d3aa971fa7dcbf2e7316bfa3ac72 feat: MCP apps render and run inline in threads (#16236)",
@@ -16960,6 +17760,22 @@
           "result_sha256": "e0897180117b933dd40f4dff6f161fca0df6378b4549f84eda0c5f1e943e15a4"
         }
       ]
+    },
+    {
+      "path": "vite.config.ts",
+      "upstream_commits": [
+        "28ce9d1c1751d70c869e3de3287b96d5e28fc845 feat(auth): separate environment administration permissions (#9786)",
+        "2f85686d9dca5ec98c892a2a26c321e09d746d71 feat(server): every T3 MCP tool declares who may call it (#16335)",
+        "ff397a29523d3c63e5844b11608c0189640c7561 chore(lint): catch known tags with Effect.catchTags (#16361)",
+        "31d0c8a4f47ead36c9a63ac4d3bf27b55c05095a chore(lint): require a reason on every lint and type-checker suppression (#16294)",
+        "0cfa113be597af3a1b2fe905a58a5b583f8089b8 chore(lint): flag :has() variants that restyle the whole page (#15274)",
+        "ddcd3102827f520e3dff53b902111744c0ba2ced chore: docs, dev scripts and CI catch up with orchestration V2 (#15041)",
+        "fd7ee2c30a7eeef910c99e7bc92e944526555db7 chore(lint): forbid declaring tests inside for loops (#14921)",
+        "de343914273eceb852a1d1d739cd1d38df7796ee feat(orchestrator): introduce new orchestrator (#2829)"
+      ],
+      "decision": "defer",
+      "reason": "Review the current upstream change before choosing a resolution.",
+      "legacy_resolutions": []
     }
   ],
   "conflict_rules": {
@@ -19899,5 +20715,13 @@
         "sha256": "b7a1baf245c8762179309a00ab906bb4aa616e1706a9c40d285b458ef2bd8aea"
       }
     ]
+  },
+  "admitted": {
+    "upstream_edit_count": 202,
+    "fork_added_count": 249,
+    "uncovered_fork_path_count": 475,
+    "fork_sha": "25158b1e0bed29ae73abb9d7875b053004f13788",
+    "admitted_at": "2026-10-10T07:42:04.807Z",
+    "admitted_by": "01a123b1-74ee-7ba1-9208-ab7d606c72e4"
   }
 }
