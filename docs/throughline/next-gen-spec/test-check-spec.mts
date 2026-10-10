@@ -487,4 +487,14 @@ const moveFixtures = spawnSync(process.execPath, [join(HERE, "checks/test-reposi
 process.stdout.write(moveFixtures.stdout ?? "");
 process.stderr.write(moveFixtures.stderr ?? "");
 if (moveFixtures.status !== 0) bad++;
+const archiveFixtures = spawnSync(
+  process.execPath,
+  [join(HERE, "checks/test-archive-readers.mts")],
+  {
+    encoding: "utf8",
+  },
+);
+process.stdout.write(archiveFixtures.stdout ?? "");
+process.stderr.write(archiveFixtures.stderr ?? "");
+if (archiveFixtures.status !== 0) bad++;
 process.exit(bad ? 1 : 0);

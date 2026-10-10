@@ -1208,6 +1208,43 @@ const T1: Task[] = [
   },
   {
     id: "T1.05",
+    archive_annotations: {
+      frozen_witness:
+        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Move-Record.json (fingerprints[]), never edited after the freeze",
+      annotations: {
+        path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Archive-Annotations.jsonl",
+        schema: "throughline.archive-annotation.v1",
+        fields: {
+          path: "absolute path of the frozen or added entry",
+          fingerprint: "{sha256, file_count, symlink_count, entry_count, bytes}",
+          disposition: "archived-and-removed | moved-and-preserved",
+          archive: "archive destination, for an archived container",
+          record_container:
+            "the whole container this entry was archived in; equals path for a container",
+          is_container:
+            "true for a whole archived container; false for a covered child entry, which points at its ancestor container",
+          verification: "PASS for a container",
+          archive_ledger_source:
+            "the source path the Archive-Ledger.jsonl row names for this container",
+        },
+      },
+      addendum: {
+        path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Archive-Fingerprint-Addendum.jsonl",
+        schema: "throughline.archive-fingerprint-addendum.v1",
+        fields: {
+          path: "a container absent from the frozen witness",
+          fingerprint: "its live full-tree freeze taken before any record copy or archive",
+          observed_at: "ISO time of the freeze",
+          measurement: "how the freeze was taken",
+        },
+      },
+      rules: [
+        "each frozen witness entry that has an annotation row is matched by path and by all five fingerprint fields",
+        "a container row (is_container true, archived-and-removed) has a passing Archive-Ledger.jsonl row: source = archive_ledger_source, archive equal, ARCHIVED_AND_REMOVED, verify PASS, rsync checksum verified, the same five fingerprint fields",
+        "a covered child row (is_container false) points at a container row that is its ancestor; the child path is gone with the container",
+        "a container absent from the frozen witness has an addendum row and is verified against that pre-copy freeze; a container row with neither a witness entry nor an addendum row has no frozen origin and fails",
+      ],
+    },
     record_retention: {
       rule: "Each build container (a path the build-output walk reports under the evidence root, or a pre-* snapshot folder under the old backup root) is archived whole, records included, with archiveTree, and verified against its frozen full-tree fingerprint. Before archiveTree removes it, every record file inside it is copied to the record address below.",
       containers: {
@@ -1229,7 +1266,7 @@ const T1: Task[] = [
         ".webp",
       ],
       record_files:
-        "regular files (not symlinks) inside the container whose name ends with a record extension",
+        "files our own runs wrote (ship-run receipts, logs, manifests, screenshots): regular files (not symlinks) inside the container whose name ends with a record extension and whose path inside the container has no segment naming a third-party dependency tree (node_modules, Pods, SourcePackages, checkouts, Carthage)",
       address:
         "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/ship-runs/retained-records",
       layout: {
@@ -1247,15 +1284,26 @@ const T1: Task[] = [
           '{"schema":"throughline.retained-record.v1","kind":"record","container":<absolute container path>,"original_path":<absolute>,"new_path":<absolute, under the address>,"sha256":<hex of the copied bytes>,"bytes":<n>}',
         container:
           '{"schema":"throughline.retained-record.v1","kind":"container","container":<absolute container path>,"archive":<archive destination>,"record_count":<n>}',
+        dropped:
+          '{"schema":"throughline.retained-record.v1","kind":"dropped","new_path":<the withdrawn copy\'s address>,"reason":<one line>}: withdraws a record copied before this rule; the move worker removes the copy',
       },
       order: [
-        "the container's full-tree fingerprint (sha256, file_count, symlink_count, entry_count, bytes) is in Move-Record.json fingerprints with disposition archived-and-removed and its archive destination, taken before any copy",
+        "the container's full-tree fingerprint (sha256, file_count, symlink_count, entry_count, bytes) is its frozen entry in Move-Record.json or, for a container absent from that witness, its pre-copy freeze in Archive-Fingerprint-Addendum.jsonl; its Archive-Annotations.jsonl row carries that fingerprint, the disposition and the archive destination; Move-Record.json is never edited",
         "each record is copied to its address, its SHA-256 recomputed from the copy equals the original, and its record row is appended",
         "the container row is appended with the record count",
         "archiveTree(container, archive, /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Archive-Ledger.jsonl) returns ARCHIVED_AND_REMOVED with verify PASS and the frozen fingerprint; no second removal is ever run",
       ],
       source:
-        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-03/delivery-2026-10-09/Move-Remainder-Receipt.json routing question records-inside-build-output",
+        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-03/delivery-2026-10-09/Move-Remainder-Receipt.json routing question records-inside-build-output; record definition: lead orchestrator ruling, /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-03/delivery-2026-10-09/Archive-Commit-20261010034006431-04.stdout.txt",
+      excluded_dependency_trees: [
+        "node_modules",
+        "Pods",
+        "SourcePackages",
+        "checkouts",
+        "Carthage",
+      ],
+      payload_rule:
+        "third-party dependency files inside a build container (Swift package checkouts such as Nuke's CHANGELOG and migration guides, node_modules, Pods, SourcePackages) are payload, not records: they stay inside the verified whole-container archive on the Raspberry Pi drive and are never copied into retained-records",
     },
     slice: "slice-1",
     title:

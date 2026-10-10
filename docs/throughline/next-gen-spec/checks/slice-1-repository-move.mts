@@ -229,6 +229,151 @@ const preservedTarget = (m: any, fp: any, rows: any[]): string | null => {
     .sort((a, b) => b.before.length - a.before.length)[0];
   return moved ? join(moved.after, relative(moved.before, path)) : (fp.target ?? null);
 };
+// The frozen witness stays read-only; subsequent dispositions and new-container freezes are separate files.
+const ANNOTATIONS = join(dirname(MOVE_RECORD), "Archive-Annotations.jsonl");
+const ADDENDUM = join(dirname(MOVE_RECORD), "Archive-Fingerprint-Addendum.jsonl");
+const jsonlRows = (p: string): any[] =>
+  existsSync(p)
+    ? readFileSync(p, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+    : [];
+const sameFingerprint = (a: any, b: any): boolean =>
+  !!a && !!b && FP_KEYS.every((k) => a[k] === b[k]);
+const validFingerprint = (x: any): boolean =>
+  !!x && SHA256.test(x.sha256) && FP_KEYS.slice(1).every((k) => Number.isFinite(x[k]) && x[k] >= 0);
+// shape of both files (S1-C09)
+const annotationShapeFindings = (m: any): Fail[] => {
+  const f: Fail[] = [],
+    ann = jsonlRows(ANNOTATIONS),
+    add = jsonlRows(ADDENDUM),
+    byPath = new Map<string, any>();
+  const frozen = new Set<string>((m.fingerprints ?? []).map((x: any) => x.path));
+  for (const a of ann) {
+    if (
+      a.schema !== "throughline.archive-annotation.v1" ||
+      typeof a.path !== "string" ||
+      !validFingerprint(a.fingerprint) ||
+      !["archived-and-removed", "moved-and-preserved"].includes(a.disposition) ||
+      typeof a.is_container !== "boolean" ||
+      typeof a.record_container !== "string"
+    ) {
+      f.push(`annotation row malformed: ${a.path}`);
+      continue;
+    }
+    if (byPath.has(a.path)) f.push(`two annotation rows for one path: ${a.path}`);
+    byPath.set(a.path, a);
+    if (
+      a.is_container &&
+      (a.record_container !== a.path ||
+        typeof a.archive !== "string" ||
+        a.verification !== "PASS" ||
+        typeof a.archive_ledger_source !== "string")
+    )
+      f.push(`container annotation incomplete: ${a.path}`);
+  }
+  for (const a of ann)
+    if (a.is_container === false) {
+      const c = byPath.get(a.record_container);
+      if (!c?.is_container || !under(a.path, a.record_container) || a.path === a.record_container)
+        f.push(`covered child does not point at its ancestor container row: ${a.path}`);
+    }
+  for (const d of add)
+    if (
+      d.schema !== "throughline.archive-fingerprint-addendum.v1" ||
+      typeof d.path !== "string" ||
+      !validFingerprint(d.fingerprint) ||
+      !Number.isFinite(Date.parse(d.observed_at)) ||
+      typeof d.measurement !== "string" ||
+      frozen.has(d.path)
+    )
+      f.push(`addendum row malformed or already in the frozen witness: ${d.path}`);
+  return f;
+};
+// S1-C06 joins dispositions to the frozen witness, the addendum and the archive ledger.
+const archiveFindings = (m: any, rows: any[]): { fails: Fail[]; archivedContainers: string[] } => {
+  const f: Fail[] = [],
+    ann = jsonlRows(ANNOTATIONS),
+    add = jsonlRows(ADDENDUM),
+    legacyArchived: string[] = [];
+  const byPath = new Map<string, any>(ann.map((a: any) => [a.path, a])),
+    addendum = new Map<string, any>(add.map((d: any) => [d.path, d]));
+  const frozen = new Map<string, any>((m.fingerprints ?? []).map((x: any) => [x.path, x]));
+  const ledgerPasses = (a: any, fp: any) =>
+    archiveMatches(
+      rows.find((r) => r.source === a.archive_ledger_source && r.archive === a.archive),
+      { ...fp, path: a.archive_ledger_source, archive: a.archive },
+    );
+  for (const [path, fp] of frozen) {
+    const a = byPath.get(path);
+    const linkArchive =
+      !a &&
+      rows.find(
+        (row) =>
+          row.source === path &&
+          fp.file_count === 0 &&
+          fp.symlink_count === 1 &&
+          fp.entry_count === 1 &&
+          archiveMatches(row, { ...fp, archive: row.archive }),
+      );
+    if (linkArchive) {
+      if (present(path)) f.push(`archived staging link still present: ${path}`);
+    } else if (a) {
+      if (!sameFingerprint(a.fingerprint, fp))
+        f.push(`annotation does not match the frozen entry on path and fingerprint: ${path}`);
+      else if (a.disposition === "archived-and-removed") {
+        if (present(path)) f.push(`archived entry still present: ${path}`);
+        if (a.is_container && !ledgerPasses(a, fp))
+          f.push(`container has no passing archive ledger row: ${path}`);
+      }
+    } else if (fp.disposition === "archived-and-removed") {
+      legacyArchived.push(path);
+      if (
+        present(path) ||
+        !archiveMatches(
+          rows.find((row) => row.source === path && row.archive === fp.archive),
+          fp,
+        )
+      )
+        f.push(`removed tree lacks exact verified archive identity: ${path}`);
+    } else if (fp.disposition === "moved-and-preserved") {
+      const target = preservedTarget(m, fp, worktreeAnnotations());
+      if (!target || !existsSync(target) || !under(target, WORKTREES))
+        f.push(`preserved target missing: ${path}`);
+      else {
+        const got = manifestOf(target);
+        if (!FP_KEYS.every((k) => got[k as keyof typeof got] === fp[k]))
+          f.push(`preserved tree fingerprint drift: ${target}`);
+      }
+    } else f.push(`frozen entry has no annotation row and no preserved disposition: ${path}`);
+  }
+  for (const a of ann)
+    if (a.is_container && a.disposition === "archived-and-removed" && !frozen.has(a.path)) {
+      const d = addendum.get(a.path);
+      if (!d)
+        f.push(`container has neither a frozen entry nor a pre-copy addendum freeze: ${a.path}`);
+      else if (!sameFingerprint(a.fingerprint, d.fingerprint))
+        f.push(`container does not match its pre-copy freeze: ${a.path}`);
+      else {
+        if (present(a.path)) f.push(`archived container still present: ${a.path}`);
+        if (!ledgerPasses(a, d.fingerprint))
+          f.push(`container has no passing archive ledger row: ${a.path}`);
+      }
+    }
+  for (const d of add)
+    if (!byPath.get(d.path)?.is_container)
+      f.push(`addendum freeze has no container annotation row: ${d.path}`);
+  return {
+    fails: f,
+    archivedContainers: [
+      ...legacyArchived,
+      ...ann
+        .filter((a: any) => a.is_container && a.disposition === "archived-and-removed")
+        .map((a: any) => a.path),
+    ],
+  };
+};
 const installedVersion = () => {
   const r = spawnSync(
     "defaults",
@@ -650,7 +795,6 @@ export async function runSliceChecks() {
     const m = moveRecord(),
       rows = ledgerRows(),
       archived = new Set<string>();
-    const annotations = worktreeAnnotations();
     const aliasFindings = oldHomeAliasFindings(m);
     f.push(...aliasFindings);
     for (const x of found)
@@ -667,43 +811,9 @@ export async function runSliceChecks() {
     const rr = (spec.tasks.find((t: any) => t.id === "T1.05") ?? {}).record_retention;
     if (!rr?.address || !rr?.manifest)
       f.push("T1.05 record_retention address or manifest undeclared");
-    for (const fp of m.fingerprints ?? []) {
-      // A removed staging link is an archived link, never a preserved directory or a record container.
-      const linkArchive = rows.find(
-        (row) =>
-          row.source === fp.path &&
-          fp.file_count === 0 &&
-          fp.symlink_count === 1 &&
-          fp.entry_count === 1 &&
-          archiveMatches(row, { ...fp, archive: row.archive }),
-      );
-      if (linkArchive) {
-        if (present(fp.path)) f.push(`archived staging link still present: ${fp.path}`);
-      } else if (fp.disposition === "archived-and-removed") {
-        archived.add(fp.path);
-        if (
-          present(fp.path) ||
-          !archiveMatches(
-            rows.find((r) => r.source === fp.path && r.archive === fp.archive),
-            fp,
-          )
-        )
-          f.push(`removed tree lacks exact verified archive identity: ${fp.path}`);
-      } else if (fp.disposition === "moved-and-preserved") {
-        const target = preservedTarget(m, fp, annotations);
-        if (!target || !existsSync(target) || !under(target, WORKTREES))
-          f.push(`preserved target missing: ${fp.path}`);
-        else {
-          const got = manifestOf(target);
-          if (
-            !["sha256", "file_count", "symlink_count", "entry_count", "bytes"].every(
-              (k) => got[k as keyof typeof got] === fp[k],
-            )
-          )
-            f.push(`preserved tree fingerprint drift: ${target}`);
-        }
-      } else f.push(`fingerprint disposition missing: ${fp.path}`);
-    }
+    const archives = archiveFindings(m, rows);
+    f.push(...archives.fails);
+    for (const path of archives.archivedContainers) archived.add(path);
     if (rr?.address && rr?.manifest) {
       const lines: any[] | null = existsSync(rr.manifest)
         ? readFileSync(rr.manifest, "utf8")
@@ -728,11 +838,33 @@ export async function runSliceChecks() {
           declared.set(x.container, x.record_count);
           continue;
         }
+        if (x.kind === "dropped") {
+          if (typeof x.reason !== "string" || !x.reason.trim())
+            f.push(`dropped record without a one-line reason: ${x.new_path}`);
+          if (typeof x.new_path === "string" && present(x.new_path))
+            f.push(`dropped record still present: ${x.new_path}`);
+          continue;
+        }
         if (x.kind !== "record") {
           f.push(`record manifest row of unknown kind: ${x.kind}`);
           continue;
         }
         counted.set(x.container, (counted.get(x.container) ?? 0) + 1);
+        // A dropped third-party copy still belongs to the historical container count.
+        if (
+          typeof x.original_path === "string" &&
+          typeof x.container === "string" &&
+          x.original_path
+            .slice(x.container.length + 1)
+            .split("/")
+            .some((seg: string) => (rr.excluded_dependency_trees ?? []).includes(seg))
+        ) {
+          if (
+            !(lines ?? []).some((row: any) => row.kind === "dropped" && row.new_path === x.new_path)
+          )
+            f.push(`third-party dependency file kept as a record: ${x.original_path}`);
+          continue;
+        }
         const rel =
           typeof x.new_path === "string" && x.new_path.startsWith(rr.address + "/")
             ? x.new_path.slice(rr.address.length + 1)
@@ -911,18 +1043,26 @@ export async function runSliceChecks() {
     }
     if (!m.worktrees?.length || !m.worktree_mapping?.length)
       f.push("frozen worktrees/mappings missing");
+    const dispositions = worktreeAnnotations();
     for (const w of m.worktrees ?? [])
       if (
         !w.path ||
-        !w.branch ||
+        !(typeof w.branch === "string" || (w.branch == null && w.detached === true)) ||
         !SHA40.test(w.head) ||
         w.clean !== true ||
         !Array.isArray(w.ignored_entries) ||
-        !m.worktree_mapping?.some(
-          (x: any) => x.before === w.path && x.branch === w.branch && x.frozen_head === w.head,
+        !(
+          m.worktree_mapping?.some(
+            (x: any) => x.before === w.path && x.branch === w.branch && x.frozen_head === w.head,
+          ) ||
+          dispositions.some(
+            (row) =>
+              row.kind === "disposition" && row.before === w.path && boundDisposition(m, row),
+          )
         )
       )
-        f.push("unbound/unclean frozen worktree");
+        f.push(`unbound/unclean frozen worktree: ${w.path}`);
+    f.push(...annotationFindings(m, dispositions));
     if (
       !m.installed_app?.payloads?.length ||
       !m.installed_app.payloads.some((x: any) => x.path === APP + "/Contents/MacOS/ThroughLine") ||
@@ -940,6 +1080,7 @@ export async function runSliceChecks() {
         !["moved-and-preserved", "archived-and-removed"].includes(x.disposition)
       )
         f.push("invalid fingerprint/disposition");
+    f.push(...annotationShapeFindings(m));
     const old = {
       home: OLD_HOME,
       release_checkout: R.old_release_checkout,
