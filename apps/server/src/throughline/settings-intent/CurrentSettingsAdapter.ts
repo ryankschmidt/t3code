@@ -1,4 +1,4 @@
-import type { SettingsHost, SettingsHostAdapter } from "./SettingsIntent";
+import type { SettingsHost, SettingsHostAdapter } from "./SettingsIntent.ts";
 
 /** Ports bind to the existing settings service or its typed remote client.
  * Read a scalar; write a one-field patch. Never carry a full settings snapshot. */

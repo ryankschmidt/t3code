@@ -22,13 +22,19 @@
  * Must NOT own: step shape (thread-driver's), upstream reactor behavior,
  * retry policy, credential material.
  */
-import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Clock from "effect/Clock";
+import * as Data from "effect/Data";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Stream from "effect/Stream";
+import * as ChildProcess from "effect/unstable/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
-const execFileAsync = promisify(execFile);
+class CheckpointGitError extends Data.TaggedError("CheckpointGitError")<{
+  readonly message: string;
+}> {}
 
 export type StepCheckpointOptions = {
   /** Git workspace the capture runs in (a repo root or worktree). */
@@ -60,18 +66,57 @@ export function stepCheckpointRef(taskId: string, step: string): string {
   return `refs/t3-absurd/checkpoints/${clean(taskId)}/${clean(step)}`;
 }
 
-async function git(
+const git = Effect.fnUntraced(function* (
   cwd: string,
   args: readonly string[],
   env?: NodeJS.ProcessEnv,
-): Promise<string> {
-  const { stdout } = await execFileAsync("git", [...args], {
-    cwd,
-    env: env ? { ...process.env, ...env } : process.env,
-    maxBuffer: 8 * 1024 * 1024,
-  });
-  return stdout.trim();
-}
+) {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const handle = yield* spawner.spawn(
+        ChildProcess.make("git", [...args], {
+          cwd,
+          env,
+          extendEnv: true,
+        }),
+      );
+      // Drain both pipes concurrently, with the same per-pipe execFile bound.
+      // Reading stdout alone would lose nonzero exit failures or deadlock stderr.
+      const readOutput = (stream: typeof handle.stdout) => {
+        let bytes = 0;
+        return stream.pipe(
+          Stream.mapEffect((chunk) => {
+            bytes += chunk.byteLength;
+            return bytes > 8 * 1024 * 1024
+              ? Effect.fail(
+                  new CheckpointGitError({
+                    message: "checkpoint-bridge: git output exceeded maxBuffer",
+                  }),
+                )
+              : Effect.succeed(chunk);
+          }),
+          Stream.decodeText,
+          Stream.mkString,
+        );
+      };
+      const { stdout, stderr, code } = yield* Effect.all(
+        {
+          stdout: readOutput(handle.stdout),
+          stderr: readOutput(handle.stderr),
+          code: handle.exitCode,
+        },
+        { concurrency: "unbounded" },
+      );
+      if (code !== 0) {
+        return yield* new CheckpointGitError({
+          message: `checkpoint-bridge: git ${args[0]} exited ${code}: ${stderr.trim()}`,
+        });
+      }
+      return stdout.trim();
+    }),
+  );
+});
 
 /**
  * Capture a scoped checkpoint of the current worktree state at a step
@@ -81,48 +126,63 @@ async function git(
 export async function captureStepCheckpoint(
   opts: StepCheckpointOptions,
 ): Promise<StepCheckpointResult> {
-  const started = Date.now();
-  const scopePaths = opts.scopePaths && opts.scopePaths.length > 0 ? opts.scopePaths : ["."];
-  const checkpointRef = stepCheckpointRef(opts.taskId, opts.step);
-  const indexDir = await mkdtemp(join(tmpdir(), "t3-absurd-ckpt-"));
-  const indexFile = join(indexDir, "index");
-  const env = { GIT_INDEX_FILE: indexFile };
-  try {
-    // Seed the temp index from HEAD when one exists so the written tree is a
-    // full snapshot (scoped adds layered over the last commit), matching the
-    // restore semantics upstream relies on. Fresh repos start empty.
-    const head = await git(opts.cwd, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).catch(
-      () => "",
-    );
-    if (head.length > 0) {
-      await git(opts.cwd, ["read-tree", head], env);
-    }
-    await git(opts.cwd, ["add", "-A", "--", ...scopePaths], env);
-    const treeOid = await git(opts.cwd, ["write-tree"], env);
-    const message =
-      opts.message ?? `t3-absurd step checkpoint ${opts.step} (task ${opts.taskId})`;
-    const commitArgs = head.length > 0
-      ? ["commit-tree", treeOid, "-p", head, "-m", message]
-      : ["commit-tree", treeOid, "-m", message];
-    const commitOid = await git(opts.cwd, commitArgs, env);
-    if (commitOid.length === 0) {
-      throw new Error("checkpoint-bridge: git commit-tree returned an empty oid");
-    }
-    await git(opts.cwd, ["update-ref", checkpointRef, commitOid]);
-    return {
-      checkpointRef,
-      commitOid,
-      treeOid,
-      scopePaths,
-      durationMs: Date.now() - started,
-    };
-  } finally {
-    await rm(indexDir, { recursive: true, force: true });
-  }
+  return Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Clock.currentTimeMillis;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const scopePaths = opts.scopePaths && opts.scopePaths.length > 0 ? opts.scopePaths : ["."];
+        const checkpointRef = stepCheckpointRef(opts.taskId, opts.step);
+        const indexDir = yield* Effect.acquireRelease(
+          fs.makeTempDirectory({ prefix: "t3-absurd-ckpt-" }),
+          (directory) => fs.remove(directory, { recursive: true, force: true }).pipe(Effect.orDie),
+        );
+        const indexFile = path.join(indexDir, "index");
+        const env = { GIT_INDEX_FILE: indexFile };
+        // Seed the temp index from HEAD when one exists so the written tree is a
+        // full snapshot (scoped adds layered over the last commit), matching the
+        // restore semantics upstream relies on. Fresh repos start empty.
+        const head = yield* git(opts.cwd, [
+          "rev-parse",
+          "--verify",
+          "--quiet",
+          "HEAD^{commit}",
+        ]).pipe(Effect.orElseSucceed(() => ""));
+        if (head.length > 0) {
+          yield* git(opts.cwd, ["read-tree", head], env);
+        }
+        yield* git(opts.cwd, ["add", "-A", "--", ...scopePaths], env);
+        const treeOid = yield* git(opts.cwd, ["write-tree"], env);
+        const message =
+          opts.message ?? `t3-absurd step checkpoint ${opts.step} (task ${opts.taskId})`;
+        const commitArgs =
+          head.length > 0
+            ? ["commit-tree", treeOid, "-p", head, "-m", message]
+            : ["commit-tree", treeOid, "-m", message];
+        const commitOid = yield* git(opts.cwd, commitArgs, env);
+        if (commitOid.length === 0) {
+          return yield* new CheckpointGitError({
+            message: "checkpoint-bridge: git commit-tree returned an empty oid",
+          });
+        }
+        yield* git(opts.cwd, ["update-ref", checkpointRef, commitOid]);
+        return {
+          checkpointRef,
+          commitOid,
+          treeOid,
+          scopePaths,
+          durationMs: (yield* Clock.currentTimeMillis) - started,
+        };
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
 }
 
 /** List a checkpoint's tree paths (proof/inspection helper). */
 export async function listCheckpointPaths(cwd: string, ref: string): Promise<string[]> {
-  const out = await git(cwd, ["ls-tree", "-r", "--name-only", ref]);
+  const out = await Effect.runPromise(
+    git(cwd, ["ls-tree", "-r", "--name-only", ref]).pipe(Effect.provide(NodeServices.layer)),
+  );
   return out.length === 0 ? [] : out.split("\n");
 }

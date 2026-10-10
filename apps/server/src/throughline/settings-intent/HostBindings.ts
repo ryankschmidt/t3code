@@ -1,6 +1,10 @@
-import type { SettingsIntentEvent, SettingsRollbackResult, SettingsHost } from "./SettingsIntent";
-import { createSettingsIntent } from "./SettingsIntent";
-import { createCurrentSettingsAdapter } from "./CurrentSettingsAdapter";
+import type {
+  SettingsIntentEvent,
+  SettingsRollbackResult,
+  SettingsHost,
+} from "./SettingsIntent.ts";
+import { createSettingsIntent } from "./SettingsIntent.ts";
+import { createCurrentSettingsAdapter } from "./CurrentSettingsAdapter.ts";
 
 export interface PublicHostMap {
   readonly source: string;
@@ -95,8 +99,11 @@ function snapshotMap(input: PublicHostMap | null | undefined): PublicHostMap {
  * evidence for the owning caller to reconcile; never leak a transport cause,
  * automatically retry an uncertain append, or assert that it did not persist. */
 export class UnconfirmedSettingsRecordError extends Error {
-  constructor(readonly record: SettingsBindingRecord) {
+  readonly record: SettingsBindingRecord;
+
+  constructor(record: SettingsBindingRecord) {
     super("DURABLE_RECEIPT_UNCONFIRMED");
+    this.record = record;
   }
 }
 

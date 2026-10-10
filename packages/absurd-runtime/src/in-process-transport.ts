@@ -24,6 +24,9 @@
  * `modelSelection`; a missing model throws before any thread is created.
  */
 import * as NodeCrypto from "node:crypto";
+import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
 
 import type { ThreadTransport, ThreadRunSenderContext } from "./thread-driver.ts";
 
@@ -91,7 +94,7 @@ export function makeInProcessTransport(deps: InProcessTransportDeps): ThreadTran
         interactionMode: "default",
         branch: null,
         worktreePath: null,
-        createdAt: new Date().toISOString(),
+        createdAt: await Effect.runPromise(Effect.map(DateTime.now, DateTime.formatIso)),
       });
       return { threadId, created: true };
     },
@@ -107,7 +110,10 @@ export function makeInProcessTransport(deps: InProcessTransportDeps): ThreadTran
         const messageId =
           typeof message?.messageId === "string" ? message.messageId : NodeCrypto.randomUUID();
         await deps.dispatchCommand(turnCommand, trustedSenderContext);
-        return { turnId: `seq:${turnCursor}:${messageId}`, dispatchedAt: new Date().toISOString() };
+        return {
+          turnId: `seq:${turnCursor}:${messageId}`,
+          dispatchedAt: await Effect.runPromise(Effect.map(DateTime.now, DateTime.formatIso)),
+        };
       }
       const messageId = NodeCrypto.randomUUID();
       // modelSelection is intentionally omitted: the turn inherits the thread's
@@ -121,19 +127,23 @@ export function makeInProcessTransport(deps: InProcessTransportDeps): ThreadTran
           message: { messageId, role: "user", text: prompt, attachments: [] },
           runtimeMode: "full-access",
           interactionMode: "default",
-          createdAt: new Date().toISOString(),
+          createdAt: await Effect.runPromise(Effect.map(DateTime.now, DateTime.formatIso)),
         },
         trustedSenderContext,
       );
       // Encode the pre-dispatch sequence cursor into the turn handle so
       // awaitTurnComplete scans forward from exactly where we left off.
-      return { turnId: `seq:${turnCursor}:${messageId}`, dispatchedAt: new Date().toISOString() };
+      return {
+        turnId: `seq:${turnCursor}:${messageId}`,
+        dispatchedAt: await Effect.runPromise(Effect.map(DateTime.now, DateTime.formatIso)),
+      };
     },
 
     async awaitTurnComplete(threadId, turnId, holdMs) {
       const seqStr = turnId.split(":")[1];
       let cursor = Number(seqStr ?? 0) || 0;
-      const deadline = Date.now() + Math.max(holdMs, 10 * 60_000);
+      const deadline =
+        (await Effect.runPromise(Clock.currentTimeMillis)) + Math.max(holdMs, 10 * 60_000);
       // Completion signal (verified against the WS transport's live-DB finding):
       // a real turn emits `thread.session-set` status running -> ready.
       // `thread.turn-diff-completed` fires only when checkpoint capture
@@ -176,12 +186,12 @@ export function makeInProcessTransport(deps: InProcessTransportDeps): ThreadTran
             };
           }
         }
-        if (Date.now() > deadline) {
+        if ((await Effect.runPromise(Clock.currentTimeMillis)) > deadline) {
           throw new Error(
             `in-process-transport: turn did not complete before deadline (thread ${threadId})`,
           );
         }
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+        await Effect.runPromise(Effect.sleep(pollIntervalMs));
       }
     },
   };

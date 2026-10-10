@@ -29,6 +29,7 @@ import {
   type ExistingSettingsConsumer,
   type SettingsBindingRecord,
 } from "../../throughline/settings-intent/HostBindings.ts";
+import type { SettingsHostResult } from "../../throughline/settings-intent/SettingsIntent.ts";
 import {
   CurrentAuthenticatedSender,
   CurrentSenderClaims,
@@ -70,6 +71,7 @@ const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
 );
 const isOrchestrationCommandIdConflictError = Schema.is(OrchestrationCommandIdConflictError);
 const decodeSettingsActivityCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
+const encodeSettingsEvidence = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 interface CommandEnvelope {
   command: OrchestrationCommand;
@@ -555,10 +557,10 @@ export const OrchestrationEngineLive = Layer.effect(
 
 type SettingsActivityCommand = Extract<OrchestrationCommand, { type: "thread.activity.append" }>;
 
-export interface ExistingSettingsConsumerOptions {
+export interface ExistingSettingsConsumerOptions<E = never> {
   readonly context: ExistingRecordContext;
   /** Current caller authorization, captured by the owning authenticated ingress. */
-  readonly authorize: (context: ExistingRecordContext) => Effect.Effect<boolean, unknown>;
+  readonly authorize: (context: ExistingRecordContext) => Effect.Effect<boolean, E>;
   /** The owner supplies its admitted activity mapping and stable operation IDs.
    * This adapter does not invent a settings event kind or infer a record. */
   readonly mapActivity: (
@@ -585,7 +587,7 @@ function copySettingsRecord(record: SettingsBindingRecord): SettingsBindingRecor
     event: {
       setting: record.event.setting,
       value: record.event.value,
-      hosts: record.event.hosts.map(({ host, before, effective, status }) => ({
+      hosts: record.event.hosts.map(({ host, before, effective, status }: SettingsHostResult) => ({
         host,
         before,
         effective,
@@ -605,9 +607,12 @@ function copySettingsRecord(record: SettingsBindingRecord): SettingsBindingRecor
 /** Promise adapter for the reviewed HostBindings core. All durable operations
  * still belong to the existing engine, event store and command receipt lane.
  * Captured services must share the same server environment/database lifetime. */
-export const makeExistingSettingsConsumer = Effect.fn("makeExistingSettingsConsumer")(function* (
-  options: ExistingSettingsConsumerOptions,
+export const makeExistingSettingsConsumer = Effect.fn("makeExistingSettingsConsumer")(function* <E>(
+  options: ExistingSettingsConsumerOptions<E>,
 ) {
+  // The Promise adapter keeps the caller's Effect context, including references,
+  // rather than starting child effects with independent default services.
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const identity = yield* ServerEnvironmentIdentity;
   const threads = yield* ProjectionThreadRepository;
   const engine = yield* OrchestrationEngineService;
@@ -640,11 +645,11 @@ export const makeExistingSettingsConsumer = Effect.fn("makeExistingSettingsConsu
   return {
     context,
     verifyExistingContext: (candidate) =>
-      Effect.runPromise(verify(candidate).pipe(Effect.catchCause(() => Effect.succeed(false)))),
+      runPromise(verify(candidate).pipe(Effect.catchCause(() => Effect.succeed(false)))),
     append: async (input, candidate) => {
       const record = copySettingsRecord(input);
       try {
-        return await Effect.runPromise(
+        return await runPromise(
           Effect.gen(function* () {
             if (!(yield* verify(candidate))) throw new Error("DURABLE_CONTEXT_UNAVAILABLE");
             const mapped = mapActivity(record, context);
@@ -700,11 +705,15 @@ export const makeExistingSettingsConsumer = Effect.fn("makeExistingSettingsConsu
               event.payload.activity.summary !== command.activity.summary ||
               event.payload.activity.turnId !== null ||
               event.payload.activity.createdAt !== command.activity.createdAt ||
-              event.occurredAt !== command.createdAt ||
-              JSON.stringify(
-                copySettingsRecord(event.payload.activity.payload as SettingsBindingRecord),
-              ) !== JSON.stringify(record)
+              event.occurredAt !== command.createdAt
             ) {
+              throw new Error("DURABLE_RECEIPT_UNCONFIRMED");
+            }
+            const persistedEvidence = yield* encodeSettingsEvidence(
+              copySettingsRecord(event.payload.activity.payload as SettingsBindingRecord),
+            );
+            const expectedEvidence = yield* encodeSettingsEvidence(record);
+            if (persistedEvidence !== expectedEvidence) {
               throw new Error("DURABLE_RECEIPT_UNCONFIRMED");
             }
             // Environment is read from the actual owner, never echoed from a request.

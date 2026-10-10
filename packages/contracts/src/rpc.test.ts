@@ -53,7 +53,7 @@ describe("ThroughLine hello registry", () => {
     };
     expect(
       Exit.isSuccess(
-        Schema.decodeExit(WsThroughlineHelloRpc.payloadSchema)({
+        Schema.decodeUnknownExit(WsThroughlineHelloRpc.payloadSchema)({
           ...client,
           future_field: "ignored by this server",
         }),
@@ -62,7 +62,7 @@ describe("ThroughLine hello registry", () => {
     for (const invalid of [{ last_cursor: -1 }, { protocol_version: 1.5 }]) {
       expect(
         Exit.isFailure(
-          Schema.decodeExit(WsThroughlineHelloRpc.payloadSchema)({
+          Schema.decodeUnknownExit(WsThroughlineHelloRpc.payloadSchema)({
             ...client,
             ...invalid,
           }),

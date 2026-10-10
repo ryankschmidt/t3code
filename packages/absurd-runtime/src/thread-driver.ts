@@ -25,6 +25,12 @@
  * steps 1-2 must show ONE execution total while step 3 shows two.
  */
 import type { Absurd } from "absurd-sdk";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Schedule from "effect/Schedule";
 import { captureStepCheckpoint } from "./checkpoint-bridge.ts";
 
 export type ThreadRunParams = {
@@ -131,16 +137,19 @@ export function makeLocalEchoTransport(): ThreadTransport {
   return {
     async resolveThread(params) {
       if (params.threadId) return { threadId: params.threadId, created: false };
-      return { threadId: `local-thread-${crypto.randomUUID()}`, created: true };
+      return {
+        threadId: `local-thread-${await Effect.runPromise(Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4).pipe(Effect.provide(NodeCrypto.layer)))}`,
+        created: true,
+      };
     },
     async dispatchTurn(_threadId, _prompt) {
       return {
-        turnId: `turn-${crypto.randomUUID()}`,
-        dispatchedAt: new Date().toISOString(),
+        turnId: `turn-${await Effect.runPromise(Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4).pipe(Effect.provide(NodeCrypto.layer)))}`,
+        dispatchedAt: await Effect.runPromise(Effect.map(DateTime.now, DateTime.formatIso)),
       };
     },
     async awaitTurnComplete(_threadId, turnId, holdMs) {
-      await new Promise((resolve) => setTimeout(resolve, holdMs));
+      await Effect.runPromise(Effect.sleep(holdMs));
       return { state: "completed", summary: `turn ${turnId} completed after ${holdMs}ms hold` };
     },
   };
@@ -156,13 +165,17 @@ export function registerThreadRunTask(app: Absurd, transport: ThreadTransport): 
       const holdMs = params.holdMs ?? 8000;
 
       const thread = await ctx.step("resolve-thread", async () => {
-        console.log(`[thread-run ${ctx.taskID}] EXECUTING resolve-thread`);
+        await Effect.runPromise(
+          Effect.logInfo(`[thread-run ${ctx.taskID}] EXECUTING resolve-thread`),
+        );
         return transport.resolveThread(params);
       });
 
       const turn = await ctx.step("dispatch-turn", async () => {
-        console.log(
-          `[thread-run ${ctx.taskID}] EXECUTING dispatch-turn (thread ${thread.threadId})`,
+        await Effect.runPromise(
+          Effect.logInfo(
+            `[thread-run ${ctx.taskID}] EXECUTING dispatch-turn (thread ${thread.threadId})`,
+          ),
         );
         return transport.dispatchTurn(
           thread.threadId,
@@ -175,7 +188,9 @@ export function registerThreadRunTask(app: Absurd, transport: ThreadTransport): 
       if (params.checkpoint) {
         const cp = params.checkpoint;
         await ctx.step("git-checkpoint:dispatch-turn", async () => {
-          console.log(`[thread-run ${ctx.taskID}] EXECUTING git-checkpoint:dispatch-turn`);
+          await Effect.runPromise(
+            Effect.logInfo(`[thread-run ${ctx.taskID}] EXECUTING git-checkpoint:dispatch-turn`),
+          );
           return captureStepCheckpoint({
             cwd: cp.cwd,
             taskId: ctx.taskID,
@@ -195,28 +210,45 @@ export function registerThreadRunTask(app: Absurd, transport: ThreadTransport): 
       }
 
       const done = await ctx.step("await-turn-complete", async () => {
-        console.log(
-          `[thread-run ${ctx.taskID}] EXECUTING await-turn-complete (turn ${turn.turnId}, hold ${holdMs}ms)`,
+        await Effect.runPromise(
+          Effect.logInfo(
+            `[thread-run ${ctx.taskID}] EXECUTING await-turn-complete (turn ${turn.turnId}, hold ${holdMs}ms)`,
+          ),
         );
         // Long step: leases are extended only on checkpoint writes, so a hold
         // >= the worker claimTimeout would expire its own lease while alive.
         // Heartbeat every 30s for the duration of this step (SDK pattern).
-        const beat = setInterval(() => {
-          void ctx.heartbeat().catch((err: unknown) => {
-            console.error(`[thread-run ${ctx.taskID}] heartbeat failed:`, err);
-          });
-        }, 30_000);
+        // Schedule the callback, not the Promise, so slow heartbeats retain the
+        // original fixed-cadence behavior and do not delay the next lease beat.
+        const beat = Effect.runFork(
+          Effect.schedule(
+            Effect.sync(() => {
+              void ctx
+                .heartbeat()
+                .catch((err: unknown) =>
+                  Effect.runPromise(
+                    Effect.logError(`[thread-run ${ctx.taskID}] heartbeat failed:`, err),
+                  ),
+                );
+            }),
+            Schedule.spaced(30_000),
+          ),
+        );
         try {
           return await transport.awaitTurnComplete(thread.threadId, turn.turnId, holdMs);
         } finally {
-          clearInterval(beat);
+          await Effect.runPromise(Fiber.interrupt(beat));
         }
       });
 
       if (params.checkpoint) {
         const cp = params.checkpoint;
         await ctx.step("git-checkpoint:await-turn-complete", async () => {
-          console.log(`[thread-run ${ctx.taskID}] EXECUTING git-checkpoint:await-turn-complete`);
+          await Effect.runPromise(
+            Effect.logInfo(
+              `[thread-run ${ctx.taskID}] EXECUTING git-checkpoint:await-turn-complete`,
+            ),
+          );
           return captureStepCheckpoint({
             cwd: cp.cwd,
             taskId: ctx.taskID,
