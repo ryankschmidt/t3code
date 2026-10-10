@@ -5,9 +5,9 @@
     <title>ThroughLine next-generation implementation spec — map</title>
     <meta
       name="spec-sha256"
-      content="5719122eeda5e89522e09347dd3100cadc422953e774e55af44916c2b64b4613"
+      content="9d744ef09345b88e094f84061334678dd6c7531fe5e9a10080512849c6d6d616"
     />
-    <meta name="spec-version" content="0.4.7" />
+    <meta name="spec-version" content="0.4.13" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
@@ -483,10 +483,10 @@
         installed in 24 hours.”
       </p>
       <p class="sub">
-        Machine-readable task graph <code>spec.json</code> version 0.4.7. Original design
+        Machine-readable task graph <code>spec.json</code> version 0.4.13. Original design
         authorship: fable-throughline-design (ThroughLine thread
-        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 9, 2026, 7:14 PM PDT by
-        codex session 01a12385-41a2-7af0-a609-cecd04e87d24. Bound to ledger sha256 0b260e00b391 (199
+        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 1:01 AM PDT by
+        codex session 01a124c9-641b-79f2-9460-63aa9ccfa238. Bound to ledger sha256 0b260e00b391 (199
         items). Every task names the ledger ids it serves. The technical execution lead,
         lead-execlead-1ad87c0b, works from the JSON; this page is rendered from it.
       </p>
@@ -1484,11 +1484,12 @@
                 <p>
                   <b>Done when</b>
                   <code class="cmd"
-                    >pnpm -C /Users/Admin/core-root install --frozen-lockfile &gt;/dev/null
-                    &amp;&amp; pnpm -C
+                    >cd /Users/Admin/core-root &amp;&amp; pnpm -C /Users/Admin/core-root install
+                    --frozen-lockfile &gt;/dev/null &amp;&amp; pnpm -C
                     /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run
-                    test &amp;&amp; node ./checks/slice-1-repository-move.mts --stage frozen --only
-                    S1-C05</code
+                    test &amp;&amp; node
+                    /Users/Admin/throughline/docs/throughline/next-gen-spec/checks/slice-1-repository-move.mts
+                    --stage frozen --only S1-C05</code
                   >
                   <span class="expect"
                     >→ tests green and exit 0; the installed copy at
@@ -1532,9 +1533,9 @@
                 >
                 <span class="serves"><span class="chip ng">NG-122</span></span>
                 <span class="sides"
+                  ><span class="chip vault">vault</span
                   ><span class="chip host">host-filesystem</span
-                  ><span class="chip upstream">upstream-edit</span
-                  ><span class="chip vault">vault</span></span
+                  ><span class="chip upstream">upstream-edit</span></span
                 >
               </summary>
               <div class="body">
@@ -1548,6 +1549,10 @@
                   the repository's README (a file the fork already edits, so the upstream-edit count
                   does not rise). The release worktree folders are 12 GB each and about 293,000
                   files each; the main checkout is 17 GB and 317,471 files (measured Oct 7, 2026).
+                  Worktree-Move-Annotations.jsonl preserves the frozen witness: dispositions bind
+                  moved, kept and retired worktrees, additions have their own freeze, and reviewed
+                  rebases append a chain from the frozen head to the current head. No old row is
+                  rewritten.
                 </p>
                 <p class="deps">
                   <b>After</b> <span class="chip pre">release-0.0.56-closed</span>
@@ -1563,6 +1568,19 @@
                     </tr>
                   </thead>
                   <tbody>
+                    <tr>
+                      <td>
+                        <code
+                          >/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Worktree-Move-Annotations.jsonl</code
+                        >
+                      </td>
+                      <td><span class="chip vault">vault</span></td>
+                      <td>add</td>
+                      <td>
+                        append-only worktree dispositions, addition freezes and reviewed rebase
+                        chains; the move worker writes these rows
+                      </td>
+                    </tr>
                     <tr>
                       <td>
                         <code
@@ -1691,9 +1709,9 @@
                     <li>
                       <code
                         >git -C /Users/Admin/throughline worktree prune &amp;&amp; git -C
-                        /Users/Admin/throughline worktree list --porcelain → exactly
-                        /Users/Admin/throughline [main] and
-                        /Users/Admin/throughline-worktrees/0.0.56 [release/0.0.56], none
+                        /Users/Admin/throughline worktree list --porcelain → main and the
+                        installed-release worktree are present; every other worktree is bound by its
+                        mapping, disposition or addition-freeze and any reviewed rebase chain, none
                         prunable</code
                       >
                     </li>
@@ -2420,8 +2438,8 @@
                 <p>
                   <b>Done when</b>
                   <code class="cmd"
-                    >cd /Users/Admin/throughline/apps/server &amp;&amp; pnpm run test --
-                    src/vcs/GitVcsDriverCore.test.ts src/git/GitManager.test.ts &amp;&amp; node
+                    >(cd /Users/Admin/throughline/apps/server &amp;&amp; pnpm run test --
+                    src/vcs/GitVcsDriverCore.test.ts src/git/GitManager.test.ts) &amp;&amp; node
                     ./checks/slice-1-repository-move.mts --only S1-C11</code
                   >
                   <span class="expect"
@@ -3293,10 +3311,11 @@
                 <p>
                   <b>Done when</b>
                   <code class="cmd"
-                    >node ./checks/slice-2-seam.mts --repo /Users/Admin/throughline --only S2-C06
-                    S2-G01 &amp;&amp; pnpm -C /Users/Admin/core-root install --frozen-lockfile
-                    &gt;/dev/null &amp;&amp; pnpm -C
-                    /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run
+                    >cd /Users/Admin/core-root &amp;&amp; node
+                    /Users/Admin/throughline/docs/throughline/next-gen-spec/checks/slice-2-seam.mts
+                    --repo /Users/Admin/throughline --only S2-C06 S2-G01 &amp;&amp; pnpm -C
+                    /Users/Admin/core-root install --frozen-lockfile &gt;/dev/null &amp;&amp; pnpm
+                    -C /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run
                     test</code
                   >
                   <span class="expect"
@@ -10543,8 +10562,8 @@
           <tr id="S1-C03">
             <td><code>S1-C03</code></td>
             <td>
-              Every mapped worktree opens the same common repository and matches its bound branch
-              and head
+              Every worktree preserves its repository and branch; reviewed append-only rebase chains
+              bind the current head
             </td>
             <td><span class="chip">real-disk</span></td>
             <td><span class="chip fail">expected FAIL</span></td>
@@ -10573,9 +10592,9 @@
           <tr id="S1-C06">
             <td><code>S1-C06</code></td>
             <td>
-              Build outputs leave the vault: no build-named directory remains, every archived
-              container has a ledger row with its passing frozen fingerprint, and every retained
-              record in the manifest is at its new path with its SHA-256
+              Build outputs leave the vault: preserved trees follow bound move annotations, removed
+              staging links match passing archive fingerprints, and archived containers and retained
+              records keep their evidence
             </td>
             <td><span class="chip">real-disk</span></td>
             <td><span class="chip fail">expected FAIL</span></td>

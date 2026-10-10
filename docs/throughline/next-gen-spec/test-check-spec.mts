@@ -480,4 +480,11 @@ for (const c of cases) {
 console.log(
   `\n${cases.length - bad} of ${cases.length} fixtures behaved  (${new Date().toISOString()})`,
 );
+// These fixtures exercise the real repository-move CLI without touching operator state.
+const moveFixtures = spawnSync(process.execPath, [join(HERE, "checks/test-repository-move.mts")], {
+  encoding: "utf8",
+});
+process.stdout.write(moveFixtures.stdout ?? "");
+process.stderr.write(moveFixtures.stderr ?? "");
+if (moveFixtures.status !== 0) bad++;
 process.exit(bad ? 1 : 0);

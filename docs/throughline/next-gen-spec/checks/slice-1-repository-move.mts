@@ -3,7 +3,7 @@
 // move record or the live thing, fails closed when a command fails, and never accepts an empty listing as proof.
 // Run: node slice-1-repository-move.mts [--only S1-C01 S1-C03 …]      exit 1 on any FAIL
 import { existsSync, readFileSync, readdirSync, lstatSync, realpathSync } from "node:fs";
-import { dirname, join, resolve, basename, sep } from "node:path";
+import { dirname, join, resolve, relative, isAbsolute, basename, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -115,6 +115,110 @@ const moveRecord = () => {
 };
 const ledgerRows = (): any[] =>
   existsSync(ARCHIVE_LEDGER) ? archiveRows(readFileSync(ARCHIVE_LEDGER, "utf8")) : [];
+const WORKTREE_ANNOTATIONS = join(dirname(MOVE_RECORD), "Worktree-Move-Annotations.jsonl");
+const worktreeAnnotations = (): any[] =>
+  existsSync(WORKTREE_ANNOTATIONS)
+    ? readFileSync(WORKTREE_ANNOTATIONS, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+    : [];
+const FP_KEYS = ["sha256", "file_count", "symlink_count", "entry_count", "bytes"] as const;
+const present = (p: string) => {
+  try {
+    lstatSync(p);
+    return true;
+  } catch (e: any) {
+    if (e.code === "ENOENT") return false;
+    throw e;
+  }
+};
+const regularFile = (p: unknown): p is string =>
+  typeof p === "string" && isAbsolute(p) && existsSync(p) && lstatSync(p).isFile();
+const boundDisposition = (m: any, row: any) => {
+  const frozen = (m.worktrees ?? []).find((w: any) => w.path === row.before);
+  const fingerprint = (m.fingerprints ?? []).find((fp: any) => fp.path === row.before);
+  return (
+    frozen &&
+    frozen.head === row.frozen_head &&
+    (frozen.branch ?? null) === (row.branch ?? null) &&
+    (!fingerprint || FP_KEYS.every((k) => row.fingerprint?.[k] === fingerprint[k]))
+  );
+};
+const annotationFindings = (m: any, rows: any[]): Fail[] => {
+  const f: Fail[] = [],
+    bases = new Set<string>();
+  for (const row of rows) {
+    if (
+      row.schema !== "throughline.worktree-move-annotation.v1" ||
+      !Number.isFinite(Date.parse(row.observed_at))
+    ) {
+      f.push(`worktree annotation malformed: ${row.path ?? row.before}`);
+      continue;
+    }
+    if (row.kind === "rebased") {
+      if (
+        !isAbsolute(row.path ?? "") ||
+        !SHA40.test(row.previous_head) ||
+        !SHA40.test(row.new_head) ||
+        !regularFile(row.custody_evidence)
+      )
+        f.push(`rebase row incomplete: ${row.path}`);
+      try {
+        if (!regularFile(row.review)) throw Error("missing review file");
+        const review = readJson(row.review);
+        if (review.verdict !== "PASS" || review.head !== row.new_head)
+          throw Error("review must pass the exact new head");
+      } catch {
+        f.push(`rebase review missing, failing or for another head: ${row.path}`);
+      }
+    } else if (row.kind === "disposition" || row.kind === "addition-freeze") {
+      const path = row.kind === "disposition" ? row.before : row.path;
+      if (
+        typeof path !== "string" ||
+        !isAbsolute(path) ||
+        bases.has(path) ||
+        typeof row.evidence?.command !== "string"
+      )
+        f.push(`worktree annotation base missing or repeated: ${path}`);
+      bases.add(path);
+      if (
+        row.kind === "disposition" &&
+        (!boundDisposition(m, row) ||
+          !["moved", "kept", "retired-and-archived"].includes(row.disposition) ||
+          (row.disposition === "moved" &&
+            (typeof row.after !== "string" || !isAbsolute(row.after))) ||
+          (row.disposition === "retired-and-archived" && !row.archive && !row.retirement_receipt))
+      )
+        f.push(`worktree disposition is not bound to its frozen witness: ${path}`);
+      if (
+        row.kind === "addition-freeze" &&
+        (!SHA40.test(row.head) ||
+          !(row.branch === null || typeof row.branch === "string") ||
+          !under(path, WORKTREES) ||
+          (m.worktrees ?? []).some((w: any) => w.path === path))
+      )
+        f.push(`worktree addition-freeze malformed: ${path}`);
+    } else f.push(`unknown worktree annotation kind: ${row.kind}`);
+  }
+  return f;
+};
+const preservedTarget = (m: any, fp: any, rows: any[]): string | null => {
+  const path = fp.target ?? fp.path;
+  // Compare historical path strings, not realpaths: the old checkout can be a compatibility link.
+  const moved = rows
+    .filter(
+      (row) =>
+        row.kind === "disposition" &&
+        row.disposition === "moved" &&
+        boundDisposition(m, row) &&
+        typeof row.after === "string" &&
+        (resolve(path) === resolve(row.before) ||
+          resolve(path).startsWith(resolve(row.before) + sep)),
+    )
+    .sort((a, b) => b.before.length - a.before.length)[0];
+  return moved ? join(moved.after, relative(moved.before, path)) : (fp.target ?? null);
+};
 const installedVersion = () => {
   const r = spawnSync(
     "defaults",
@@ -333,32 +437,76 @@ export async function runSliceChecks() {
       )
     )
       f.push("installed-release worktree absent");
+    const annotations = worktreeAnnotations();
+    f.push(...annotationFindings(m, annotations));
+    for (const row of annotations.filter((row) => row.kind === "rebased"))
+      if (!list.some((w) => canonical(w.path) === canonical(row.path)))
+        f.push(`rebase row has no current worktree: ${row.path}`);
     for (const w of list) {
-      if (w.prunable || w.detached || !existsSync(w.path)) {
+      if (w.prunable || !existsSync(w.path)) {
         f.push(`invalid worktree: ${w.path}`);
         continue;
       }
       const mapping = (m.worktree_mapping ?? []).find(
         (x: any) => canonical(x.after) === canonical(w.path),
       );
-      if (!mapping) {
+      const disposition = annotations.find(
+        (row) =>
+          row.kind === "disposition" &&
+          boundDisposition(m, row) &&
+          ((row.disposition === "moved" && canonical(row.after) === canonical(w.path)) ||
+            (row.disposition === "kept" && canonical(row.before) === canonical(w.path))),
+      );
+      const addition = annotations.find(
+        (row) => row.kind === "addition-freeze" && canonical(row.path) === canonical(w.path),
+      );
+      if (disposition && addition) f.push(`multiple worktree annotation bases: ${w.path}`);
+      const binding = disposition
+        ? { branch: disposition.branch ?? null, head: disposition.frozen_head }
+        : mapping
+          ? { branch: mapping.branch ?? null, head: mapping.frozen_head }
+          : addition
+            ? { branch: addition.branch, head: addition.head }
+            : null;
+      if (!binding) {
         f.push(`unbound worktree mapping: ${w.path}`);
         continue;
       }
+      const chain = annotations.filter(
+        (row) => row.kind === "rebased" && canonical(row.path) === canonical(w.path),
+      );
+      let expectedHead = binding.head;
+      for (const row of chain) {
+        if (row.previous_head !== expectedHead)
+          f.push(`rebase chain does not join its previous head: ${w.path}`);
+        const base = disposition ?? addition;
+        if (base && annotations.indexOf(row) < annotations.indexOf(base))
+          f.push(`rebase precedes its freeze row: ${w.path}`);
+        expectedHead = row.new_head;
+      }
+      if (chain.length && expectedHead !== w.head)
+        f.push(`latest rebase head does not match current HEAD: ${w.path}`);
       try {
         const actualCommon = git(w.path, "rev-parse", "--git-common-dir");
         if (
           canonical(actualCommon.startsWith("/") ? actualCommon : join(w.path, actualCommon)) !==
             common ||
-          git(w.path, "branch", "--show-current") !== mapping.branch ||
-          !ancestor(w.path, mapping.frozen_head, "HEAD") ||
+          (binding.branch === null
+            ? !w.detached || w.head !== expectedHead
+            : w.detached ||
+              git(w.path, "branch", "--show-current") !== binding.branch ||
+              (chain.length ? w.head !== expectedHead : !ancestor(w.path, binding.head, "HEAD"))) ||
           git(w.path, "rev-parse", "HEAD") !== w.head
         )
           f.push(`worktree repository/branch/head mismatch: ${w.path}`);
       } catch {
         f.push(`broken worktree Git pointer: ${w.path}`);
       }
-      if (canonical(w.path) !== canonical(HOME) && !under(w.path, WORKTREES))
+      if (
+        canonical(w.path) !== canonical(HOME) &&
+        !under(w.path, WORKTREES) &&
+        disposition?.disposition !== "kept"
+      )
         f.push(`worktree outside collection: ${w.path}`);
     }
     return f;
@@ -492,15 +640,27 @@ export async function runSliceChecks() {
     const m = moveRecord(),
       rows = ledgerRows(),
       archived = new Set<string>();
+    const annotations = worktreeAnnotations();
     // T1.05 record_retention (spec 0.4.7): records of each archived container are retained at a local record address with a manifest
     const rr = (spec.tasks.find((t: any) => t.id === "T1.05") ?? {}).record_retention;
     if (!rr?.address || !rr?.manifest)
       f.push("T1.05 record_retention address or manifest undeclared");
-    for (const fp of m.fingerprints ?? [])
-      if (fp.disposition === "archived-and-removed") {
+    for (const fp of m.fingerprints ?? []) {
+      // A removed staging link is an archived link, never a preserved directory or a record container.
+      const linkArchive = rows.find(
+        (row) =>
+          row.source === fp.path &&
+          fp.file_count === 0 &&
+          fp.symlink_count === 1 &&
+          fp.entry_count === 1 &&
+          archiveMatches(row, { ...fp, archive: row.archive }),
+      );
+      if (linkArchive) {
+        if (present(fp.path)) f.push(`archived staging link still present: ${fp.path}`);
+      } else if (fp.disposition === "archived-and-removed") {
         archived.add(fp.path);
         if (
-          existsSync(fp.path) ||
+          present(fp.path) ||
           !archiveMatches(
             rows.find((r) => r.source === fp.path && r.archive === fp.archive),
             fp,
@@ -508,18 +668,20 @@ export async function runSliceChecks() {
         )
           f.push(`removed tree lacks exact verified archive identity: ${fp.path}`);
       } else if (fp.disposition === "moved-and-preserved") {
-        if (!fp.target || !existsSync(fp.target) || !under(fp.target, WORKTREES))
+        const target = preservedTarget(m, fp, annotations);
+        if (!target || !existsSync(target) || !under(target, WORKTREES))
           f.push(`preserved target missing: ${fp.path}`);
         else {
-          const got = manifestOf(fp.target);
+          const got = manifestOf(target);
           if (
             !["sha256", "file_count", "symlink_count", "entry_count", "bytes"].every(
               (k) => got[k as keyof typeof got] === fp[k],
             )
           )
-            f.push(`preserved tree fingerprint drift: ${fp.target}`);
+            f.push(`preserved tree fingerprint drift: ${target}`);
         }
       } else f.push(`fingerprint disposition missing: ${fp.path}`);
+    }
     if (rr?.address && rr?.manifest) {
       const lines: any[] | null = existsSync(rr.manifest)
         ? readFileSync(rr.manifest, "utf8")

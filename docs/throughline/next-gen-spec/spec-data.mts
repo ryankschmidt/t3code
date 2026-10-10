@@ -256,7 +256,7 @@ export const CHECKS: Check[] = [
     id: "S1-C03",
     slice: "slice-1",
     title:
-      "Every mapped worktree opens the same common repository and matches its bound branch and head",
+      "Every worktree preserves its repository and branch; reviewed append-only rebase chains bind the current head",
     kind: "real-disk",
     file: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/checks/slice-1-repository-move.mts",
     expected_today: "FAIL",
@@ -289,7 +289,7 @@ export const CHECKS: Check[] = [
     id: "S1-C06",
     slice: "slice-1",
     title:
-      "Build outputs leave the vault: no build-named directory remains, every archived container has a ledger row with its passing frozen fingerprint, and every retained record in the manifest is at its new path with its SHA-256",
+      "Build outputs leave the vault: preserved trees follow bound move annotations, removed staging links match passing archive fingerprints, and archived containers and retained records keep their evidence",
     kind: "real-disk",
     file: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/checks/slice-1-repository-move.mts",
     expected_today: "FAIL",
@@ -1045,7 +1045,7 @@ const T1: Task[] = [
     failing_checks: ["S1-C05"],
     done_when: {
       command:
-        "pnpm -C /Users/Admin/core-root install --frozen-lockfile >/dev/null && pnpm -C /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run test && node /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/checks/slice-1-repository-move.mts --stage frozen --only S1-C05",
+        "cd /Users/Admin/core-root && pnpm -C /Users/Admin/core-root install --frozen-lockfile >/dev/null && pnpm -C /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run test && node /Users/Admin/throughline/docs/throughline/next-gen-spec/checks/slice-1-repository-move.mts --stage frozen --only S1-C05",
       expect:
         "tests green and exit 0; the installed copy at /Users/Admin/core-root/src/tools/throughline-ship reads 0.4.1 or later after the Ship Warden ship",
     },
@@ -1074,8 +1074,69 @@ const T1: Task[] = [
       "Move the repository to /Users/Admin/throughline and the installed release's worktree into /Users/Admin/throughline-worktrees; retire the previous release's worktree without losing a byte",
     serves: ["NG-122"],
     detail_state: "detailed",
-    what: "Rename the main checkout out of the vault in one filesystem move on the same volume (node_modules travel with it), repair the worktree pointers, move the worktree of the installed release into the worktrees collection, and retire the worktree of the previous release only after its build outputs are archived to the Raspberry Pi archive drive by the ship tool's own archive function and the whole worktree is proven clean. Add the boundary sentence the folder grammar requires to the repository's README (a file the fork already edits, so the upstream-edit count does not rise). The release worktree folders are 12 GB each and about 293,000 files each; the main checkout is 17 GB and 317,471 files (measured Oct 7, 2026).",
+    what: "Rename the main checkout out of the vault in one filesystem move on the same volume (node_modules travel with it), repair the worktree pointers, move the worktree of the installed release into the worktrees collection, and retire the worktree of the previous release only after its build outputs are archived to the Raspberry Pi archive drive by the ship tool's own archive function and the whole worktree is proven clean. Add the boundary sentence the folder grammar requires to the repository's README (a file the fork already edits, so the upstream-edit count does not rise). The release worktree folders are 12 GB each and about 293,000 files each; the main checkout is 17 GB and 317,471 files (measured Oct 7, 2026). Worktree-Move-Annotations.jsonl preserves the frozen witness: dispositions bind moved, kept and retired worktrees, additions have their own freeze, and reviewed rebases append a chain from the frozen head to the current head. No old row is rewritten.",
+    worktree_move_annotations: {
+      path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Worktree-Move-Annotations.jsonl",
+      schema: "throughline.worktree-move-annotation.v1",
+      writer: "the move worker; append-only; Move-Record.json stays the immutable frozen witness",
+      exact_keys: {
+        disposition_row: {
+          schema: '"throughline.worktree-move-annotation.v1"',
+          kind: '"disposition"',
+          before: "the frozen worktree path, equal to a Move-Record.json worktrees[].path",
+          frozen_head: "the frozen head, equal to that entry's head (40 hex)",
+          branch:
+            "the frozen branch, equal to that entry's branch; null for a worktree frozen detached",
+          fingerprint:
+            "the Move-Record.json fingerprints[] entry for that path, copied exactly, when one exists; omitted otherwise",
+          disposition: '"moved" | "retired-and-archived" | "kept"',
+          after: "the worktree path now (required for moved)",
+          archive:
+            "the Archive-Annotations.jsonl container path (retired-and-archived: archive or retirement_receipt required)",
+          retirement_receipt: "absolute path of the retirement receipt (retired-and-archived)",
+          observed_at: "ISO time the row was written",
+          evidence:
+            "{command, output_path}: the command whose output shows the disposition, and where that output is saved",
+        },
+        addition_freeze_row: {
+          schema: '"throughline.worktree-move-annotation.v1"',
+          kind: '"addition-freeze"',
+          path: "the post-freeze worktree path, under the worktrees collection",
+          head: "its head at observed_at (40 hex)",
+          branch: "its branch at observed_at; null when detached",
+          observed_at: "ISO time of this freeze",
+          reason: "why the worktree was created",
+          evidence: "{command, output_path}",
+        },
+        rebased_row: {
+          schema: '"throughline.worktree-move-annotation.v1"',
+          kind: '"rebased"',
+          path: "absolute current worktree path",
+          previous_head: "40-hex head named by the preceding freeze/disposition or rebased row",
+          new_head: "40-hex head after the reviewed rebase",
+          review:
+            "absolute path of an existing JSON review: verdict PASS and head exactly new_head",
+          custody_evidence: "absolute path of an existing custody evidence file",
+          observed_at: "ISO time the row was appended",
+        },
+      },
+      coordination:
+        "keys adopted from the move worker's proposal (execution/phase-03/delivery-2026-10-09/Worktree-Annotation-Census.json), with the lead's three dispositions; \"removed-with-reason\" is not a disposition",
+      rules: [
+        "each frozen worktree entry (path plus fingerprint) maps through a frozen row to its new path or disposition; the checks match frozen entries through it",
+        "a worktree frozen as detached (branch null) is valid when it is still detached at the same head",
+        "integration worktrees created after the freeze are additions with their own freeze row, not failures",
+        "Rebase rows are appended in chain order; previous_head must equal the preceding bound head, each review must pass its exact new_head, and the newest rebase row must name the current HEAD. Never rewrite an old row or replace the freeze to hide a failed review.",
+        "Unrebased branch worktrees retain the frozen-head ancestry check. A frozen detached worktree must stay detached at its bound head; a reviewed rebase chain binds its new exact head without changing branch or common-repository identity.",
+      ],
+    },
     files: [
+      {
+        path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Worktree-Move-Annotations.jsonl",
+        side: "vault",
+        action: "add",
+        note: "append-only worktree dispositions, addition freezes and reviewed rebase chains; the move worker writes these rows",
+      },
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream",
         side: "host-filesystem",
@@ -1118,7 +1179,7 @@ const T1: Task[] = [
       "git -C /Users/Admin/throughline worktree repair /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51 /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.56",
       "mkdir -p /Users/Admin/throughline-worktrees && git -C /Users/Admin/throughline worktree move /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.56 /Users/Admin/throughline-worktrees/0.0.56",
       "retire 0.0.51, in this order, each step refused on failure: (1) git -C /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51 status --porcelain=v1 --untracked-files=all must be empty (RETIRE_DIRTY); (2) git status --porcelain --ignored is recorded into the move record's worktree entry as ignored_entries and must contain only node_modules/ and release/ (RETIRE_UNKNOWN_IGNORED); (3) const move = archiveTree('/Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51/release', '/mnt/storage/archives/throughline-builds/0.0.51/release', '/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Archive-Ledger.jsonl') must return status ARCHIVED_AND_REMOVED; ARCHIVED_NONSECRET_FILES_REMOVED_SECRET_PATHS_RETAINED refuses the retirement (RETIRE_RESIDUE) and the retained paths are listed in the step log; (4) rm -rf /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51/node_modules; (5) git -C /Users/Admin/throughline worktree remove /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51 without --force; a refusal from git is the terminal state, never overridden",
-      "git -C /Users/Admin/throughline worktree prune && git -C /Users/Admin/throughline worktree list --porcelain → exactly /Users/Admin/throughline [main] and /Users/Admin/throughline-worktrees/0.0.56 [release/0.0.56], none prunable",
+      "git -C /Users/Admin/throughline worktree prune && git -C /Users/Admin/throughline worktree list --porcelain → main and the installed-release worktree are present; every other worktree is bound by its mapping, disposition or addition-freeze and any reviewed rebase chain, none prunable",
       "README.md, first lines, a fork-owned block: \"<!-- throughline: fork-owned block --> **ThroughLine** holds Ryan's fork of T3 Code and everything built on it: the apps, the server, the fork-owned packages and the design documents under docs/throughline; it does not hold release builds (they live in the release worktrees' release/ folders), records of runs (they live in the vault component's _meta folder) or the vault. <!-- end fork-owned block -->\"",
       'the move record\'s fingerprints entry for /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51/release gains archive = "/mnt/storage/archives/throughline-builds/0.0.51/release"',
       "Consume archiveTree’s existing object-with-moves ledger. Match source, recorded archive address, verify_result=PASS, rsync_checksum_verified, exact tree digest/file/symlink/entry counts and bytes. Never replace its writer with a JSON-line writer. Record moved-and-preserved and archived-and-removed separately.",
@@ -1442,7 +1503,7 @@ const T1: Task[] = [
     failing_checks: ["S1-C11"],
     done_when: {
       command:
-        "cd /Users/Admin/throughline/apps/server && pnpm run test -- src/vcs/GitVcsDriverCore.test.ts src/git/GitManager.test.ts && node /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/checks/slice-1-repository-move.mts --only S1-C11",
+        "(cd /Users/Admin/throughline/apps/server && pnpm run test -- src/vcs/GitVcsDriverCore.test.ts src/git/GitManager.test.ts) && node /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/checks/slice-1-repository-move.mts --only S1-C11",
       expect: "tests green and exit 0; the installed proof is S1-C14 after T1.10",
     },
     depends_on: ["T1.03"],
@@ -1912,7 +1973,7 @@ const OUTLINE: Task[] = [
     failing_checks: ["S2-C06"],
     done_when: {
       command:
-        "node /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/checks/slice-2-seam.mts --repo /Users/Admin/throughline --only S2-C06 S2-G01 && pnpm -C /Users/Admin/core-root install --frozen-lockfile >/dev/null && pnpm -C /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run test",
+        "cd /Users/Admin/core-root && node /Users/Admin/throughline/docs/throughline/next-gen-spec/checks/slice-2-seam.mts --repo /Users/Admin/throughline --only S2-C06 S2-G01 && pnpm -C /Users/Admin/core-root install --frozen-lockfile >/dev/null && pnpm -C /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run test",
       expect: "exit 0; ship tool tests green including the renamed-case refusal test",
     },
     depends_on: ["T2.01"],
