@@ -5,7 +5,7 @@
     "sha": "9f48092ec95dd9eab78931601de95be0107a930c"
   },
   "fork": {
-    "sha": "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8"
+    "sha": "853fdc7a906cd9f60db41758e34a64a467c10331"
   },
   "merge_base": "d15210cd3da79f9a1a495a6309d912d76362a046",
   "counts": {
@@ -14299,7 +14299,7 @@
     {
       "path": "scripts/throughline/check-seam.ts",
       "class": "fork-added",
-      "reason": "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission\n32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate\n0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
+      "reason": "853fdc7a906cd9f60db41758e34a64a467c10331 test(throughline): measure exact mount fixture line counts\n1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission\n32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate\n0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -14309,6 +14309,7 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
+        "853fdc7a906cd9f60db41758e34a64a467c10331 test(throughline): measure exact mount fixture line counts",
         "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission",
         "32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate",
         "0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard"
@@ -14397,7 +14398,7 @@
     {
       "path": "throughline-seam.json",
       "class": "fork-added",
-      "reason": "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission\n7c4242a921f7c04a0517f9216a6670ebe332569e chore(throughline): refresh unadmitted seam facts\n32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate\n0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
+      "reason": "853fdc7a906cd9f60db41758e34a64a467c10331 test(throughline): measure exact mount fixture line counts\n1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission\n7c4242a921f7c04a0517f9216a6670ebe332569e chore(throughline): refresh unadmitted seam facts\n32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate\n0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -14407,6 +14408,7 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
+        "853fdc7a906cd9f60db41758e34a64a467c10331 test(throughline): measure exact mount fixture line counts",
         "1cd6ce61dd3b2b712c93c7abaea81a751d81dea8 feat(throughline): enforce namespace mounts and frozen seam admission",
         "7c4242a921f7c04a0517f9216a6670ebe332569e chore(throughline): refresh unadmitted seam facts",
         "32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate",
