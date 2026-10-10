@@ -98,6 +98,7 @@ const taskCard = (t: any) => {
       "target_tool_launch",
       "service_binding",
       "phase_scoped_acceptance",
+      "rehearsal_contract",
     ]
       .filter((k) => t[k])
       .map(

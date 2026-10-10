@@ -824,6 +824,56 @@ cases.push({
     s.tasks.find((t: any) => t.id === "T4.02").completion_condition = "sole-not-isolated";
   },
 });
+for (const [name, mutate] of [
+  [
+    "rehearsal grant cannot cover the live record",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T4.06").rehearsal_contract.grant.unit =
+        "throughline-record.service";
+    },
+  ],
+  [
+    "rehearsal grant cannot acquire restart",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T4.06").rehearsal_contract.grant.verbs.push("restart");
+    },
+  ],
+  [
+    "rehearsal unit cannot contain real data",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T4.06").rehearsal_contract.unit.real_data = true;
+    },
+  ],
+  [
+    "state-scoped probe cannot lose the post-account command",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T4.03").done_when.command = s.tasks
+        .find((t: any) => t.id === "T4.03")
+        .done_when.command.replace(
+          "systemctl kill -s SIGKILL throughline-record-rehearsal.service",
+          "missing command",
+        );
+    },
+  ],
+  [
+    "receipt cannot forget the state it proved",
+    (s: any) => {
+      delete s.tasks.find((t: any) => t.id === "T4.03").service_binding.probe_path_by_state
+        .receipt_rule;
+    },
+  ],
+  [
+    "rehearsal system unit cannot become an authoring surface",
+    (s: any) => {
+      s.tasks
+        .find((t: any) => t.id === "T4.06")
+        .files.find(
+          (f: any) => f.path === "/etc/systemd/system/throughline-record-rehearsal.service",
+        ).surface = "authoring";
+    },
+  ],
+] as Array<[string, (s: any) => void]>)
+  cases.push({ name, expect: "FAIL", checks: ["X21"], mutate });
 let bad = 0;
 for (const c of cases) {
   const dir = mkdtempSync(join(tmpdir(), "ngspec-check-"));

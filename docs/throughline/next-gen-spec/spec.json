@@ -1,6 +1,6 @@
 {
   "schema": "throughline.next-gen-spec.v1",
-  "version": "0.4.18",
+  "version": "0.4.19",
   "instruction_coverage": {
     "source": {
       "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Ryan-Instruction-Coverage.json",
@@ -228,7 +228,7 @@
       },
       {
         "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R2.json",
-        "sha256": "d81e7b0eb7a7412c12c6d25de8b3f1ce5c3bd16950dafc55c9651982144caa30"
+        "sha256": "23c76d6d4f207f2042d77d5912474d4d40cdd21f001bee5efc05cf25d24f0e03"
       }
     ],
     "source_precedence": "R2 overrides R1 only for its named corrections; R1 remaining decisions and evidence clauses stay bound.",
@@ -254,8 +254,8 @@
     ]
   },
   "revision": {
-    "from": "0.4.17",
-    "reason": "Current 0.4.18: apply Ryan instruction coverage IC-049/052/056/002/008: Phase 4 upstream reconciliation first, installed target-ID-only succession after provider adapters, one target API for Claude/Codex/Pi, command grammar and caller preservation, and Raspberry Pi pause with archive/watcher exceptions. Also incorporate R2 source follow-through. Prior unlanded 0.4.17: Apply corrected watcher/server/reboot design delta: locked server and record accounts, the Raspberry Pi responder recovery island and provider route, explicit tiered incidents, encrypted-disk reboot constraints and a non-install unlock proposal. Source decisions remain pinned; no runtime change is claimed. 0.4.16 was: Fixture path consolidation preserves every case inside the admitted slice-1 checker and removes the separate fixture paths without changing seam ceilings or the self-test. S1-C05 ports the approved deferred.rpi contract from frozen 0.4.12; S1-C13 follows the same explicit deferral instead of demanding a paused-device install receipt. T1.10 carries the original pause declaration; hardware and pipeline remain untouched. 0.4.15 was: Disposition proof correction for independent review F1 (Review-Spec-Archive-Readers-de292cef67.json): annotated and unannotated preserved entries share the same real-target existence, collection-containment and all-five-fingerprint proof. The failed head and its evidence remain preserved. 0.4.14 was: Reader-only repair: S1-C06 consumes archive annotations, pre-copy addenda and dropped third-party record rows; S1-C09 recognizes bound frozen-worktree dispositions and detached freezes and validates archive annotation shapes. Existing rebase custody and retained-link checks are unchanged; frozen witnesses stay read-only. 0.4.13 was: Three approved repository-spec changes, preserving the required old-home compatibility link while moved and its removal at closure: append-only reviewed rebase rows (including the prerequisite worktree annotation contract from the frozen 0.4.12 record); preserved release targets follow move annotations and archived staging links retain exact ledger proof; done_when commands preserve their intended folders. Repository baseline was 0.4.7; unrelated frozen-record amendments are not imported. 0.4.7 was: T1.05 record retention (execution/phase-03/delivery-2026-10-09/Move-Remainder-Receipt.json, question records-inside-build-output): each build container is archived whole with its frozen fingerprint; its records are first copied to retained-records under the evidence root with sanitized names and a manifest; S1-C06 checks no build-named directory, a passing ledger row per container, and every record at its new path with its SHA-256. 0.4.6 was: Rename on Ryan's direction: the vendored relay is @ryan/agent-mcp-relay at apps/server/vendor/agent-mcp-relay-0.3.0.tgz (was @ryan/coms-net at apps/server/vendor/ryan-coms-net-0.3.0-legacy-mcp-relay.tgz); T1.04 and T7.04, including the T7.04 gone-check, use the new names. 0.4.5 was: Release tool literal (execution/phase-03/Delivery-State.json): Ship Warden binds one payload per version, so T1.04 and S1-C05 accept throughline-ship 0.4.1 or later instead of 0.4.0. 0.4.4 was: Path correction (execution/phase-03/delivery-2026-10-09/Order-Coms-Net-Vendor.txt): the vendored relay tarball and its README live under apps/server/vendor/, where pnpm resolves file:vendor/...; every path in T1.04 and T7.04, including the T7.04 gone-check, now names apps/server/vendor/. 0.4.3 was: @ryan/coms-net (the legacy MCP relay, not ComsNet) is a frozen tarball in the repository, decision D3 (execution/phase-03/delivery-2026-10-09/D3-Coms-Net-Decision.json): T1.04 drops the rpi-coms-net.tar transfer and the tower coms-net presence check; T7.04 deletes the tarball, vendor/README.md and the dependency line and checks they are gone. 0.4.2 was: GitHub repository renamed ryankschmidt/t3code to ryankschmidt/throughline on Oct 9, 2026 under Ryan's order (execution/phase-03/repo-home-2026-10-09/Repo-Home-Receipt.json): origin and the publish-docs source_repository literal, R02 carried out, S1-C01 and S1-C09 accept the pre-rename frozen origin, S1-C04 and S1-C09 compare tags by target type, T1.04 records the Mac node 24.13.1 selection. 0.4.1 was: Exit-check corrections, Oct 9, 2026 (execution/phase-02/closeout-2026-10-09/P2-Exit-Check-0.4.0.json defects P2-01, P2-02, P2-03): T3.06 deferred outside the first-install graph on K03, the T10.04 edge removed and the first-install acceptance limited to live input unavailable on the Mac; T6.02 no longer waits on slice 13 and depends on T1.10, provider evidence stays with its owners; T3.01 refuses HTTP turn starts at the decorator through the unchanged http.ts with a behavioral test and checks non-increase against the real stock-file set. 0.4.0 was: Phase 2 close-out, Oct 9, 2026, single design writer (thread a96357c8): G2 five-target acceptance contract (T13.04, X20), G3 one Codex provider and no auto-compaction for Claude, Codex and Pi (T8.02, T10.10, T11.02), G4 map wording, G5 real starting state and release 0.0.60 (T1.01, T1.04, T1.10, fork_state), G6 provider enforcement folds, G1 second-look folds, and Fable-Delta-Enforcement.json and Fable-Delta-Hosts.json applied verbatim (new outline task T3.06); record in execution/phase-02/closeout-2026-10-09/Writer-Changes-0.4.0.json. 0.3.0 was: second pass, Oct 8, 2026: every item of the fidelity review (F01-F13), the architecture review (A01-A14), its addenda (A15-A18), the slice-1 judge round 2 and the overlapping shape-alignment items carries a disposition; seventeen cross-cutting contracts settle the consequential choices; every ledger item has a disposition; the five-device matrix, the decision source roles and the whole-design acceptance node are added; the checker gains closed enums and unique ids, the combined task-slice-precondition graph, a baseline non-increase and rendered-generation binding",
+    "from": "0.4.18",
+    "reason": "Current 0.4.19: apply the final R2 state-scoped rehearsal probe and rehearsal-only twr grant; preserve production-unit isolation, before/after receipts and every prior fixture. Prior unlanded 0.4.18: apply Ryan instruction coverage IC-049/052/056/002/008: Phase 4 upstream reconciliation first, installed target-ID-only succession after provider adapters, one target API for Claude/Codex/Pi, command grammar and caller preservation, and Raspberry Pi pause with archive/watcher exceptions. Also incorporate R2 source follow-through. Prior unlanded 0.4.17: Apply corrected watcher/server/reboot design delta: locked server and record accounts, the Raspberry Pi responder recovery island and provider route, explicit tiered incidents, encrypted-disk reboot constraints and a non-install unlock proposal. Source decisions remain pinned; no runtime change is claimed. 0.4.16 was: Fixture path consolidation preserves every case inside the admitted slice-1 checker and removes the separate fixture paths without changing seam ceilings or the self-test. S1-C05 ports the approved deferred.rpi contract from frozen 0.4.12; S1-C13 follows the same explicit deferral instead of demanding a paused-device install receipt. T1.10 carries the original pause declaration; hardware and pipeline remain untouched. 0.4.15 was: Disposition proof correction for independent review F1 (Review-Spec-Archive-Readers-de292cef67.json): annotated and unannotated preserved entries share the same real-target existence, collection-containment and all-five-fingerprint proof. The failed head and its evidence remain preserved. 0.4.14 was: Reader-only repair: S1-C06 consumes archive annotations, pre-copy addenda and dropped third-party record rows; S1-C09 recognizes bound frozen-worktree dispositions and detached freezes and validates archive annotation shapes. Existing rebase custody and retained-link checks are unchanged; frozen witnesses stay read-only. 0.4.13 was: Three approved repository-spec changes, preserving the required old-home compatibility link while moved and its removal at closure: append-only reviewed rebase rows (including the prerequisite worktree annotation contract from the frozen 0.4.12 record); preserved release targets follow move annotations and archived staging links retain exact ledger proof; done_when commands preserve their intended folders. Repository baseline was 0.4.7; unrelated frozen-record amendments are not imported. 0.4.7 was: T1.05 record retention (execution/phase-03/delivery-2026-10-09/Move-Remainder-Receipt.json, question records-inside-build-output): each build container is archived whole with its frozen fingerprint; its records are first copied to retained-records under the evidence root with sanitized names and a manifest; S1-C06 checks no build-named directory, a passing ledger row per container, and every record at its new path with its SHA-256. 0.4.6 was: Rename on Ryan's direction: the vendored relay is @ryan/agent-mcp-relay at apps/server/vendor/agent-mcp-relay-0.3.0.tgz (was @ryan/coms-net at apps/server/vendor/ryan-coms-net-0.3.0-legacy-mcp-relay.tgz); T1.04 and T7.04, including the T7.04 gone-check, use the new names. 0.4.5 was: Release tool literal (execution/phase-03/Delivery-State.json): Ship Warden binds one payload per version, so T1.04 and S1-C05 accept throughline-ship 0.4.1 or later instead of 0.4.0. 0.4.4 was: Path correction (execution/phase-03/delivery-2026-10-09/Order-Coms-Net-Vendor.txt): the vendored relay tarball and its README live under apps/server/vendor/, where pnpm resolves file:vendor/...; every path in T1.04 and T7.04, including the T7.04 gone-check, now names apps/server/vendor/. 0.4.3 was: @ryan/coms-net (the legacy MCP relay, not ComsNet) is a frozen tarball in the repository, decision D3 (execution/phase-03/delivery-2026-10-09/D3-Coms-Net-Decision.json): T1.04 drops the rpi-coms-net.tar transfer and the tower coms-net presence check; T7.04 deletes the tarball, vendor/README.md and the dependency line and checks they are gone. 0.4.2 was: GitHub repository renamed ryankschmidt/t3code to ryankschmidt/throughline on Oct 9, 2026 under Ryan's order (execution/phase-03/repo-home-2026-10-09/Repo-Home-Receipt.json): origin and the publish-docs source_repository literal, R02 carried out, S1-C01 and S1-C09 accept the pre-rename frozen origin, S1-C04 and S1-C09 compare tags by target type, T1.04 records the Mac node 24.13.1 selection. 0.4.1 was: Exit-check corrections, Oct 9, 2026 (execution/phase-02/closeout-2026-10-09/P2-Exit-Check-0.4.0.json defects P2-01, P2-02, P2-03): T3.06 deferred outside the first-install graph on K03, the T10.04 edge removed and the first-install acceptance limited to live input unavailable on the Mac; T6.02 no longer waits on slice 13 and depends on T1.10, provider evidence stays with its owners; T3.01 refuses HTTP turn starts at the decorator through the unchanged http.ts with a behavioral test and checks non-increase against the real stock-file set. 0.4.0 was: Phase 2 close-out, Oct 9, 2026, single design writer (thread a96357c8): G2 five-target acceptance contract (T13.04, X20), G3 one Codex provider and no auto-compaction for Claude, Codex and Pi (T8.02, T10.10, T11.02), G4 map wording, G5 real starting state and release 0.0.60 (T1.01, T1.04, T1.10, fork_state), G6 provider enforcement folds, G1 second-look folds, and Fable-Delta-Enforcement.json and Fable-Delta-Hosts.json applied verbatim (new outline task T3.06); record in execution/phase-02/closeout-2026-10-09/Writer-Changes-0.4.0.json. 0.3.0 was: second pass, Oct 8, 2026: every item of the fidelity review (F01-F13), the architecture review (A01-A14), its addenda (A15-A18), the slice-1 judge round 2 and the overlapping shape-alignment items carries a disposition; seventeen cross-cutting contracts settle the consequential choices; every ledger item has a disposition; the five-device matrix, the decision source roles and the whole-design acceptance node are added; the checker gains closed enums and unique ids, the combined task-slice-precondition graph, a baseline non-increase and rendered-generation binding",
     "audits": [
       "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/_meta/fidelity-review-01a11989/Initial-Findings.json",
       "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/_meta/architecture-review-01a1198a/Initial-Findings.json",
@@ -271,7 +271,7 @@
       "outcome": "round-2 verdict FAIL on 0.2.0; its findings are disposed as J2 in audit_dispositions"
     }
   },
-  "generated_at": "2026-10-10T13:12:28.182Z",
+  "generated_at": "2026-10-10T13:22:41.124Z",
   "generated_by": {
     "note": "the seat that ran the builder, read from its environment at build time; the design author is authored_by",
     "runtime": "codex",
@@ -280,7 +280,7 @@
     "source_files": [
       {
         "path": "./spec-data.mts",
-        "sha256": "62e0fd08226fe9cfc2807d29cae841bb2b3483f7df1b63a06a312ca0e92dba45"
+        "sha256": "f163a51885fcfc0e0f4ba055488d28a2a4225823603519cb70faeef13b9e49b2"
       },
       {
         "path": "./contracts-data.mts",
@@ -288,7 +288,7 @@
       },
       {
         "path": "./build-spec.mts",
-        "sha256": "7d1fc578e25e101c5e08407592ca0462210f0d5a7fd08b8d2e1abc39b565217f"
+        "sha256": "bddcadd0552e6212ef76b0a882a26fb34549c1986dd564b6c9dd3bdf51893fa2"
       }
     ]
   },
@@ -3636,11 +3636,22 @@
           "side": "host-filesystem",
           "action": "read",
           "surface": "verification",
-          "note": "actual twr-owned retained user unit; never a guessed system unit"
+          "note": "Policy read in shared-account before T4.06; kept disabled as rollback afterward, never probed."
+        },
+        {
+          "path": "/etc/systemd/system/throughline-record.service",
+          "side": "host-filesystem",
+          "action": "read",
+          "surface": "verification",
+          "host": "twr",
+          "owner": "root",
+          "owning_source": "packages/throughline-launcher/systemd/throughline-record.service",
+          "note": "Policy read only after T4.06; never a fault-probe target."
         }
       ],
       "signatures": [
-        "three receipts in execution/phase-04/ (keep-alive, lid-closed loss, intentional stop), each with the non-builder's session id and the raw command output; the lid-closed receipt states the notification cell as PASS or DEPENDENCY-OPEN"
+        "three receipts in execution/phase-04/ (keep-alive, lid-closed loss, intentional stop), each with the non-builder's session id and the raw command output; the lid-closed receipt states the notification cell as PASS or DEPENDENCY-OPEN",
+        "the T4.03 receipt names the state it was taken in and the unit it probed; a receipt taken before T4.06 is not re-taken after it unless the Restart policy read on throughline-record.service differs from the one proven on the rehearsal unit"
       ],
       "failing_checks": ["S4-C01"],
       "depends_on": ["T4.01", "T4.04", "T4.05"],
@@ -3695,7 +3706,20 @@
             "readback": "systemctl show throughline-record.service -p FragmentPath -p User -p Restart -p RestartUSec -p ActiveState"
           }
         ],
-        "proof_scope": "Read the T4.06/T6.02 receipts and current state-named unit; assert Restart=always. Never infer ownership from port output requiring privilege. Faults are confined to the owning batch rehearsal copy; no live record or server is stopped or killed."
+        "proof_scope": "Read the T4.06/T6.02 receipts and current state-named unit; assert Restart=always. Fault probes target only the state-named throwaway rehearsal unit; no live record or server is stopped or killed. After T4.06 the root-installed rehearsal system unit has the explicitly scoped twr kill/stop/start grant and no production unit grant.",
+        "probe_path_by_state": {
+          "before_T4.06_shared_account": "T4.03 tests the twr user unit: the rehearsal cluster absurd-pg-rehearsal.service (twr user unit, identical unit shape) takes the SIGKILL and intentional-stop probes as twr with no grant; the live absurd-pg.service user unit's policy is read with systemctl --user show and never probed",
+          "after_T4.06_record_isolated_seats_shared": "T4.03 tests the system unit: the Phase 4 sudo batch also installs throughline-record-rehearsal.service, a root-owned system unit with the identical shape (Restart=always, RestartSec=3) running a throwaway cluster under the throughline-record account on a non-5432 port with no real data, plus one polkit rule granting twr kill, stop and start on exactly that rehearsal unit and nothing else; the non-builder as twr runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and systemctl stop throughline-record-rehearsal.service for the two probes and reads the live throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit holding no record and does not weaken the three-state sentence",
+          "receipt_rule": "the T4.03 receipt names the state it was taken in and the unit it probed; a receipt taken before T4.06 is not re-taken after it unless the Restart policy read on throughline-record.service differs from the one proven on the rehearsal unit",
+          "X19": "pins no unit name; asserts that the unit owning port 5432 at check time is the state-named unit and that its Restart= is always"
+        },
+        "rehearsal_grant": {
+          "principal": "twr",
+          "unit": "throughline-record-rehearsal.service",
+          "verbs": ["kill", "stop", "start"],
+          "production_unit_grants": [],
+          "scope": "throwaway rehearsal unit only; no real data; no grant on throughline-record.service or throughline-server.service"
+        }
       },
       "observer": {
         "host": "rpi",
@@ -3728,8 +3752,8 @@
         }
       ],
       "done_when": {
-        "command": "Non-builder: select the current state-named unit from service_binding.state_bindings and read its effective Restart=always. Run the keep-alive, sustained-loss and maintenance proofs against the owning T4.06 batch rehearsal copy in that same state. In shared-account the historical user-unit rehearsal command below applies; after T4.06 use the owning batch rehearsal fault interface under its declared account, not twr systemctl kill/stop and never a live shared database. Historical shared-account command: Non-builder, disposable rehearsal only: (1) as twr record systemctl --user show absurd-pg-rehearsal.service -p ActiveState -p NRestarts -p Result and the effective Restart/RestartUSec; systemctl --user kill -s SIGKILL absurd-pg-rehearsal.service; wait/poll for the installed restart interval plus a declared margin, then read ActiveState/NRestarts and journalctl --user -u absurd-pg-rehearsal.service for the signal and restart. (2) Through the shipped observer’s real probe consumer, inject a controlled connection-refused/TLS-handshake failure against the disposable rehearsal endpoint for longer than two installed timer cycles, with laptop closed and tower server/record unavailable in a safe rehearsal window; read the Raspberry Pi status/log and local broker receipt, and witness the phone push. Clear the injected fault and witness reachable plus recovery push. (3) Through the owning shipped module’s maintenance interface record a window; as twr systemctl --user stop absurd-pg-rehearsal.service; wait an installed observer cycle, read the stopped-intentionally row/log and unit Result/NRestarts; explicitly start the rehearsal unit for cleanup. Live absurd-pg.service is never stopped, killed or modified by a fault probe.",
-        "expect": "Three non-builder receipts: injected crash returns automatically with NRestarts increased and signal/restart journal evidence; sustained controlled loss is durably visible off-host and actually delivered to the phone while Mac and tower are unavailable; maintenance stop stays down, is reported as intentional with Result=success/NRestarts unchanged, and is restored explicitly. A fast restart alone does not promise a sampled loss row. Any missing observer delivery/notify.push grant receipt leaves cutover unaccepted, never a conditional PASS. the loss in step (2) creates an incident file with responder=not-installed and sends exactly one informational line; no page is sent and nothing attempts a repair"
+        "command": "T4.03 tests the twr user unit: the rehearsal cluster absurd-pg-rehearsal.service (twr user unit, identical unit shape) takes the SIGKILL and intentional-stop probes as twr with no grant; the live absurd-pg.service user unit's policy is read with systemctl --user show and never probed T4.03 tests the system unit: the Phase 4 sudo batch also installs throughline-record-rehearsal.service, a root-owned system unit with the identical shape (Restart=always, RestartSec=3) running a throwaway cluster under the throughline-record account on a non-5432 port with no real data, plus one polkit rule granting twr kill, stop and start on exactly that rehearsal unit and nothing else; the non-builder as twr runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and systemctl stop throughline-record-rehearsal.service for the two probes and reads the live throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit holding no record and does not weaken the three-state sentence (2) Through the shipped observer’s real probe consumer, inject a controlled connection-refused/TLS-handshake failure against the disposable rehearsal endpoint for longer than two installed timer cycles, with laptop closed and tower server/record unavailable in a safe rehearsal window; read the Raspberry Pi status/log and local broker receipt, and witness the phone push. Clear the injected fault and witness reachable plus recovery push. For intentional maintenance, use the owning module maintenance window, stop only the selected rehearsal unit, read Result/NRestarts and the stopped-intentionally row, then explicitly start that same rehearsal unit for cleanup. the T4.03 receipt names the state it was taken in and the unit it probed; a receipt taken before T4.06 is not re-taken after it unless the Restart policy read on throughline-record.service differs from the one proven on the rehearsal unit",
+        "expect": "Three non-builder receipts: injected crash returns automatically with NRestarts increased and signal/restart journal evidence; sustained controlled loss is durably visible off-host and actually delivered to the phone while Mac and tower are unavailable; maintenance stop stays down, is reported as intentional with Result=success/NRestarts unchanged, and is restored explicitly. A fast restart alone does not promise a sampled loss row. Any missing observer delivery/notify.push grant receipt leaves cutover unaccepted, never a conditional PASS. the loss in step (2) creates an incident file with responder=not-installed and sends exactly one informational line; no page is sent and nothing attempts a repair the T4.03 receipt names the state it was taken in and the unit it probed; a receipt taken before T4.06 is not re-taken after it unless the Restart policy read on throughline-record.service differs from the one proven on the rehearsal unit"
       },
       "governing_shapes": [
         "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-31-ryan-tier-1-only-edit-surface-ship-to-all-runtimes.yaml",
@@ -9915,7 +9939,7 @@
       "title": "The server and the record move to their own locked service accounts in Phase 4's single sudo batch",
       "serves": ["NG-016", "NG-070", "NG-072"],
       "detail_state": "detailed",
-      "what": "as item 2 of the superseded file: two sysusers.d accounts (throughline-server, throughline-record), two system units, re-owned state and data in place, the record credential as a root-owned file loaded by systemd into the server unit's credentials directory beside a fixed-value canary credential, the supervisor control-socket allowlist updated to the server account, the twr user units disabled and kept on disk as rollback; one rehearsal on a copy; one Ryan sudo act shared with T6.01 (batched_with T6.01, a scheduling note, not an edge)",
+      "what": "as item 2 of the superseded file: two sysusers.d accounts (throughline-server, throughline-record), two system units, re-owned state and data in place, the record credential as a root-owned file loaded by systemd into the server unit's credentials directory beside a fixed-value canary credential, the supervisor control-socket allowlist updated to the server account, the twr user units disabled and kept on disk as rollback; one rehearsal on a copy; one Ryan sudo act shared with T6.01 (batched_with T6.01, a scheduling note, not an edge) T4.03 tests the system unit: the Phase 4 sudo batch also installs throughline-record-rehearsal.service, a root-owned system unit with the identical shape (Restart=always, RestartSec=3) running a throwaway cluster under the throughline-record account on a non-5432 port with no real data, plus one polkit rule granting twr kill, stop and start on exactly that rehearsal unit and nothing else; the non-builder as twr runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and systemctl stop throughline-record-rehearsal.service for the two probes and reads the live throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit holding no record and does not weaken the three-state sentence",
       "files": [
         {
           "path": "packages/throughline-launcher/systemd/throughline-server.service, throughline-record.service, throughline-server.conf and throughline-record.conf",
@@ -9995,6 +10019,44 @@
           "host": "twr",
           "owner": "twr",
           "owning_source": "exists_now true; disabled by twr before the batch; owning source none (legacy, kept as rollback)"
+        },
+        {
+          "path": "packages/throughline-launcher/systemd/throughline-record-rehearsal.service",
+          "side": "fork-namespace",
+          "action": "add",
+          "surface": "authoring",
+          "exists_now": false,
+          "note": "Latest R2 phase-scoped probe: identical Restart policy, throwaway cluster under throughline-record, non-5432 port, no real data."
+        },
+        {
+          "path": "packages/throughline-launcher/install/",
+          "side": "fork-namespace",
+          "action": "edit",
+          "surface": "authoring",
+          "note": "Owning Phase 4 batch installs the root-owned rehearsal system unit and exactly one rehearsal-only polkit rule; no production grant to twr."
+        },
+        {
+          "path": "/etc/systemd/system/throughline-record-rehearsal.service",
+          "side": "host-filesystem",
+          "action": "read",
+          "intended_install_action": "add",
+          "surface": "verification",
+          "host": "twr",
+          "owner": "root",
+          "exists_now": false,
+          "owning_source": "packages/throughline-launcher/systemd/throughline-record-rehearsal.service",
+          "note": "Non-builder verifies deployment from the owning Phase 4 batch; not an authoring surface."
+        },
+        {
+          "path": "/etc/polkit-1/rules.d/",
+          "side": "host-filesystem",
+          "action": "read",
+          "intended_install_action": "add",
+          "surface": "verification",
+          "host": "twr",
+          "owner": "root",
+          "owning_source": "packages/throughline-launcher/install/",
+          "note": "Verify only the owning batch rule: twr kill/stop/start on throughline-record-rehearsal.service and no production unit. Existing unrelated rules unchanged."
         }
       ],
       "depends_on": ["T4.01"],
@@ -10086,7 +10148,33 @@
         "rollback": "disable the three system units; mv the data directory back under /home/twr/absurd-pg/data and chown twr; chown the state tree back to twr; re-enable the two twr user units; the credential returns to the twr private file; all inside one rehearsed script carried with the batch; rehearsed first on the rehearsal cluster and a copy of the state tree",
         "counterexample_must_fail": "After the batch, a process running as twr stops the record unit, reads the record role credential, or reads the server's state.sqlite; or the server unit shows User=root or User=twr; or the credential appears in the unit's Environment= or in any file readable by the server account outside its credentials directory. Any of these means the design has failed."
       },
-      "command_grammar": "IC-002"
+      "command_grammar": "IC-002",
+      "rehearsal_contract": {
+        "owner": "T4.06",
+        "source_clause": "T4.03 tests the system unit: the Phase 4 sudo batch also installs throughline-record-rehearsal.service, a root-owned system unit with the identical shape (Restart=always, RestartSec=3) running a throwaway cluster under the throughline-record account on a non-5432 port with no real data, plus one polkit rule granting twr kill, stop and start on exactly that rehearsal unit and nothing else; the non-builder as twr runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and systemctl stop throughline-record-rehearsal.service for the two probes and reads the live throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit holding no record and does not weaken the three-state sentence",
+        "unit": {
+          "name": "throughline-record-rehearsal.service",
+          "owner": "root",
+          "runs_as": "throughline-record",
+          "restart": "always",
+          "restart_sec": 3,
+          "port": "not 5432",
+          "real_data": false
+        },
+        "grant": {
+          "principal": "twr",
+          "unit": "throughline-record-rehearsal.service",
+          "verbs": ["kill", "stop", "start"],
+          "production_unit_grants": [],
+          "scope": "throwaway rehearsal unit only; no real data; no grant on throughline-record.service or throughline-server.service"
+        },
+        "owning_sources": [
+          "packages/throughline-launcher/systemd/throughline-record-rehearsal.service",
+          "packages/throughline-launcher/install/"
+        ],
+        "delivery": "Phase 4 sudo batch, nonprivileged checks first; writer executes nothing",
+        "proof_limits": "The narrow grant exists only for the root-installed throwaway rehearsal unit. Earlier no-system-unit-grant prose applies to production; the latest source clause defines this one test-unit exception."
+      }
     },
     {
       "id": "T4.07",
@@ -10941,7 +11029,7 @@
       "config": 14,
       "outside-tool": 56,
       "upstream-edit": 26,
-      "fork-namespace": 111
+      "fork-namespace": 113
     },
     "upstream_edit_files_in_spec": [
       "README.md",

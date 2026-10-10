@@ -3121,11 +3121,22 @@ const OUTLINE: Task[] = [
         side: "host-filesystem",
         action: "read",
         surface: "verification",
-        note: "actual twr-owned retained user unit; never a guessed system unit",
+        note: "Policy read in shared-account before T4.06; kept disabled as rollback afterward, never probed.",
+      },
+      {
+        path: "/etc/systemd/system/throughline-record.service",
+        side: "host-filesystem",
+        action: "read",
+        surface: "verification",
+        host: "twr",
+        owner: "root",
+        owning_source: "packages/throughline-launcher/systemd/throughline-record.service",
+        note: "Policy read only after T4.06; never a fault-probe target.",
       },
     ],
     signatures: [
       "three receipts in execution/phase-04/ (keep-alive, lid-closed loss, intentional stop), each with the non-builder's session id and the raw command output; the lid-closed receipt states the notification cell as PASS or DEPENDENCY-OPEN",
+      "the T4.03 receipt names the state it was taken in and the unit it probed; a receipt taken before T4.06 is not re-taken after it unless the Restart policy read on throughline-record.service differs from the one proven on the rehearsal unit",
     ],
     failing_checks: ["S4-C01"],
     depends_on: ["T4.01", "T4.04", "T4.05"],
@@ -3190,7 +3201,24 @@ const OUTLINE: Task[] = [
         },
       ],
       proof_scope:
-        "Read the T4.06/T6.02 receipts and current state-named unit; assert Restart=always. Never infer ownership from port output requiring privilege. Faults are confined to the owning batch rehearsal copy; no live record or server is stopped or killed.",
+        "Read the T4.06/T6.02 receipts and current state-named unit; assert Restart=always. Fault probes target only the state-named throwaway rehearsal unit; no live record or server is stopped or killed. After T4.06 the root-installed rehearsal system unit has the explicitly scoped twr kill/stop/start grant and no production unit grant.",
+      probe_path_by_state: {
+        "before_T4.06_shared_account":
+          "T4.03 tests the twr user unit: the rehearsal cluster absurd-pg-rehearsal.service (twr user unit, identical unit shape) takes the SIGKILL and intentional-stop probes as twr with no grant; the live absurd-pg.service user unit's policy is read with systemctl --user show and never probed",
+        "after_T4.06_record_isolated_seats_shared":
+          "T4.03 tests the system unit: the Phase 4 sudo batch also installs throughline-record-rehearsal.service, a root-owned system unit with the identical shape (Restart=always, RestartSec=3) running a throwaway cluster under the throughline-record account on a non-5432 port with no real data, plus one polkit rule granting twr kill, stop and start on exactly that rehearsal unit and nothing else; the non-builder as twr runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and systemctl stop throughline-record-rehearsal.service for the two probes and reads the live throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit holding no record and does not weaken the three-state sentence",
+        receipt_rule:
+          "the T4.03 receipt names the state it was taken in and the unit it probed; a receipt taken before T4.06 is not re-taken after it unless the Restart policy read on throughline-record.service differs from the one proven on the rehearsal unit",
+        X19: "pins no unit name; asserts that the unit owning port 5432 at check time is the state-named unit and that its Restart= is always",
+      },
+      rehearsal_grant: {
+        principal: "twr",
+        unit: "throughline-record-rehearsal.service",
+        verbs: ["kill", "stop", "start"],
+        production_unit_grants: [],
+        scope:
+          "throwaway rehearsal unit only; no real data; no grant on throughline-record.service or throughline-server.service",
+      },
     },
     observer: {
       host: "rpi",
@@ -3230,9 +3258,9 @@ const OUTLINE: Task[] = [
     ],
     done_when: {
       command:
-        "Non-builder: select the current state-named unit from service_binding.state_bindings and read its effective Restart=always. Run the keep-alive, sustained-loss and maintenance proofs against the owning T4.06 batch rehearsal copy in that same state. In shared-account the historical user-unit rehearsal command below applies; after T4.06 use the owning batch rehearsal fault interface under its declared account, not twr systemctl kill/stop and never a live shared database. Historical shared-account command: Non-builder, disposable rehearsal only: (1) as twr record systemctl --user show absurd-pg-rehearsal.service -p ActiveState -p NRestarts -p Result and the effective Restart/RestartUSec; systemctl --user kill -s SIGKILL absurd-pg-rehearsal.service; wait/poll for the installed restart interval plus a declared margin, then read ActiveState/NRestarts and journalctl --user -u absurd-pg-rehearsal.service for the signal and restart. (2) Through the shipped observer’s real probe consumer, inject a controlled connection-refused/TLS-handshake failure against the disposable rehearsal endpoint for longer than two installed timer cycles, with laptop closed and tower server/record unavailable in a safe rehearsal window; read the Raspberry Pi status/log and local broker receipt, and witness the phone push. Clear the injected fault and witness reachable plus recovery push. (3) Through the owning shipped module’s maintenance interface record a window; as twr systemctl --user stop absurd-pg-rehearsal.service; wait an installed observer cycle, read the stopped-intentionally row/log and unit Result/NRestarts; explicitly start the rehearsal unit for cleanup. Live absurd-pg.service is never stopped, killed or modified by a fault probe.",
+        "T4.03 tests the twr user unit: the rehearsal cluster absurd-pg-rehearsal.service (twr user unit, identical unit shape) takes the SIGKILL and intentional-stop probes as twr with no grant; the live absurd-pg.service user unit's policy is read with systemctl --user show and never probed T4.03 tests the system unit: the Phase 4 sudo batch also installs throughline-record-rehearsal.service, a root-owned system unit with the identical shape (Restart=always, RestartSec=3) running a throwaway cluster under the throughline-record account on a non-5432 port with no real data, plus one polkit rule granting twr kill, stop and start on exactly that rehearsal unit and nothing else; the non-builder as twr runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and systemctl stop throughline-record-rehearsal.service for the two probes and reads the live throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit holding no record and does not weaken the three-state sentence (2) Through the shipped observer’s real probe consumer, inject a controlled connection-refused/TLS-handshake failure against the disposable rehearsal endpoint for longer than two installed timer cycles, with laptop closed and tower server/record unavailable in a safe rehearsal window; read the Raspberry Pi status/log and local broker receipt, and witness the phone push. Clear the injected fault and witness reachable plus recovery push. For intentional maintenance, use the owning module maintenance window, stop only the selected rehearsal unit, read Result/NRestarts and the stopped-intentionally row, then explicitly start that same rehearsal unit for cleanup. the T4.03 receipt names the state it was taken in and the unit it probed; a receipt taken before T4.06 is not re-taken after it unless the Restart policy read on throughline-record.service differs from the one proven on the rehearsal unit",
       expect:
-        "Three non-builder receipts: injected crash returns automatically with NRestarts increased and signal/restart journal evidence; sustained controlled loss is durably visible off-host and actually delivered to the phone while Mac and tower are unavailable; maintenance stop stays down, is reported as intentional with Result=success/NRestarts unchanged, and is restored explicitly. A fast restart alone does not promise a sampled loss row. Any missing observer delivery/notify.push grant receipt leaves cutover unaccepted, never a conditional PASS. the loss in step (2) creates an incident file with responder=not-installed and sends exactly one informational line; no page is sent and nothing attempts a repair",
+        "Three non-builder receipts: injected crash returns automatically with NRestarts increased and signal/restart journal evidence; sustained controlled loss is durably visible off-host and actually delivered to the phone while Mac and tower are unavailable; maintenance stop stays down, is reported as intentional with Result=success/NRestarts unchanged, and is restored explicitly. A fast restart alone does not promise a sampled loss row. Any missing observer delivery/notify.push grant receipt leaves cutover unaccepted, never a conditional PASS. the loss in step (2) creates an incident file with responder=not-installed and sends exactly one informational line; no page is sent and nothing attempts a repair the T4.03 receipt names the state it was taken in and the unit it probed; a receipt taken before T4.06 is not re-taken after it unless the Restart policy read on throughline-record.service differs from the one proven on the rehearsal unit",
     },
     governing_shapes: [
       "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-31-ryan-tier-1-only-edit-surface-ship-to-all-runtimes.yaml",
@@ -10341,7 +10369,7 @@ export const WATCHER_SERVER_REBOOT_DELTA = {
     },
     {
       path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R2.json",
-      sha256: "d81e7b0eb7a7412c12c6d25de8b3f1ce5c3bd16950dafc55c9651982144caa30",
+      sha256: "23c76d6d4f207f2042d77d5912474d4d40cdd21f001bee5efc05cf25d24f0e03",
     },
   ],
   source_precedence:
@@ -10380,7 +10408,7 @@ TASKS.push(
         "The server and the record move to their own locked service accounts in Phase 4's single sudo batch",
       serves: ["NG-016", "NG-070", "NG-072"],
       detail_state: "detailed",
-      what: "as item 2 of the superseded file: two sysusers.d accounts (throughline-server, throughline-record), two system units, re-owned state and data in place, the record credential as a root-owned file loaded by systemd into the server unit's credentials directory beside a fixed-value canary credential, the supervisor control-socket allowlist updated to the server account, the twr user units disabled and kept on disk as rollback; one rehearsal on a copy; one Ryan sudo act shared with T6.01 (batched_with T6.01, a scheduling note, not an edge)",
+      what: "as item 2 of the superseded file: two sysusers.d accounts (throughline-server, throughline-record), two system units, re-owned state and data in place, the record credential as a root-owned file loaded by systemd into the server unit's credentials directory beside a fixed-value canary credential, the supervisor control-socket allowlist updated to the server account, the twr user units disabled and kept on disk as rollback; one rehearsal on a copy; one Ryan sudo act shared with T6.01 (batched_with T6.01, a scheduling note, not an edge) T4.03 tests the system unit: the Phase 4 sudo batch also installs throughline-record-rehearsal.service, a root-owned system unit with the identical shape (Restart=always, RestartSec=3) running a throwaway cluster under the throughline-record account on a non-5432 port with no real data, plus one polkit rule granting twr kill, stop and start on exactly that rehearsal unit and nothing else; the non-builder as twr runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and systemctl stop throughline-record-rehearsal.service for the two probes and reads the live throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit holding no record and does not weaken the three-state sentence",
       files: [
         {
           path: "packages/throughline-launcher/systemd/throughline-server.service, throughline-record.service, throughline-server.conf and throughline-record.conf",
@@ -10466,6 +10494,45 @@ TASKS.push(
           owner: "twr",
           owning_source:
             "exists_now true; disabled by twr before the batch; owning source none (legacy, kept as rollback)",
+        },
+        {
+          path: "packages/throughline-launcher/systemd/throughline-record-rehearsal.service",
+          side: "fork-namespace",
+          action: "add",
+          surface: "authoring",
+          exists_now: false,
+          note: "Latest R2 phase-scoped probe: identical Restart policy, throwaway cluster under throughline-record, non-5432 port, no real data.",
+        },
+        {
+          path: "packages/throughline-launcher/install/",
+          side: "fork-namespace",
+          action: "edit",
+          surface: "authoring",
+          note: "Owning Phase 4 batch installs the root-owned rehearsal system unit and exactly one rehearsal-only polkit rule; no production grant to twr.",
+        },
+        {
+          path: "/etc/systemd/system/throughline-record-rehearsal.service",
+          side: "host-filesystem",
+          action: "read",
+          intended_install_action: "add",
+          surface: "verification",
+          host: "twr",
+          owner: "root",
+          exists_now: false,
+          owning_source:
+            "packages/throughline-launcher/systemd/throughline-record-rehearsal.service",
+          note: "Non-builder verifies deployment from the owning Phase 4 batch; not an authoring surface.",
+        },
+        {
+          path: "/etc/polkit-1/rules.d/",
+          side: "host-filesystem",
+          action: "read",
+          intended_install_action: "add",
+          surface: "verification",
+          host: "twr",
+          owner: "root",
+          owning_source: "packages/throughline-launcher/install/",
+          note: "Verify only the owning batch rule: twr kill/stop/start on throughline-record-rehearsal.service and no production unit. Existing unrelated rules unchanged.",
         },
       ],
       depends_on: ["T4.01"],
@@ -10572,6 +10639,36 @@ TASKS.push(
       },
 
       command_grammar: "IC-002",
+
+      rehearsal_contract: {
+        owner: "T4.06",
+        source_clause:
+          "T4.03 tests the system unit: the Phase 4 sudo batch also installs throughline-record-rehearsal.service, a root-owned system unit with the identical shape (Restart=always, RestartSec=3) running a throwaway cluster under the throughline-record account on a non-5432 port with no real data, plus one polkit rule granting twr kill, stop and start on exactly that rehearsal unit and nothing else; the non-builder as twr runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and systemctl stop throughline-record-rehearsal.service for the two probes and reads the live throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit holding no record and does not weaken the three-state sentence",
+        unit: {
+          name: "throughline-record-rehearsal.service",
+          owner: "root",
+          runs_as: "throughline-record",
+          restart: "always",
+          restart_sec: 3,
+          port: "not 5432",
+          real_data: false,
+        },
+        grant: {
+          principal: "twr",
+          unit: "throughline-record-rehearsal.service",
+          verbs: ["kill", "stop", "start"],
+          production_unit_grants: [],
+          scope:
+            "throwaway rehearsal unit only; no real data; no grant on throughline-record.service or throughline-server.service",
+        },
+        owning_sources: [
+          "packages/throughline-launcher/systemd/throughline-record-rehearsal.service",
+          "packages/throughline-launcher/install/",
+        ],
+        delivery: "Phase 4 sudo batch, nonprivileged checks first; writer executes nothing",
+        proof_limits:
+          "The narrow grant exists only for the root-installed throwaway rehearsal unit. Earlier no-system-unit-grant prose applies to production; the latest source clause defines this one test-unit exception.",
+      },
     },
     {
       id: "T4.07",

@@ -1039,7 +1039,8 @@ check(
         !same(t.governing_shapes, common[`governing_shapes_${row.id}`])
       )
         f.push(`${row.id}: authorized inherited fields changed`);
-      if (t.files?.length !== row.files.length) f.push(`${row.id}: source file row count changed`);
+      if (t.files?.length !== row.files.length + (row.id === "T4.06" ? 4 : 0))
+        f.push(`${row.id}: source file row count changed`);
       for (const sourceFile of row.files) {
         const file = t.files?.find((x: any) => x.path === sourceFile.path);
         if (!file || file.side !== sourceFile.side) {
@@ -1098,6 +1099,77 @@ check(
       f.push("phase-scoped notification and responder acceptance missing");
     const phase =
       r2.r2_amendment_2026_10_10_phase_scoped_bindings.record_ownership_phase_scoped_replacements;
+    const probe = phase["T4.03_probe_path_by_state"];
+    const watch = task("T4.03"),
+      rehearsal = task("T4.06")?.rehearsal_contract;
+    const expectedGrant = {
+      principal: "twr",
+      unit: "throughline-record-rehearsal.service",
+      verbs: ["kill", "stop", "start"],
+      production_unit_grants: [],
+      scope:
+        "throwaway rehearsal unit only; no real data; no grant on throughline-record.service or throughline-server.service",
+    };
+    if (!probe || !same(watch?.service_binding?.probe_path_by_state, probe))
+      f.push("state-scoped rehearsal probes or receipt rule differ from the source");
+    for (const key of [
+      "before_T4.06_shared_account",
+      "after_T4.06_record_isolated_seats_shared",
+      "receipt_rule",
+    ])
+      if (typeof probe?.[key] !== "string" || !watch?.done_when.command.includes(probe[key]))
+        f.push(`state-scoped probe command missing: ${key}`);
+    if (
+      !same(watch?.service_binding?.rehearsal_grant, expectedGrant) ||
+      !same(rehearsal?.grant, expectedGrant)
+    )
+      f.push("rehearsal-only twr grant is missing or widened");
+    if (
+      !rehearsal ||
+      rehearsal.owner !== "T4.06" ||
+      rehearsal.source_clause !== probe?.["after_T4.06_record_isolated_seats_shared"] ||
+      !same(rehearsal.unit, {
+        name: "throughline-record-rehearsal.service",
+        owner: "root",
+        runs_as: "throughline-record",
+        restart: "always",
+        restart_sec: 3,
+        port: "not 5432",
+        real_data: false,
+      })
+    )
+      f.push("rehearsal unit ownership, policy or disposable data boundary changed");
+    const extraFiles = [
+      [
+        "packages/throughline-launcher/systemd/throughline-record-rehearsal.service",
+        "fork-namespace",
+        "add",
+        "authoring",
+      ],
+      ["packages/throughline-launcher/install/", "fork-namespace", "edit", "authoring"],
+      [
+        "/etc/systemd/system/throughline-record-rehearsal.service",
+        "host-filesystem",
+        "read",
+        "verification",
+      ],
+      ["/etc/polkit-1/rules.d/", "host-filesystem", "read", "verification"],
+    ];
+    for (const [path, side, action, surface] of extraFiles) {
+      const row = task("T4.06")?.files.find((x: any) => x.path === path);
+      if (
+        !row ||
+        row.side !== side ||
+        row.action !== action ||
+        row.surface !== surface ||
+        (side === "host-filesystem" &&
+          (row.host !== "twr" ||
+            row.owner !== "root" ||
+            row.intended_install_action !== "add" ||
+            !row.owning_source))
+      )
+        f.push(`rehearsal deployment/source boundary missing: ${path}`);
+    }
     for (const [id, key] of [
       ["T4.01", "T4.01_what_replace"],
       ["T6.01", "T6.01_what_replace"],

@@ -5,9 +5,9 @@
     <title>ThroughLine next-generation implementation spec — map</title>
     <meta
       name="spec-sha256"
-      content="1297ecdfc65378f996037748fc04fae5707712129c9f4145359cdbff73f656c8"
+      content="720c7d39b129dad9c8a6457b055795b73d70120f636579fbace3ffe3281893a0"
     />
-    <meta name="spec-version" content="0.4.18" />
+    <meta name="spec-version" content="0.4.19" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
@@ -483,9 +483,9 @@
         installed in 24 hours.”
       </p>
       <p class="sub">
-        Machine-readable task graph <code>spec.json</code> version 0.4.18. Original design
+        Machine-readable task graph <code>spec.json</code> version 0.4.19. Original design
         authorship: fable-throughline-design (ThroughLine thread
-        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 6:12 AM PDT by
+        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 6:22 AM PDT by
         codex session 01a124c9-641b-79f2-9460-63aa9ccfa238. Bound to ledger sha256 0b260e00b391 (199
         items). Every task names the ledger ids it serves. The technical execution lead,
         lead-execlead-1ad87c0b, works from the JSON; this page is rendered from it.
@@ -6362,10 +6362,85 @@
                     <dd>
                       <p>
                         Read the T4.06/T6.02 receipts and current state-named unit; assert
-                        Restart=always. Never infer ownership from port output requiring privilege.
-                        Faults are confined to the owning batch rehearsal copy; no live record or
-                        server is stopped or killed.
+                        Restart=always. Fault probes target only the state-named throwaway rehearsal
+                        unit; no live record or server is stopped or killed. After T4.06 the
+                        root-installed rehearsal system unit has the explicitly scoped twr
+                        kill/stop/start grant and no production unit grant.
                       </p>
+                    </dd>
+                    <dt><b>probe path by state</b></dt>
+                    <dd>
+                      <dl>
+                        <dt><b>before T4.06 shared account</b></dt>
+                        <dd>
+                          <p>
+                            T4.03 tests the twr user unit: the rehearsal cluster
+                            absurd-pg-rehearsal.service (twr user unit, identical unit shape) takes
+                            the SIGKILL and intentional-stop probes as twr with no grant; the live
+                            absurd-pg.service user unit's policy is read with systemctl --user show
+                            and never probed
+                          </p>
+                        </dd>
+                        <dt><b>after T4.06 record isolated seats shared</b></dt>
+                        <dd>
+                          <p>
+                            T4.03 tests the system unit: the Phase 4 sudo batch also installs
+                            throughline-record-rehearsal.service, a root-owned system unit with the
+                            identical shape (Restart=always, RestartSec=3) running a throwaway
+                            cluster under the throughline-record account on a non-5432 port with no
+                            real data, plus one polkit rule granting twr kill, stop and start on
+                            exactly that rehearsal unit and nothing else; the non-builder as twr
+                            runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and
+                            systemctl stop throughline-record-rehearsal.service for the two probes
+                            and reads the live throughline-record.service policy with systemctl show
+                            -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal
+                            grant is on a unit holding no record and does not weaken the three-state
+                            sentence
+                          </p>
+                        </dd>
+                        <dt><b>receipt rule</b></dt>
+                        <dd>
+                          <p>
+                            the T4.03 receipt names the state it was taken in and the unit it
+                            probed; a receipt taken before T4.06 is not re-taken after it unless the
+                            Restart policy read on throughline-record.service differs from the one
+                            proven on the rehearsal unit
+                          </p>
+                        </dd>
+                        <dt><b>X19</b></dt>
+                        <dd>
+                          <p>
+                            pins no unit name; asserts that the unit owning port 5432 at check time
+                            is the state-named unit and that its Restart= is always
+                          </p>
+                        </dd>
+                      </dl>
+                    </dd>
+                    <dt><b>rehearsal grant</b></dt>
+                    <dd>
+                      <dl>
+                        <dt><b>principal</b></dt>
+                        <dd><p>twr</p></dd>
+                        <dt><b>unit</b></dt>
+                        <dd><p>throughline-record-rehearsal.service</p></dd>
+                        <dt><b>verbs</b></dt>
+                        <dd>
+                          <ul>
+                            <li><p>kill</p></li>
+                            <li><p>stop</p></li>
+                            <li><p>start</p></li>
+                          </ul>
+                        </dd>
+                        <dt><b>production unit grants</b></dt>
+                        <dd><ul></ul></dd>
+                        <dt><b>scope</b></dt>
+                        <dd>
+                          <p>
+                            throwaway rehearsal unit only; no real data; no grant on
+                            throughline-record.service or throughline-server.service
+                          </p>
+                        </dd>
+                      </dl>
                     </dd>
                   </dl>
                 </details>
@@ -6505,7 +6580,16 @@
                       <td><code>/home/twr/.config/systemd/user/absurd-pg.service</code></td>
                       <td><span class="chip host">host-filesystem</span></td>
                       <td>read</td>
-                      <td>actual twr-owned retained user unit; never a guessed system unit</td>
+                      <td>
+                        Policy read in shared-account before T4.06; kept disabled as rollback
+                        afterward, never probed.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td><code>/etc/systemd/system/throughline-record.service</code></td>
+                      <td><span class="chip host">host-filesystem</span></td>
+                      <td>read</td>
+                      <td>Policy read only after T4.06; never a fault-probe target.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -6520,36 +6604,48 @@
                         or DEPENDENCY-OPEN</code
                       >
                     </li>
+                    <li>
+                      <code
+                        >the T4.03 receipt names the state it was taken in and the unit it probed; a
+                        receipt taken before T4.06 is not re-taken after it unless the Restart
+                        policy read on throughline-record.service differs from the one proven on the
+                        rehearsal unit</code
+                      >
+                    </li>
                   </ul>
                 </div>
                 <p><b>Failing check first</b> <a href="#S4-C01" class="chip fail">S4-C01 —</a></p>
                 <p>
                   <b>Done when</b>
                   <code class="cmd"
-                    >Non-builder: select the current state-named unit from
-                    service_binding.state_bindings and read its effective Restart=always. Run the
-                    keep-alive, sustained-loss and maintenance proofs against the owning T4.06 batch
-                    rehearsal copy in that same state. In shared-account the historical user-unit
-                    rehearsal command below applies; after T4.06 use the owning batch rehearsal
-                    fault interface under its declared account, not twr systemctl kill/stop and
-                    never a live shared database. Historical shared-account command: Non-builder,
-                    disposable rehearsal only: (1) as twr record systemctl --user show
-                    absurd-pg-rehearsal.service -p ActiveState -p NRestarts -p Result and the
-                    effective Restart/RestartUSec; systemctl --user kill -s SIGKILL
-                    absurd-pg-rehearsal.service; wait/poll for the installed restart interval plus a
-                    declared margin, then read ActiveState/NRestarts and journalctl --user -u
-                    absurd-pg-rehearsal.service for the signal and restart. (2) Through the shipped
+                    >T4.03 tests the twr user unit: the rehearsal cluster
+                    absurd-pg-rehearsal.service (twr user unit, identical unit shape) takes the
+                    SIGKILL and intentional-stop probes as twr with no grant; the live
+                    absurd-pg.service user unit's policy is read with systemctl --user show and
+                    never probed T4.03 tests the system unit: the Phase 4 sudo batch also installs
+                    throughline-record-rehearsal.service, a root-owned system unit with the
+                    identical shape (Restart=always, RestartSec=3) running a throwaway cluster under
+                    the throughline-record account on a non-5432 port with no real data, plus one
+                    polkit rule granting twr kill, stop and start on exactly that rehearsal unit and
+                    nothing else; the non-builder as twr runs systemctl kill -s SIGKILL
+                    throughline-record-rehearsal.service and systemctl stop
+                    throughline-record-rehearsal.service for the two probes and reads the live
+                    throughline-record.service policy with systemctl show -p Restart -p RestartUSec
+                    -p NRestarts, never probing it; the rehearsal grant is on a unit holding no
+                    record and does not weaken the three-state sentence (2) Through the shipped
                     observer’s real probe consumer, inject a controlled
                     connection-refused/TLS-handshake failure against the disposable rehearsal
                     endpoint for longer than two installed timer cycles, with laptop closed and
                     tower server/record unavailable in a safe rehearsal window; read the Raspberry
                     Pi status/log and local broker receipt, and witness the phone push. Clear the
-                    injected fault and witness reachable plus recovery push. (3) Through the owning
-                    shipped module’s maintenance interface record a window; as twr systemctl --user
-                    stop absurd-pg-rehearsal.service; wait an installed observer cycle, read the
-                    stopped-intentionally row/log and unit Result/NRestarts; explicitly start the
-                    rehearsal unit for cleanup. Live absurd-pg.service is never stopped, killed or
-                    modified by a fault probe.</code
+                    injected fault and witness reachable plus recovery push. For intentional
+                    maintenance, use the owning module maintenance window, stop only the selected
+                    rehearsal unit, read Result/NRestarts and the stopped-intentionally row, then
+                    explicitly start that same rehearsal unit for cleanup. the T4.03 receipt names
+                    the state it was taken in and the unit it probed; a receipt taken before T4.06
+                    is not re-taken after it unless the Restart policy read on
+                    throughline-record.service differs from the one proven on the rehearsal
+                    unit</code
                   >
                   <span class="expect"
                     >→ Three non-builder receipts: injected crash returns automatically with
@@ -6561,7 +6657,10 @@
                     delivery/notify.push grant receipt leaves cutover unaccepted, never a
                     conditional PASS. the loss in step (2) creates an incident file with
                     responder=not-installed and sends exactly one informational line; no page is
-                    sent and nothing attempts a repair</span
+                    sent and nothing attempts a repair the T4.03 receipt names the state it was
+                    taken in and the unit it probed; a receipt taken before T4.06 is not re-taken
+                    after it unless the Restart policy read on throughline-record.service differs
+                    from the one proven on the rehearsal unit</span
                   >
                 </p>
                 <p class="risk">
@@ -6831,7 +6930,18 @@
                   credentials directory beside a fixed-value canary credential, the supervisor
                   control-socket allowlist updated to the server account, the twr user units
                   disabled and kept on disk as rollback; one rehearsal on a copy; one Ryan sudo act
-                  shared with T6.01 (batched_with T6.01, a scheduling note, not an edge)
+                  shared with T6.01 (batched_with T6.01, a scheduling note, not an edge) T4.03 tests
+                  the system unit: the Phase 4 sudo batch also installs
+                  throughline-record-rehearsal.service, a root-owned system unit with the identical
+                  shape (Restart=always, RestartSec=3) running a throwaway cluster under the
+                  throughline-record account on a non-5432 port with no real data, plus one polkit
+                  rule granting twr kill, stop and start on exactly that rehearsal unit and nothing
+                  else; the non-builder as twr runs systemctl kill -s SIGKILL
+                  throughline-record-rehearsal.service and systemctl stop
+                  throughline-record-rehearsal.service for the two probes and reads the live
+                  throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p
+                  NRestarts, never probing it; the rehearsal grant is on a unit holding no record
+                  and does not weaken the three-state sentence
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -6840,6 +6950,97 @@
                     change.</a
                   >
                 </p>
+                <details>
+                  <summary>rehearsal contract</summary>
+                  <dl>
+                    <dt><b>owner</b></dt>
+                    <dd><p>T4.06</p></dd>
+                    <dt><b>source clause</b></dt>
+                    <dd>
+                      <p>
+                        T4.03 tests the system unit: the Phase 4 sudo batch also installs
+                        throughline-record-rehearsal.service, a root-owned system unit with the
+                        identical shape (Restart=always, RestartSec=3) running a throwaway cluster
+                        under the throughline-record account on a non-5432 port with no real data,
+                        plus one polkit rule granting twr kill, stop and start on exactly that
+                        rehearsal unit and nothing else; the non-builder as twr runs systemctl kill
+                        -s SIGKILL throughline-record-rehearsal.service and systemctl stop
+                        throughline-record-rehearsal.service for the two probes and reads the live
+                        throughline-record.service policy with systemctl show -p Restart -p
+                        RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit
+                        holding no record and does not weaken the three-state sentence
+                      </p>
+                    </dd>
+                    <dt><b>unit</b></dt>
+                    <dd>
+                      <dl>
+                        <dt><b>name</b></dt>
+                        <dd><p>throughline-record-rehearsal.service</p></dd>
+                        <dt><b>owner</b></dt>
+                        <dd><p>root</p></dd>
+                        <dt><b>runs as</b></dt>
+                        <dd><p>throughline-record</p></dd>
+                        <dt><b>restart</b></dt>
+                        <dd><p>always</p></dd>
+                        <dt><b>restart sec</b></dt>
+                        <dd><p>3</p></dd>
+                        <dt><b>port</b></dt>
+                        <dd><p>not 5432</p></dd>
+                        <dt><b>real data</b></dt>
+                        <dd><p>false</p></dd>
+                      </dl>
+                    </dd>
+                    <dt><b>grant</b></dt>
+                    <dd>
+                      <dl>
+                        <dt><b>principal</b></dt>
+                        <dd><p>twr</p></dd>
+                        <dt><b>unit</b></dt>
+                        <dd><p>throughline-record-rehearsal.service</p></dd>
+                        <dt><b>verbs</b></dt>
+                        <dd>
+                          <ul>
+                            <li><p>kill</p></li>
+                            <li><p>stop</p></li>
+                            <li><p>start</p></li>
+                          </ul>
+                        </dd>
+                        <dt><b>production unit grants</b></dt>
+                        <dd><ul></ul></dd>
+                        <dt><b>scope</b></dt>
+                        <dd>
+                          <p>
+                            throwaway rehearsal unit only; no real data; no grant on
+                            throughline-record.service or throughline-server.service
+                          </p>
+                        </dd>
+                      </dl>
+                    </dd>
+                    <dt><b>owning sources</b></dt>
+                    <dd>
+                      <ul>
+                        <li>
+                          <p>
+                            packages/throughline-launcher/systemd/throughline-record-rehearsal.service
+                          </p>
+                        </li>
+                        <li><p>packages/throughline-launcher/install/</p></li>
+                      </ul>
+                    </dd>
+                    <dt><b>delivery</b></dt>
+                    <dd>
+                      <p>Phase 4 sudo batch, nonprivileged checks first; writer executes nothing</p>
+                    </dd>
+                    <dt><b>proof limits</b></dt>
+                    <dd>
+                      <p>
+                        The narrow grant exists only for the root-installed throwaway rehearsal
+                        unit. Earlier no-system-unit-grant prose applies to production; the latest
+                        source clause defines this one test-unit exception.
+                      </p>
+                    </dd>
+                  </dl>
+                </details>
 
                 <details class="design-details">
                   <summary>Source-bound design details</summary>
@@ -7203,6 +7404,47 @@
                         exists_now true; disabled by twr before the batch; owning source none
                         (legacy, kept as rollback); read-only non-builder verification; deployment
                         remains the owning install act
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code
+                          >packages/throughline-launcher/systemd/throughline-record-rehearsal.service</code
+                        >
+                      </td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>add</td>
+                      <td>
+                        Latest R2 phase-scoped probe: identical Restart policy, throwaway cluster
+                        under throughline-record, non-5432 port, no real data.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td><code>packages/throughline-launcher/install/</code></td>
+                      <td><span class="chip ours">fork-namespace</span></td>
+                      <td>edit</td>
+                      <td>
+                        Owning Phase 4 batch installs the root-owned rehearsal system unit and
+                        exactly one rehearsal-only polkit rule; no production grant to twr.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td><code>/etc/systemd/system/throughline-record-rehearsal.service</code></td>
+                      <td><span class="chip host">host-filesystem</span></td>
+                      <td>read</td>
+                      <td>
+                        Non-builder verifies deployment from the owning Phase 4 batch; not an
+                        authoring surface.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td><code>/etc/polkit-1/rules.d/</code></td>
+                      <td><span class="chip host">host-filesystem</span></td>
+                      <td>read</td>
+                      <td>
+                        Verify only the owning batch rule: twr kill/stop/start on
+                        throughline-record-rehearsal.service and no production unit. Existing
+                        unrelated rules unchanged.
                       </td>
                     </tr>
                   </tbody>
