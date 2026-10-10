@@ -21,6 +21,7 @@ node render-spec.mts
 node check-spec.mts
 node test-check-spec.mts
 node checks/test-slice-1-checks.mts
+node checks/test-repository-move.mts
 node checks/slice-1-repository-move.mts --only S1-C10
 ```
 
@@ -30,4 +31,4 @@ Generated design-source and check-file references resolve from this specificatio
 
 The orchestration entry, intent ledger, source quotations, reviews, execution orders and run receipts remain at /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07. Start there with START-HERE.txt and CURRENT.json for execution management. Nothing under _meta, execution, receipts, history or intent is copied into this design package; neither Move-Record.json nor Check-Run evidence belongs here. The builders and renderer read required ledger, quotation and run-state inputs at their physical vault addresses without moving them.
 
-Spec-Map.html is regenerated from spec.json and carries its hash. Spec-Map.png is the copied vault snapshot; its source hash is retained in the implementer receipt, not represented as a newly rendered image.
+Spec-Map.html is regenerated from spec.json and carries its hash. Spec-Map.png is rendered from this HTML with render-html. The repository-move fixtures run through test-check-spec.mts as well as their standalone command; they use disposable Git repositories and files, not operator state.

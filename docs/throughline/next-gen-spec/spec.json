@@ -1,9 +1,9 @@
 {
   "schema": "throughline.next-gen-spec.v1",
-  "version": "0.4.7",
+  "version": "0.4.13",
   "revision": {
-    "from": "0.4.6",
-    "reason": "T1.05 record retention (execution/phase-03/delivery-2026-10-09/Move-Remainder-Receipt.json, question records-inside-build-output): each build container is archived whole with its frozen fingerprint; its records are first copied to retained-records under the evidence root with sanitized names and a manifest; S1-C06 checks no build-named directory, a passing ledger row per container, and every record at its new path with its SHA-256. 0.4.6 was: Rename on Ryan's direction: the vendored relay is @ryan/agent-mcp-relay at apps/server/vendor/agent-mcp-relay-0.3.0.tgz (was @ryan/coms-net at apps/server/vendor/ryan-coms-net-0.3.0-legacy-mcp-relay.tgz); T1.04 and T7.04, including the T7.04 gone-check, use the new names. 0.4.5 was: Release tool literal (execution/phase-03/Delivery-State.json): Ship Warden binds one payload per version, so T1.04 and S1-C05 accept throughline-ship 0.4.1 or later instead of 0.4.0. 0.4.4 was: Path correction (execution/phase-03/delivery-2026-10-09/Order-Coms-Net-Vendor.txt): the vendored relay tarball and its README live under apps/server/vendor/, where pnpm resolves file:vendor/...; every path in T1.04 and T7.04, including the T7.04 gone-check, now names apps/server/vendor/. 0.4.3 was: @ryan/coms-net (the legacy MCP relay, not ComsNet) is a frozen tarball in the repository, decision D3 (execution/phase-03/delivery-2026-10-09/D3-Coms-Net-Decision.json): T1.04 drops the rpi-coms-net.tar transfer and the tower coms-net presence check; T7.04 deletes the tarball, vendor/README.md and the dependency line and checks they are gone. 0.4.2 was: GitHub repository renamed ryankschmidt/t3code to ryankschmidt/throughline on Oct 9, 2026 under Ryan's order (execution/phase-03/repo-home-2026-10-09/Repo-Home-Receipt.json): origin and the publish-docs source_repository literal, R02 carried out, S1-C01 and S1-C09 accept the pre-rename frozen origin, S1-C04 and S1-C09 compare tags by target type, T1.04 records the Mac node 24.13.1 selection. 0.4.1 was: Exit-check corrections, Oct 9, 2026 (execution/phase-02/closeout-2026-10-09/P2-Exit-Check-0.4.0.json defects P2-01, P2-02, P2-03): T3.06 deferred outside the first-install graph on K03, the T10.04 edge removed and the first-install acceptance limited to live input unavailable on the Mac; T6.02 no longer waits on slice 13 and depends on T1.10, provider evidence stays with its owners; T3.01 refuses HTTP turn starts at the decorator through the unchanged http.ts with a behavioral test and checks non-increase against the real stock-file set. 0.4.0 was: Phase 2 close-out, Oct 9, 2026, single design writer (thread a96357c8): G2 five-target acceptance contract (T13.04, X20), G3 one Codex provider and no auto-compaction for Claude, Codex and Pi (T8.02, T10.10, T11.02), G4 map wording, G5 real starting state and release 0.0.60 (T1.01, T1.04, T1.10, fork_state), G6 provider enforcement folds, G1 second-look folds, and Fable-Delta-Enforcement.json and Fable-Delta-Hosts.json applied verbatim (new outline task T3.06); record in execution/phase-02/closeout-2026-10-09/Writer-Changes-0.4.0.json. 0.3.0 was: second pass, Oct 8, 2026: every item of the fidelity review (F01-F13), the architecture review (A01-A14), its addenda (A15-A18), the slice-1 judge round 2 and the overlapping shape-alignment items carries a disposition; seventeen cross-cutting contracts settle the consequential choices; every ledger item has a disposition; the five-device matrix, the decision source roles and the whole-design acceptance node are added; the checker gains closed enums and unique ids, the combined task-slice-precondition graph, a baseline non-increase and rendered-generation binding",
+    "from": "0.4.7",
+    "reason": "Three approved repository-spec changes, preserving the required old-home compatibility link while moved and its removal at closure: append-only reviewed rebase rows (including the prerequisite worktree annotation contract from the frozen 0.4.12 record); preserved release targets follow move annotations and archived staging links retain exact ledger proof; done_when commands preserve their intended folders. Repository baseline was 0.4.7; unrelated frozen-record amendments are not imported. 0.4.7 was: T1.05 record retention (execution/phase-03/delivery-2026-10-09/Move-Remainder-Receipt.json, question records-inside-build-output): each build container is archived whole with its frozen fingerprint; its records are first copied to retained-records under the evidence root with sanitized names and a manifest; S1-C06 checks no build-named directory, a passing ledger row per container, and every record at its new path with its SHA-256. 0.4.6 was: Rename on Ryan's direction: the vendored relay is @ryan/agent-mcp-relay at apps/server/vendor/agent-mcp-relay-0.3.0.tgz (was @ryan/coms-net at apps/server/vendor/ryan-coms-net-0.3.0-legacy-mcp-relay.tgz); T1.04 and T7.04, including the T7.04 gone-check, use the new names. 0.4.5 was: Release tool literal (execution/phase-03/Delivery-State.json): Ship Warden binds one payload per version, so T1.04 and S1-C05 accept throughline-ship 0.4.1 or later instead of 0.4.0. 0.4.4 was: Path correction (execution/phase-03/delivery-2026-10-09/Order-Coms-Net-Vendor.txt): the vendored relay tarball and its README live under apps/server/vendor/, where pnpm resolves file:vendor/...; every path in T1.04 and T7.04, including the T7.04 gone-check, now names apps/server/vendor/. 0.4.3 was: @ryan/coms-net (the legacy MCP relay, not ComsNet) is a frozen tarball in the repository, decision D3 (execution/phase-03/delivery-2026-10-09/D3-Coms-Net-Decision.json): T1.04 drops the rpi-coms-net.tar transfer and the tower coms-net presence check; T7.04 deletes the tarball, vendor/README.md and the dependency line and checks they are gone. 0.4.2 was: GitHub repository renamed ryankschmidt/t3code to ryankschmidt/throughline on Oct 9, 2026 under Ryan's order (execution/phase-03/repo-home-2026-10-09/Repo-Home-Receipt.json): origin and the publish-docs source_repository literal, R02 carried out, S1-C01 and S1-C09 accept the pre-rename frozen origin, S1-C04 and S1-C09 compare tags by target type, T1.04 records the Mac node 24.13.1 selection. 0.4.1 was: Exit-check corrections, Oct 9, 2026 (execution/phase-02/closeout-2026-10-09/P2-Exit-Check-0.4.0.json defects P2-01, P2-02, P2-03): T3.06 deferred outside the first-install graph on K03, the T10.04 edge removed and the first-install acceptance limited to live input unavailable on the Mac; T6.02 no longer waits on slice 13 and depends on T1.10, provider evidence stays with its owners; T3.01 refuses HTTP turn starts at the decorator through the unchanged http.ts with a behavioral test and checks non-increase against the real stock-file set. 0.4.0 was: Phase 2 close-out, Oct 9, 2026, single design writer (thread a96357c8): G2 five-target acceptance contract (T13.04, X20), G3 one Codex provider and no auto-compaction for Claude, Codex and Pi (T8.02, T10.10, T11.02), G4 map wording, G5 real starting state and release 0.0.60 (T1.01, T1.04, T1.10, fork_state), G6 provider enforcement folds, G1 second-look folds, and Fable-Delta-Enforcement.json and Fable-Delta-Hosts.json applied verbatim (new outline task T3.06); record in execution/phase-02/closeout-2026-10-09/Writer-Changes-0.4.0.json. 0.3.0 was: second pass, Oct 8, 2026: every item of the fidelity review (F01-F13), the architecture review (A01-A14), its addenda (A15-A18), the slice-1 judge round 2 and the overlapping shape-alignment items carries a disposition; seventeen cross-cutting contracts settle the consequential choices; every ledger item has a disposition; the five-device matrix, the decision source roles and the whole-design acceptance node are added; the checker gains closed enums and unique ids, the combined task-slice-precondition graph, a baseline non-increase and rendered-generation binding",
     "audits": [
       "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/_meta/fidelity-review-01a11989/Initial-Findings.json",
       "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/_meta/architecture-review-01a1198a/Initial-Findings.json",
@@ -19,16 +19,16 @@
       "outcome": "round-2 verdict FAIL on 0.2.0; its findings are disposed as J2 in audit_dispositions"
     }
   },
-  "generated_at": "2026-10-10T02:14:51.290Z",
+  "generated_at": "2026-10-10T08:07:50.018Z",
   "generated_by": {
     "note": "the seat that ran the builder, read from its environment at build time; the design author is authored_by",
     "runtime": "codex",
-    "session_uuid": "01a12385-41a2-7af0-a609-cecd04e87d24",
+    "session_uuid": "01a124c9-641b-79f2-9460-63aa9ccfa238",
     "builder": "build-spec.mts",
     "source_files": [
       {
         "path": "./spec-data.mts",
-        "sha256": "4e5c4b9637a81052396bcb2c58ab8bb27e2d6e7920c69728c56234dff60ae1dc"
+        "sha256": "585db2d64e5b7dae3a8da882fed81705d5393fd8079384eb3c6d5ca690b863c9"
       },
       {
         "path": "./contracts-data.mts",
@@ -36,7 +36,7 @@
       },
       {
         "path": "./build-spec.mts",
-        "sha256": "c606e0e25f229973b705ac7160501e290b84d3d70f436e9a7a33ea1a34d1c50d"
+        "sha256": "dfedd69e50470fde3ec86abdb18b1883d1117a0d9d625341aa2d5991764ed9e7"
       }
     ]
   },
@@ -1309,7 +1309,7 @@
       ],
       "failing_checks": ["S1-C05"],
       "done_when": {
-        "command": "pnpm -C /Users/Admin/core-root install --frozen-lockfile >/dev/null && pnpm -C /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run test && node ./checks/slice-1-repository-move.mts --stage frozen --only S1-C05",
+        "command": "cd /Users/Admin/core-root && pnpm -C /Users/Admin/core-root install --frozen-lockfile >/dev/null && pnpm -C /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run test && node /Users/Admin/throughline/docs/throughline/next-gen-spec/checks/slice-1-repository-move.mts --stage frozen --only S1-C05",
         "expect": "tests green and exit 0; the installed copy at /Users/Admin/core-root/src/tools/throughline-ship reads 0.4.1 or later after the Ship Warden ship"
       },
       "depends_on": ["T1.01", "release-0.0.56-closed"],
@@ -1340,8 +1340,64 @@
       "title": "Move the repository to /Users/Admin/throughline and the installed release's worktree into /Users/Admin/throughline-worktrees; retire the previous release's worktree without losing a byte",
       "serves": ["NG-122"],
       "detail_state": "detailed",
-      "what": "Rename the main checkout out of the vault in one filesystem move on the same volume (node_modules travel with it), repair the worktree pointers, move the worktree of the installed release into the worktrees collection, and retire the worktree of the previous release only after its build outputs are archived to the Raspberry Pi archive drive by the ship tool's own archive function and the whole worktree is proven clean. Add the boundary sentence the folder grammar requires to the repository's README (a file the fork already edits, so the upstream-edit count does not rise). The release worktree folders are 12 GB each and about 293,000 files each; the main checkout is 17 GB and 317,471 files (measured Oct 7, 2026).",
+      "what": "Rename the main checkout out of the vault in one filesystem move on the same volume (node_modules travel with it), repair the worktree pointers, move the worktree of the installed release into the worktrees collection, and retire the worktree of the previous release only after its build outputs are archived to the Raspberry Pi archive drive by the ship tool's own archive function and the whole worktree is proven clean. Add the boundary sentence the folder grammar requires to the repository's README (a file the fork already edits, so the upstream-edit count does not rise). The release worktree folders are 12 GB each and about 293,000 files each; the main checkout is 17 GB and 317,471 files (measured Oct 7, 2026). Worktree-Move-Annotations.jsonl preserves the frozen witness: dispositions bind moved, kept and retired worktrees, additions have their own freeze, and reviewed rebases append a chain from the frozen head to the current head. No old row is rewritten.",
+      "worktree_move_annotations": {
+        "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Worktree-Move-Annotations.jsonl",
+        "schema": "throughline.worktree-move-annotation.v1",
+        "writer": "the move worker; append-only; Move-Record.json stays the immutable frozen witness",
+        "exact_keys": {
+          "disposition_row": {
+            "schema": "\"throughline.worktree-move-annotation.v1\"",
+            "kind": "\"disposition\"",
+            "before": "the frozen worktree path, equal to a Move-Record.json worktrees[].path",
+            "frozen_head": "the frozen head, equal to that entry's head (40 hex)",
+            "branch": "the frozen branch, equal to that entry's branch; null for a worktree frozen detached",
+            "fingerprint": "the Move-Record.json fingerprints[] entry for that path, copied exactly, when one exists; omitted otherwise",
+            "disposition": "\"moved\" | \"retired-and-archived\" | \"kept\"",
+            "after": "the worktree path now (required for moved)",
+            "archive": "the Archive-Annotations.jsonl container path (retired-and-archived: archive or retirement_receipt required)",
+            "retirement_receipt": "absolute path of the retirement receipt (retired-and-archived)",
+            "observed_at": "ISO time the row was written",
+            "evidence": "{command, output_path}: the command whose output shows the disposition, and where that output is saved"
+          },
+          "addition_freeze_row": {
+            "schema": "\"throughline.worktree-move-annotation.v1\"",
+            "kind": "\"addition-freeze\"",
+            "path": "the post-freeze worktree path, under the worktrees collection",
+            "head": "its head at observed_at (40 hex)",
+            "branch": "its branch at observed_at; null when detached",
+            "observed_at": "ISO time of this freeze",
+            "reason": "why the worktree was created",
+            "evidence": "{command, output_path}"
+          },
+          "rebased_row": {
+            "schema": "\"throughline.worktree-move-annotation.v1\"",
+            "kind": "\"rebased\"",
+            "path": "absolute current worktree path",
+            "previous_head": "40-hex head named by the preceding freeze/disposition or rebased row",
+            "new_head": "40-hex head after the reviewed rebase",
+            "review": "absolute path of an existing JSON review: verdict PASS and head exactly new_head",
+            "custody_evidence": "absolute path of an existing custody evidence file",
+            "observed_at": "ISO time the row was appended"
+          }
+        },
+        "coordination": "keys adopted from the move worker's proposal (execution/phase-03/delivery-2026-10-09/Worktree-Annotation-Census.json), with the lead's three dispositions; \"removed-with-reason\" is not a disposition",
+        "rules": [
+          "each frozen worktree entry (path plus fingerprint) maps through a frozen row to its new path or disposition; the checks match frozen entries through it",
+          "a worktree frozen as detached (branch null) is valid when it is still detached at the same head",
+          "integration worktrees created after the freeze are additions with their own freeze row, not failures",
+          "Rebase rows are appended in chain order; previous_head must equal the preceding bound head, each review must pass its exact new_head, and the newest rebase row must name the current HEAD. Never rewrite an old row or replace the freeze to hide a failed review.",
+          "Unrebased branch worktrees retain the frozen-head ancestry check. A frozen detached worktree must stay detached at its bound head; a reviewed rebase chain binds its new exact head without changing branch or common-repository identity.",
+          "The old-home compatibility symlink must resolve to repository.home while the move state is moved and must be physically gone when closed (T1.07). S1-C03, S1-M01 and S1-C06 enforce the same rule; no annotation may waive it."
+        ]
+      },
       "files": [
+        {
+          "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Worktree-Move-Annotations.jsonl",
+          "side": "vault",
+          "action": "add",
+          "note": "append-only worktree dispositions, addition freezes and reviewed rebase chains; the move worker writes these rows"
+        },
         {
           "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream",
           "side": "host-filesystem",
@@ -1384,7 +1440,7 @@
         "git -C /Users/Admin/throughline worktree repair /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51 /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.56",
         "mkdir -p /Users/Admin/throughline-worktrees && git -C /Users/Admin/throughline worktree move /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.56 /Users/Admin/throughline-worktrees/0.0.56",
         "retire 0.0.51, in this order, each step refused on failure: (1) git -C /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51 status --porcelain=v1 --untracked-files=all must be empty (RETIRE_DIRTY); (2) git status --porcelain --ignored is recorded into the move record's worktree entry as ignored_entries and must contain only node_modules/ and release/ (RETIRE_UNKNOWN_IGNORED); (3) const move = archiveTree('/Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51/release', '/mnt/storage/archives/throughline-builds/0.0.51/release', '/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/_meta/repository-move-2026-10-07/Archive-Ledger.jsonl') must return status ARCHIVED_AND_REMOVED; ARCHIVED_NONSECRET_FILES_REMOVED_SECRET_PATHS_RETAINED refuses the retirement (RETIRE_RESIDUE) and the retained paths are listed in the step log; (4) rm -rf /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51/node_modules; (5) git -C /Users/Admin/throughline worktree remove /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51 without --force; a refusal from git is the terminal state, never overridden",
-        "git -C /Users/Admin/throughline worktree prune && git -C /Users/Admin/throughline worktree list --porcelain → exactly /Users/Admin/throughline [main] and /Users/Admin/throughline-worktrees/0.0.56 [release/0.0.56], none prunable",
+        "git -C /Users/Admin/throughline worktree prune && git -C /Users/Admin/throughline worktree list --porcelain → main and the installed-release worktree are present; every other worktree is bound by its mapping, disposition or addition-freeze and any reviewed rebase chain, none prunable",
         "README.md, first lines, a fork-owned block: \"<!-- throughline: fork-owned block --> **ThroughLine** holds Ryan's fork of T3 Code and everything built on it: the apps, the server, the fork-owned packages and the design documents under docs/throughline; it does not hold release builds (they live in the release worktrees' release/ folders), records of runs (they live in the vault component's _meta folder) or the vault. <!-- end fork-owned block -->\"",
         "the move record's fingerprints entry for /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream-0.0.51/release gains archive = \"/mnt/storage/archives/throughline-builds/0.0.51/release\"",
         "Consume archiveTree’s existing object-with-moves ledger. Match source, recorded archive address, verify_result=PASS, rsync_checksum_verified, exact tree digest/file/symlink/entry counts and bytes. Never replace its writer with a JSON-line writer. Record moved-and-preserved and archived-and-removed separately.",
@@ -1723,7 +1779,7 @@
       ],
       "failing_checks": ["S1-C11"],
       "done_when": {
-        "command": "cd /Users/Admin/throughline/apps/server && pnpm run test -- src/vcs/GitVcsDriverCore.test.ts src/git/GitManager.test.ts && node ./checks/slice-1-repository-move.mts --only S1-C11",
+        "command": "(cd /Users/Admin/throughline/apps/server && pnpm run test -- src/vcs/GitVcsDriverCore.test.ts src/git/GitManager.test.ts) && node ./checks/slice-1-repository-move.mts --only S1-C11",
         "expect": "tests green and exit 0; the installed proof is S1-C14 after T1.10"
       },
       "depends_on": ["T1.03"],
@@ -2155,7 +2211,7 @@
       ],
       "failing_checks": ["S2-C06"],
       "done_when": {
-        "command": "node ./checks/slice-2-seam.mts --repo /Users/Admin/throughline --only S2-C06 S2-G01 && pnpm -C /Users/Admin/core-root install --frozen-lockfile >/dev/null && pnpm -C /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run test",
+        "command": "cd /Users/Admin/core-root && node /Users/Admin/throughline/docs/throughline/next-gen-spec/checks/slice-2-seam.mts --repo /Users/Admin/throughline --only S2-C06 S2-G01 && pnpm -C /Users/Admin/core-root install --frozen-lockfile >/dev/null && pnpm -C /Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship run test",
         "expect": "exit 0; ship tool tests green including the renamed-case refusal test"
       },
       "depends_on": ["T2.01"],
@@ -8456,7 +8512,7 @@
     {
       "id": "S1-C03",
       "slice": "slice-1",
-      "title": "Every mapped worktree opens the same common repository and matches its bound branch and head",
+      "title": "Every worktree preserves its repository and branch; reviewed append-only rebase chains bind the current head",
       "kind": "real-disk",
       "file": "./checks/slice-1-repository-move.mts",
       "expected_today": "FAIL",
@@ -8483,7 +8539,7 @@
     {
       "id": "S1-C06",
       "slice": "slice-1",
-      "title": "Build outputs leave the vault: no build-named directory remains, every archived container has a ledger row with its passing frozen fingerprint, and every retained record in the manifest is at its new path with its SHA-256",
+      "title": "Build outputs leave the vault: preserved trees follow bound move annotations, removed staging links match passing archive fingerprints, and archived containers and retained records keep their evidence",
       "kind": "real-disk",
       "file": "./checks/slice-1-repository-move.mts",
       "expected_today": "FAIL",
@@ -8870,7 +8926,7 @@
       "host-filesystem"
     ],
     "edits_by_side": {
-      "vault": 19,
+      "vault": 20,
       "host-filesystem": 22,
       "config": 13,
       "outside-tool": 51,
