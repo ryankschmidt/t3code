@@ -5,7 +5,7 @@
     "sha": "9f48092ec95dd9eab78931601de95be0107a930c"
   },
   "fork": {
-    "sha": "0106e7eba87397bc7b303d78167712672adacb3f"
+    "sha": "32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf"
   },
   "merge_base": "d15210cd3da79f9a1a495a6309d912d76362a046",
   "counts": {
@@ -13477,7 +13477,7 @@
     {
       "path": "scripts/throughline/check-seam.ts",
       "class": "fork-added",
-      "reason": "0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
+      "reason": "32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate\n0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -13487,6 +13487,7 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
+        "32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate",
         "0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard"
       ],
       "legacy_rules": []
@@ -13528,7 +13529,7 @@
     {
       "path": "throughline-seam.json",
       "class": "fork-added",
-      "reason": "0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
+      "reason": "32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate\n0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard",
       "reason_source": "commit-subjects",
       "imported_private_symbols": [],
       "schema_assumptions": [],
@@ -13538,6 +13539,7 @@
       "conflict_rule_inferred": false,
       "marker": false,
       "commits": [
+        "32c0b5f1d4f46c2bcd7cab82c7106bc138cd0adf fix(throughline): keep seam count and mount policy separate",
         "0106e7eba87397bc7b303d78167712672adacb3f feat(throughline): add draft seam manifest and monotonic count guard"
       ],
       "legacy_rules": []
