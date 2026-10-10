@@ -72,6 +72,8 @@ export interface SeamEntry {
   schema_assumptions: string[];
   contract_inspection: string;
   conflict_rule: string;
+  conflict_rule_source: "authored" | "legacy" | "capability" | "review";
+  conflict_rule_inferred: boolean;
   marker: boolean;
   commits: string[];
   capability?: string;
@@ -208,7 +210,24 @@ function generate(root: string, head: string, old?: SeamManifest): SeamManifest 
         contract_inspection:
           saved?.contract_inspection ??
           "not-reviewed: empty symbol/schema lists do not assert absence; behavior coverage is separately capability-gated",
-        conflict_rule: conflict.length ? [...new Set(conflict)].join("\n") : "review",
+        conflict_rule:
+          saved?.conflict_rule_source === "authored"
+            ? saved.conflict_rule
+            : conflict.length
+              ? [...new Set(conflict)].join("\n")
+              : "review",
+        conflict_rule_source:
+          saved?.conflict_rule_source === "authored"
+            ? "authored"
+            : protectedBy.length
+              ? "capability"
+              : rules.length
+                ? "legacy"
+                : "review",
+        conflict_rule_inferred:
+          saved?.conflict_rule_source === "authored" || protectedBy.length > 0
+            ? false
+            : rules.some((rule) => rule.inferred),
         marker: file.marker,
         commits: file.commits,
         ...(protectedBy[0] ? { capability: protectedBy[0].name } : {}),
@@ -431,9 +450,31 @@ function validate(
         git(root, "cat-file", "-e", `${manifest.merge_base}:${change.renamedFrom ?? change.path}`);
         upstream = true;
       } catch {}
-      if (upstream) violations.push(`UNADMITTED_UPSTREAM_CHANGE: ${change.path}`);
+      // Counts and path registration belong here; line-level mount admission belongs to T2.02.
+      if (upstream && !entries.has(change.path))
+        violations.push(`UNLISTED_UPSTREAM_EDIT: ${change.path}`);
+      if (change.renamedFrom) current.delete(change.renamedFrom);
+      if (change.status === "D" && !upstream) current.delete(change.path);
+      else
+        current.set(change.path, {
+          cls: upstream
+            ? change.status === "D"
+              ? "upstream-removed"
+              : "upstream-edit"
+            : classifyAdded(change.path),
+          commits: [],
+          marker: false,
+        });
     }
     const currentCounts = count(current);
+    if (
+      manifest.admitted &&
+      currentCounts.upstream_edit + currentCounts.upstream_removed >
+        manifest.admitted.upstream_edit_count
+    )
+      violations.push(
+        `COUNT_EXCEEDS_ADMISSION: current upstream edits ${currentCounts.upstream_edit + currentCounts.upstream_removed} > ${manifest.admitted.upstream_edit_count}`,
+      );
     for (const path of git(root, "ls-files", "--others", "--exclude-standard", "-z")
       .split("\0")
       .filter(Boolean))
@@ -483,14 +524,21 @@ function selfTest(
     if (positive.status !== 0)
       throw Error(`SELF_TEST_POSITIVE_FAILED: ${positive.stdout} ${positive.stderr}`);
     const fixture = read<SeamManifest>(join(clone, FILE));
-    const path = fixture.entries.find(
-      (entry) => entry.class === "upstream-edit" && /\.(ts|tsx|md)$/.test(entry.path),
-    )?.path;
+    const listed = new Set(fixture.entries.map((entry) => entry.path));
+    const path = git(clone, "ls-tree", "-r", "--name-only", "-z", fixture.merge_base)
+      .split("\0")
+      .find(
+        (path) =>
+          path.startsWith("apps/server/src/") &&
+          path.endsWith(".ts") &&
+          !listed.has(path) &&
+          existsSync(join(clone, path)),
+      );
     if (!path) throw Error("SELF_TEST_NO_UPSTREAM_FILE");
     const original = readFileSync(join(clone, path));
     appendFileSync(join(clone, path), "\n// ThroughLine seam self-test: unlisted line\n");
     const edited = run("--json");
-    if (edited.status !== 1 || !edited.stdout.includes(`UNADMITTED_UPSTREAM_CHANGE: ${path}`))
+    if (edited.status !== 1 || !edited.stdout.includes(`UNLISTED_UPSTREAM_EDIT: ${path}`))
       throw Error(`SELF_TEST_EDIT_NOT_REFUSED: ${edited.status} ${edited.stdout} ${edited.stderr}`);
     writeFileSync(join(clone, path), original);
     const raised = run(
