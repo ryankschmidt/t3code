@@ -1128,6 +1128,7 @@ const T1: Task[] = [
         "integration worktrees created after the freeze are additions with their own freeze row, not failures",
         "Rebase rows are appended in chain order; previous_head must equal the preceding bound head, each review must pass its exact new_head, and the newest rebase row must name the current HEAD. Never rewrite an old row or replace the freeze to hide a failed review.",
         "Unrebased branch worktrees retain the frozen-head ancestry check. A frozen detached worktree must stay detached at its bound head; a reviewed rebase chain binds its new exact head without changing branch or common-repository identity.",
+        "The old-home compatibility symlink must resolve to repository.home while the move state is moved and must be physically gone when closed (T1.07). S1-C03, S1-M01 and S1-C06 enforce the same rule; no annotation may waive it.",
       ],
     },
     files: [

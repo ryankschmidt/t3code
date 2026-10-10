@@ -120,6 +120,7 @@ Object.assign(spec.repository, {
   evidence_root: join(root, "evidence"),
   old_backup_root: join(root, "backup"),
   retired_folder: join(root, "retired"),
+  old_home: join(root, "retired/old-home"),
 });
 const rr = spec.tasks.find((t: any) => t.id === "T1.05").record_retention;
 rr.address = join(root, "retained");
@@ -212,6 +213,50 @@ test("S1-C03 frozen detached addition stays valid at its head", () => {
   } finally {
     git(task, "checkout", "task");
   }
+});
+
+for (const id of ["S1-C03", "S1-M01", "S1-C06"]) {
+  test(id + " moved stage requires the compatibility alias", () => {
+    json(movePath, { ...move, admission_state: "moved" });
+    rows(chain);
+    run(id, 1, "alias");
+  });
+  test(id + " moved stage accepts the compatibility alias pointing to the repository", () => {
+    mkdirSync(dirname(spec.repository.old_home), { recursive: true });
+    symlinkSync(home, spec.repository.old_home);
+    try {
+      json(movePath, { ...move, admission_state: "moved" });
+      rows(chain);
+      run(id, 0);
+    } finally {
+      unlinkSync(spec.repository.old_home);
+    }
+  });
+  test(id + " closed stage requires the alias gone", () => {
+    json(movePath, { ...move, admission_state: "closed" });
+    rows(chain);
+    run(id, 0);
+    symlinkSync(home, spec.repository.old_home);
+    try {
+      run(id, 1, "alias");
+    } finally {
+      unlinkSync(spec.repository.old_home);
+    }
+  });
+}
+test("S1-C03 alias-removed is not an accepted row kind", () => {
+  json(movePath, { ...move, admission_state: "moved" });
+  rows([
+    ...chain,
+    {
+      schema,
+      kind: "alias-removed",
+      path: spec.repository.old_home,
+      observed_at: at,
+      evidence: { command: "unlink", output_path: custody },
+    },
+  ]);
+  run("S1-C03", 1);
 });
 
 const oldRelease = join(root, "old-release"),

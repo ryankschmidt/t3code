@@ -135,6 +135,16 @@ const present = (p: string) => {
 };
 const regularFile = (p: unknown): p is string =>
   typeof p === "string" && isAbsolute(p) && existsSync(p) && lstatSync(p).isFile();
+const oldHomeAliasFindings = (m: any): Fail[] => {
+  if (m.admission_state === "moved") {
+    if (!present(OLD_HOME)) return ["old-home compatibility alias is required while moved"];
+    if (!lstatSync(OLD_HOME).isSymbolicLink() || canonical(OLD_HOME) !== canonical(HOME))
+      return ["old-home compatibility alias does not resolve to the repository"];
+  }
+  if (m.admission_state === "closed" && present(OLD_HOME))
+    return ["old-home alias remains after closure"];
+  return [];
+};
 const boundDisposition = (m: any, row: any) => {
   const frozen = (m.worktrees ?? []).find((w: any) => w.path === row.before);
   const fingerprint = (m.fingerprints ?? []).find((fp: any) => fp.path === row.before);
@@ -439,6 +449,7 @@ export async function runSliceChecks() {
       f.push("installed-release worktree absent");
     const annotations = worktreeAnnotations();
     f.push(...annotationFindings(m, annotations));
+    f.push(...oldHomeAliasFindings(m));
     for (const row of annotations.filter((row) => row.kind === "rebased"))
       if (!list.some((w) => canonical(w.path) === canonical(row.path)))
         f.push(`rebase row has no current worktree: ${row.path}`);
@@ -636,11 +647,22 @@ export async function runSliceChecks() {
   await check("S1-C06", () => {
     const f: Fail[] = [],
       found = walkBuildOutputs([EVIDENCE_ROOT, BACKUP_OLD, T3CODE]);
-    for (const x of found) f.push(`${x.reason}: ${x.path}`);
     const m = moveRecord(),
       rows = ledgerRows(),
       archived = new Set<string>();
     const annotations = worktreeAnnotations();
+    const aliasFindings = oldHomeAliasFindings(m);
+    f.push(...aliasFindings);
+    for (const x of found)
+      if (
+        !(
+          x.reason === "symlink" &&
+          x.path === OLD_HOME &&
+          m.admission_state === "moved" &&
+          aliasFindings.length === 0
+        )
+      )
+        f.push(`${x.reason}: ${x.path}`);
     // T1.05 record_retention (spec 0.4.7): records of each archived container are retained at a local record address with a manifest
     const rr = (spec.tasks.find((t: any) => t.id === "T1.05") ?? {}).record_retention;
     if (!rr?.address || !rr?.manifest)
@@ -1326,8 +1348,8 @@ export async function runSliceChecks() {
     const m = moveRecord(),
       f: Fail[] = [];
     if (!["moved", "closed"].includes(m.admission_state)) f.push("move not physically admitted");
-    if (!existsSync(join(HOME, ".git")) || existsSync(OLD_HOME))
-      f.push("old/new repository move incomplete");
+    if (!existsSync(join(HOME, ".git"))) f.push("new repository move incomplete");
+    f.push(...oldHomeAliasFindings(m));
     for (const w of worktrees(HOME))
       if (canonical(w.path) !== canonical(HOME) && !under(w.path, WORKTREES))
         f.push("worktree outside new collection");
