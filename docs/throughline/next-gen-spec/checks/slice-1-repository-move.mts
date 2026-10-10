@@ -155,6 +155,74 @@ const boundDisposition = (m: any, row: any) => {
     (!fingerprint || FP_KEYS.every((k) => row.fingerprint?.[k] === fingerprint[k]))
   );
 };
+// A worktree removed after its work landed on main: its last chain head is merged, a hash-bound reclaim
+// receipt records the clean removal, and nothing for that folder follows the retirement row.
+const RECLAIM_RECEIPT_SCHEMA = "worktree-reclaim-receipt.v1";
+const chainHead = (row: any, path: string): string | undefined =>
+  row.kind === "rebased" && row.path === path
+    ? row.new_head
+    : row.kind === "addition-freeze" && row.path === path
+      ? row.head
+      : row.kind === "disposition" &&
+          ((row.disposition === "kept" && row.before === path) ||
+            (row.disposition === "moved" && row.after === path))
+        ? row.frozen_head
+        : undefined;
+const retirementFindings = (row: any, rows: any[]): Fail[] => {
+  const path = row.path;
+  if (
+    typeof path !== "string" ||
+    !isAbsolute(path) ||
+    !under(path, WORKTREES) ||
+    typeof row.branch !== "string" ||
+    !SHA40.test(row.final_head ?? "") ||
+    row.merged_into?.branch !== "main" ||
+    !SHA40.test(row.merged_into?.commit ?? "") ||
+    !regularFile(row.retirement_receipt) ||
+    !/^[0-9a-f]{64}$/.test(row.retirement_receipt_sha256 ?? "") ||
+    typeof row.evidence?.command !== "string"
+  )
+    return [`worktree retirement row incomplete: ${path}`];
+  const f: Fail[] = [],
+    at = rows.indexOf(row);
+  const heads = rows
+    .slice(0, at)
+    .map((r) => chainHead(r, path))
+    .filter((h): h is string => typeof h === "string");
+  if (!heads.length)
+    f.push(`worktree retirement has no earlier freeze, disposition or rebase: ${path}`);
+  else if (heads[heads.length - 1] !== row.final_head)
+    f.push(`worktree retirement final head is not the chain's last head: ${path}`);
+  if (rows.filter((r) => r.kind === "merged-and-retired" && r.path === path).length !== 1)
+    f.push(`worktree retirement repeated: ${path}`);
+  if (rows.slice(at + 1).some((r) => r.path === path || r.before === path || r.after === path))
+    f.push(`annotation appended after a worktree retirement: ${path}`);
+  let receipt: any;
+  try {
+    const bytes = readFileSync(row.retirement_receipt);
+    if (createHash("sha256").update(bytes).digest("hex") !== row.retirement_receipt_sha256)
+      throw Error("hash");
+    receipt = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return [...f, `worktree retirement receipt missing or not the hashed bytes: ${path}`];
+  }
+  const removed = (receipt.removed ?? []).find((r: any) => r.path === path);
+  if (
+    receipt.schema !== RECLAIM_RECEIPT_SCHEMA ||
+    !removed ||
+    removed.head !== row.final_head ||
+    removed.branch !== row.branch ||
+    removed.status_clean !== true ||
+    removed.head_on_origin !== true
+  )
+    f.push(`worktree retirement receipt does not record this clean removal: ${path}`);
+  if (
+    !ancestor(HOME, row.final_head, row.merged_into.commit) ||
+    !ancestor(HOME, row.merged_into.commit, "main")
+  )
+    f.push(`retired worktree's final head is not merged into main: ${path}`);
+  return f;
+};
 const annotationFindings = (m: any, rows: any[]): Fail[] => {
   const f: Fail[] = [],
     bases = new Set<string>();
@@ -209,7 +277,8 @@ const annotationFindings = (m: any, rows: any[]): Fail[] => {
           (m.worktrees ?? []).some((w: any) => w.path === path))
       )
         f.push(`worktree addition-freeze malformed: ${path}`);
-    } else f.push(`unknown worktree annotation kind: ${row.kind}`);
+    } else if (row.kind === "merged-and-retired") f.push(...retirementFindings(row, rows));
+    else f.push(`unknown worktree annotation kind: ${row.kind}`);
   }
   return f;
 };
@@ -637,9 +706,21 @@ export async function runSliceChecks() {
     const annotations = worktreeAnnotations();
     f.push(...annotationFindings(m, annotations));
     f.push(...oldHomeAliasFindings(m));
+    const retired = annotations.filter((row) => row.kind === "merged-and-retired");
     for (const row of annotations.filter((row) => row.kind === "rebased"))
-      if (!list.some((w) => canonical(w.path) === canonical(row.path)))
+      if (
+        !list.some((w) => canonical(w.path) === canonical(row.path)) &&
+        !retired.some(
+          (r) => typeof r.path === "string" && canonical(r.path) === canonical(row.path),
+        )
+      )
         f.push(`rebase row has no current worktree: ${row.path}`);
+    for (const row of retired)
+      if (
+        typeof row.path === "string" &&
+        (existsSync(row.path) || list.some((w) => canonical(w.path) === canonical(row.path)))
+      )
+        f.push(`retired worktree is still present or registered: ${row.path}`);
     for (const w of list) {
       if (w.prunable || !existsSync(w.path)) {
         f.push(`invalid worktree: ${w.path}`);
@@ -1796,6 +1877,106 @@ async function runRepositoryMoveFixtures(): Promise<void> {
       git(task, "checkout", "task");
     }
   });
+  // merged-and-retired: a rebased folder removed after its final head reached main
+  const gone = join(trees, "retired-work"),
+    merged = git(home, "commit-tree", tree, "-p", a, "-m", "retired work"),
+    reviewM = join(records, "review-m.json"),
+    receiptPath = join(records, "reclaim-receipt.json");
+  json(reviewM, { verdict: "PASS", head: merged });
+  const receiptOf = (removed: unknown[]) => {
+    json(receiptPath, { schema: "worktree-reclaim-receipt.v1", removed });
+    return createHash("sha256").update(readFileSync(receiptPath)).digest("hex");
+  };
+  const cleanRemoval = {
+    path: gone,
+    branch: "retired-work",
+    head: merged,
+    status_clean: true,
+    head_on_origin: true,
+  };
+  const goneRows = (retirement: Record<string, unknown> = {}) => [
+    { ...freeze, path: gone, branch: "retired-work" },
+    { ...chain[1], path: gone, new_head: merged, review: reviewM },
+    {
+      schema,
+      kind: "merged-and-retired",
+      path: gone,
+      branch: "retired-work",
+      final_head: merged,
+      merged_into: { branch: "main", commit: merged },
+      retirement_receipt: receiptPath,
+      retirement_receipt_sha256: receiptOf([cleanRemoval]),
+      observed_at: at,
+      evidence: { command: "git worktree list --porcelain", output_path: custody },
+      ...retirement,
+    },
+  ];
+  const onMain = (fn: () => void) => {
+    git(home, "update-ref", "refs/heads/main", merged);
+    try {
+      fn();
+    } finally {
+      git(home, "update-ref", "refs/heads/main", a);
+    }
+  };
+  test("S1-C03 a merged-and-retired folder with a hash-bound receipt passes", () =>
+    onMain(() => {
+      json(movePath, move);
+      rows([...chain, ...goneRows()]);
+      run("S1-C03", 0);
+    }));
+  test("S1-C03 a missing rebased folder without a retirement row still refuses", () =>
+    onMain(() => {
+      json(movePath, move);
+      rows([...chain, ...goneRows().slice(0, 2)]);
+      run("S1-C03", 1, "rebase row has no current worktree");
+    }));
+  test("S1-C03 retirement whose final head is not on main refuses", () => {
+    json(movePath, move);
+    rows([...chain, ...goneRows()]);
+    run("S1-C03", 1, "not merged into main");
+  });
+  for (const [name, edit] of [
+    ["receipt bytes changed after hashing", () => ({ retirement_receipt_sha256: "0".repeat(64) })],
+    ["final head is not the chain's last head", () => ({ final_head: a })],
+    ["receipt without this folder", () => ({ retirement_receipt_sha256: receiptOf([]) })],
+    [
+      "receipt records a dirty removal",
+      () => ({ retirement_receipt_sha256: receiptOf([{ ...cleanRemoval, status_clean: false }]) }),
+    ],
+    ["merge target missing", () => ({ merged_into: undefined })],
+  ] as Array<[string, () => Record<string, unknown>]>)
+    test(`S1-C03 retirement with ${name} refuses`, () =>
+      onMain(() => {
+        json(movePath, move);
+        const r = goneRows();
+        r[2] = { ...r[2], ...edit() };
+        rows([...chain, ...r]);
+        run("S1-C03", 1, "retire");
+      }));
+  test("S1-C03 nothing may be appended after a retirement", () =>
+    onMain(() => {
+      json(movePath, move);
+      rows([
+        ...chain,
+        ...goneRows(),
+        { ...chain[1], path: gone, previous_head: merged, new_head: merged, review: reviewM },
+      ]);
+      run("S1-C03", 1, "after a worktree retirement");
+    }));
+  test("S1-C03 a live worktree cannot be retired", () =>
+    onMain(() => {
+      json(movePath, move);
+      rows([...chain, { ...goneRows()[2], path: task, branch: "task", final_head: c }]);
+      run("S1-C03", 1, "retire");
+    }));
+  test("S1-C03 a folder is retired once", () =>
+    onMain(() => {
+      json(movePath, move);
+      const r = goneRows();
+      rows([...chain, ...r, r[2]]);
+      run("S1-C03", 1, "retire");
+    }));
 
   for (const id of ["S1-C03", "S1-M01", "S1-C06"]) {
     test(id + " moved stage requires the compatibility alias", () => {

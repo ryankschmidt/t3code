@@ -1125,6 +1125,23 @@ const T1: Task[] = [
           custody_evidence: "absolute path of an existing custody evidence file",
           observed_at: "ISO time the row was appended",
         },
+        merged_and_retired_row: {
+          schema: '"throughline.worktree-move-annotation.v1"',
+          kind: '"merged-and-retired"',
+          path: "the removed worktree path, under the worktrees collection; absent on disk and not registered",
+          branch: "its branch when removed",
+          final_head:
+            "40-hex head it was removed at; equal to the last head its freeze, disposition or rebased rows name",
+          merged_into:
+            '{branch: "main", commit}: a 40-hex main commit that contains final_head and is contained in current main',
+          retirement_receipt:
+            "absolute path of the worktree-reclaim-receipt.v1 file whose removed[] entry for this path records head = final_head, the branch, status_clean true and head_on_origin true",
+          retirement_receipt_sha256:
+            "64-hex SHA-256 of the receipt bytes when the row was appended",
+          observed_at: "ISO time the row was appended",
+          evidence:
+            "{command, output_path}: the command whose output shows the folder gone and unregistered",
+        },
       },
       coordination:
         "keys adopted from the move worker's proposal (execution/phase-03/delivery-2026-10-09/Worktree-Annotation-Census.json), with the lead's three dispositions; \"removed-with-reason\" is not a disposition",
@@ -1133,6 +1150,7 @@ const T1: Task[] = [
         "a worktree frozen as detached (branch null) is valid when it is still detached at the same head",
         "integration worktrees created after the freeze are additions with their own freeze row, not failures",
         "Rebase rows are appended in chain order; previous_head must equal the preceding bound head, each review must pass its exact new_head, and the newest rebase row must name the current HEAD. Never rewrite an old row or replace the freeze to hide a failed review.",
+        "A worktree removed after its work reached main appends exactly one merged-and-retired row as the last row for its path; a folder named by a freeze or rebase row may be missing only with that row, its hash-matching reclaim receipt and its final head merged into main. Any other missing folder still refuses.",
         "Unrebased branch worktrees retain the frozen-head ancestry check. A frozen detached worktree must stay detached at its bound head; a reviewed rebase chain binds its new exact head without changing branch or common-repository identity.",
         "The old-home compatibility symlink must resolve to repository.home while the move state is moved and must be physically gone when closed (T1.07). S1-C03, S1-M01 and S1-C06 enforce the same rule; no annotation may waive it.",
       ],
