@@ -305,8 +305,9 @@ const cases: Case[] = [
     mutate: (s) => {
       s.tasks
         .find((t: any) => t.id === "T13.04")
-        .acceptance_interface.target_bindings.find((x: any) => x.target === "rpi").readback_target =
-        "twr";
+        .acceptance_interface.deferred_targets.rpi.target_bindings.find(
+          (x: any) => x.target === "rpi",
+        ).readback_target = "twr";
     },
   },
   {
@@ -386,9 +387,9 @@ const cases: Case[] = [
     mutate: (s) => {
       s.tasks
         .find((t: any) => t.id === "T13.04")
-        .acceptance_interface.per_target_readback.find((x: any) => x.target === "rpi").fields = [
-        "release",
-      ];
+        .acceptance_interface.deferred_targets.rpi.per_target_readback.find(
+          (x: any) => x.target === "rpi",
+        ).fields = ["release"];
     },
   },
   {
@@ -526,6 +527,303 @@ cases.push(
   },
 );
 
+for (const [id, field, needle] of [
+  ["T12.05", "what", "it sends heal <unit>"],
+  ["T6.01", "what", "The supervisor's polkit grant covers"],
+  ["T4.06", "counterexample_must_fail", "including the supervisor"],
+  ["T12.08", "done_when", "a second test sends heal"],
+] as const)
+  cases.push({
+    name: "conditional heal boundary " + id,
+    expect: "FAIL",
+    checks: ["X21"],
+    mutate: (s) => {
+      const t = s.tasks.find((t: any) => t.id === id);
+      if (field === "done_when") t.done_when.expect = t.done_when.expect.replace(needle, "REMOVED");
+      else t[field] = t[field].replace(needle, "REMOVED");
+    },
+  });
+cases.push({
+  name: "withdrawn twr polkit cannot remain beside heal",
+  expect: "FAIL",
+  checks: ["X21"],
+  mutate: (s) => {
+    s.tasks.find((t: any) => t.id === "T12.05").what +=
+      " twr holds a polkit grant scoped to exactly throughline-server.service and throughline-record.service start, stop and restart";
+  },
+});
+for (const [name, checkId, mutate] of [
+  [
+    "instruction words cannot be paraphrased",
+    "X22",
+    (s: any) => {
+      s.instruction_coverage.rows[0].ryan_exact_words += " changed";
+    },
+  ],
+  [
+    "upstream reconciliation cannot move behind admission",
+    "X22",
+    (s: any) => {
+      const t = s.tasks.find((t: any) => t.id === "T3.01");
+      t.depends_on = t.depends_on.filter((id: string) => id !== "T3.07");
+    },
+  ],
+  [
+    "foundation remains preserve-base",
+    "X22",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T3.07").upstream_reconciliation.foundation.mode =
+        "sync-now";
+    },
+  ],
+  [
+    "upstream pin must be freshly fetched",
+    "X22",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T3.07").upstream_reconciliation.pin.fresh_fetch_required =
+        false;
+    },
+  ],
+  [
+    "upstream incoming changes require exhaustive dispositions",
+    "X22",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T3.07").upstream_reconciliation.dispositions.coverage =
+        "selected samples";
+    },
+  ],
+  [
+    "upstream proof is bound to final installed candidate",
+    "X22",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T13.04").upstream_reconciliation.same_candidate_required =
+        false;
+    },
+  ],
+  [
+    "target-only input cannot carry a handoff",
+    "X23",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T9.01").target_only_start.input_keys.push("handoff");
+    },
+  ],
+  [
+    "target-only proof requires Pi software provider",
+    "X23",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T9.01").target_only_start.providers.pop();
+    },
+  ],
+  [
+    "target-only proof cannot be builder-accepted",
+    "X23",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T9.01").target_only_start.non_builder_required = false;
+    },
+  ],
+  [
+    "target-only proof must carry actual partial work",
+    "X23",
+    (s: any) => {
+      const t = s.tasks.find((t: any) => t.id === "T9.01").target_only_start;
+      t.steps = t.steps.map((x: string) => x.replaceAll("partial work", "empty state"));
+    },
+  ],
+  [
+    "Codex targets cannot use a private store",
+    "X23",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T11.02").target_tools.no_provider_store = false;
+    },
+  ],
+  [
+    "Pi target tool launch binding cannot disappear",
+    "X23",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T11.01").target_tools.launch_owner = "unassigned";
+    },
+  ],
+  [
+    "target-only final acceptance cannot disappear",
+    "X23",
+    (s: any) => {
+      s.acceptance.rule = s.acceptance.rule.replace(
+        "T9.01 target-ID-only startup/succession",
+        "unbound demonstration",
+      );
+    },
+  ],
+  [
+    "grammar applies to touched release commands",
+    "X24",
+    (s: any) => {
+      delete s.tasks.find((t: any) => t.id === "T1.04").command_grammar;
+    },
+  ],
+  [
+    "grammar cannot omit folder dependency source",
+    "X24",
+    (s: any) => {
+      s.instruction_coverage.command_grammar.sources.pop();
+    },
+  ],
+  [
+    "grammar requires old caller drain proof",
+    "X24",
+    (s: any) => {
+      s.instruction_coverage.command_grammar.required =
+        s.instruction_coverage.command_grammar.required.filter(
+          (x: string) => !x.includes("old callers answering"),
+        );
+    },
+  ],
+  [
+    "paused Raspberry Pi cannot return to required acceptance",
+    "X25",
+    (s: any) => {
+      s.acceptance.depends_on.device_cells.push("exec-codex@rpi");
+    },
+  ],
+  [
+    "paused hardware is not passed",
+    "X25",
+    (s: any) => {
+      s.device_matrix.rows
+        .find((x: any) => x.key === "version")
+        .cells.find((x: any) => x.device === "rpi").counts_as_passed = true;
+    },
+  ],
+  [
+    "paused hardware history cannot disappear",
+    "X25",
+    (s: any) => {
+      delete s.device_matrix.rows
+        .find((x: any) => x.key === "version")
+        .cells.find((x: any) => x.device === "rpi").deferred_contract;
+    },
+  ],
+  [
+    "archive exception cannot disappear",
+    "X25",
+    (s: any) => {
+      s.instruction_coverage.raspberry_pi_pause.exceptions.shift();
+    },
+  ],
+  [
+    "watcher exception cannot waive general hardware pause",
+    "X25",
+    (s: any) => {
+      s.instruction_coverage.raspberry_pi_pause.exceptions.push({ kind: "general-execution" });
+    },
+  ],
+  [
+    "Pi software provider remains required on tower",
+    "X25",
+    (s: any) => {
+      s.acceptance.depends_on.device_cells = s.acceptance.depends_on.device_cells.filter(
+        (x: string) => x !== "exec-pi@twr",
+      );
+    },
+  ],
+  [
+    "active provider test cannot demand paused hardware",
+    "X25",
+    (s: any) => {
+      s.tasks.find((t: any) => t.id === "T11.02").done_when.command +=
+        " Mac, tower and Raspberry Pi";
+    },
+  ],
+  [
+    "pause cannot amend a different target identity",
+    "X20",
+    (s: any) => {
+      s.tasks.find(
+        (t: any) => t.id === "T13.04",
+      ).acceptance_interface.required_targets_binding.scope_amendment.removed_targets = ["android"];
+    },
+  ],
+  [
+    "phase 4 watcher cannot claim installed responder",
+    "X21",
+    (s: any) => {
+      const t = s.tasks.find((t: any) => t.id === "T4.03");
+      t.done_when.expect = t.done_when.expect.replace(
+        "responder=not-installed",
+        "responder=active",
+      );
+    },
+  ],
+] as Array<[string, string, (s: any) => void]>)
+  cases.push({ name, expect: "FAIL", checks: [checkId], mutate });
+for (const refusal of [
+  "stale-revision-completion",
+  "builder-self-acceptance",
+  "unauthorized-check-acceptance",
+  "direct-target-record-write",
+  "stale-generation-tool-call",
+])
+  cases.push({
+    name: "target-only refuses missing " + refusal,
+    expect: "FAIL",
+    checks: ["X23"],
+    mutate: (s) => {
+      const t = s.tasks.find((t: any) => t.id === "T9.01").target_only_start;
+      t.refusals = t.refusals.filter((x: string) => x !== refusal);
+    },
+  });
+cases.push({
+  name: "four active targets with deferred Raspberry Pi history remain valid",
+  expect: "PASS",
+  checks: [],
+  mutate: () => {},
+});
+
+cases.push({
+  name: "machine reboot cannot be a proof step",
+  expect: "FAIL",
+  checks: ["X21"],
+  mutate: (s) => {
+    s.tasks.find((t: any) => t.id === "T12.01").done_when.command =
+      "one reboot or bootout-and-bootstrap receipt per unit";
+  },
+});
+cases.push({
+  name: "target-only proof must follow provider adapters",
+  expect: "FAIL",
+  checks: ["X23"],
+  mutate: (s) => {
+    s.tasks.find((t: any) => t.id === "T11.05").depends_on = [];
+  },
+});
+cases.push({
+  name: "exact target words must be compared to authority bytes",
+  expect: "FAIL",
+  checks: ["X23"],
+  mutate: (s) => {
+    const t = s.tasks.find((t: any) => t.id === "T9.01").target_only_start;
+    t.steps = t.steps.map((x: string) => x.replace("compare bytes", "summarize"));
+  },
+});
+cases.push({
+  name: "record unit ownership follows the declared phase",
+  expect: "FAIL",
+  checks: ["X19"],
+  mutate: (s) => {
+    s.tasks
+      .find((t: any) => t.id === "T4.03")
+      .service_binding.state_bindings.find(
+        (r: any) => r.state === "record-isolated-seats-shared",
+      ).owner = "twr";
+  },
+});
+cases.push({
+  name: "cutover cannot retain sole-not-isolated claim",
+  expect: "FAIL",
+  checks: ["X21"],
+  mutate: (s) => {
+    s.tasks.find((t: any) => t.id === "T4.02").completion_condition = "sole-not-isolated";
+  },
+});
 let bad = 0;
 for (const c of cases) {
   const dir = mkdtempSync(join(tmpdir(), "ngspec-check-"));

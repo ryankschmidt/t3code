@@ -89,6 +89,23 @@ const taskCard = (t: any) => {
     <span class="sides">${sides.map((s) => chip(s, sideClass[s] ?? "")).join("")}</span></summary>
   <div class="body">
     <p class="what">${esc(t.what)}</p>
+    ${t.command_grammar ? `<p><b>Command changes:</b> <a href="#instruction-coverage">${esc(t.command_grammar)} grammar, caller preservation and drain proof apply before any command change.</a></p>` : ""}
+    ${[
+      "upstream_reconciliation",
+      "target_interface",
+      "target_only_start",
+      "target_tools",
+      "target_tool_launch",
+      "service_binding",
+      "phase_scoped_acceptance",
+    ]
+      .filter((k) => t[k])
+      .map(
+        (k) =>
+          `<details><summary>${esc(k.replaceAll("_", " "))}</summary>${designDetails(t[k])}</details>`,
+      )
+      .join("")}
+    ${t.deferred_rpi ? `<details><summary>Deferred Raspberry Pi clauses — history only, not passed</summary>${designDetails(t.deferred_rpi)}</details>` : ""}
     ${t.design_details ? `<details class="design-details"><summary>Source-bound design details</summary><p>The corrected delta governs identifiers, proof clauses and the declared ownership interval. Original decision context below is retained; it does not authorize a runtime action.</p>${designDetails(t.design_details)}</details>` : ""}
     ${t.delta_sources?.length ? `<p><b>Design sources</b> ${t.delta_sources.map((p: string) => `<code>${esc(p)}</code>`).join("<br>")}</p>` : ""}
     ${t.depends_on?.length ? `<p class="deps"><b>After</b> ${t.depends_on.map((d: string) => (taskById.has(d) ? `<a href="#${esc(d)}">${esc(d)}</a>` : chip(d, "pre"))).join(" ")}</p>` : ""}
@@ -172,7 +189,7 @@ const matrixTable = (m: any) =>
             return c
               ? c.state === "required"
                 ? `<td>${chip("required", "ok")} <a href="#${esc(c.owner)}">${esc(c.owner)}</a><br><span class="sub">${esc(c.test)}</span></td>`
-                : `<td>${chip(c.state === "deferred-exploration" ? "deferred" : "n/a", "host")}<br><span class="sub">${esc(c.reason)}</span></td>`
+                : `<td>${chip(["deferred-exploration", "deferred"].includes(c.state) ? "deferred" : "n/a", "host")}<br><span class="sub">${esc(c.reason)}</span></td>`
               : "<td></td>";
           })
           .join("")}</tr>`,
@@ -235,14 +252,14 @@ footer.bottom{color:var(--muted);font-size:12px;padding:20px 32px;border-top:1px
 
 <h2>Where the repository lives after slice 1</h2>
 <div class="repo">
-<div><b>today (inside the vault)</b><code>${esc(spec.repository.old_home)}</code><br><span class="sub">17 GB, 317,000 files; two release worktrees of 12 GB each beside it; 43 GB of build outputs under the evidence root</span></div>
+<div><b>historical intake (Oct 7, inside the vault)</b><code>${esc(spec.repository.old_home)}</code><br><span class="sub">17 GB, 317,000 files; two release worktrees of 12 GB each beside it; 43 GB of build outputs under the evidence root</span></div>
 <div><b>home</b><code>${esc(spec.repository.home)}</code></div>
 <div><b>release worktrees</b><code>${esc(spec.repository.release_checkout)}</code></div>
 <div><b>build outputs</b><code>&lt;release worktree&gt;/release/</code><br><span class="sub">${esc(spec.repository.build_output_rule)}</span></div>
 <div><b>rollback snapshots</b><code>${esc(spec.repository.backup_root)}</code></div>
 <div><b>evidence (records only)</b><code>${esc(spec.repository.evidence_root)}</code></div>
 <div><b>vault copies of the documents</b><code>${esc(spec.repository.vault_copy.destination)}</code><br><span class="sub">${esc(spec.repository.vault_copy.patterns.join(", "))} · ${esc(spec.repository.vault_copy.why_not_symlinks)}</span></div>
-<div><b>tower and Raspberry Pi build roots</b><code>${esc(spec.repository.tower_build_root)}</code> <code>${esc(spec.repository.rpi_build_root)}</code></div>
+<div><b>tower build root · Raspberry Pi template deferred</b><code>${esc(spec.repository.tower_build_root)}</code> <code>${esc(spec.repository.rpi_build_root)}</code></div>
 <div><b>the spec itself</b><code>${esc(spec.repository.spec_home_in_repository)}</code> in the repository after T1.08; until then <code>${esc(spec.repository.spec_home_until_then)}</code></div>
 <div><b>remotes</b><code>origin ${esc(spec.repository.origin)}</code> <code>upstream ${esc(spec.repository.upstream)}</code></div>
 </div>
@@ -292,7 +309,8 @@ ${
     : ""
 }
 
-${spec.device_matrix ? `<h2>Five-device capability matrix (K09)</h2><p class="sub">${esc(spec.device_matrix.rule)}</p>${matrixTable(spec.device_matrix)}` : ""}
+${spec.instruction_coverage ? `<section id="instruction-coverage"><h2>Current instruction coverage</h2><p>Phase 4 starts with fresh upstream reconciliation. Target-only jobs and provider tools are installed acceptance obligations, not current runtime claims. Raspberry Pi general rollout is deferred; archive storage and the bounded watcher/responder remain in scope.</p>${designDetails(spec.instruction_coverage)}</section>` : ""}
+${spec.device_matrix ? `<h2>Device capability matrix — four active targets, Raspberry Pi deferred (K09)</h2><p class="sub">${esc(spec.device_matrix.rule)}</p>${matrixTable(spec.device_matrix)}` : ""}
 
 ${
   spec.audit_dispositions

@@ -72,7 +72,7 @@ export interface Task {
   service_binding?: {
     host: Host;
     owner: string;
-    scope: "user";
+    scope: "user" | "state-dependent";
     unit: string;
     fragment: string;
     readback_source: string;
@@ -467,7 +467,7 @@ const ORIGINAL_SLICES: Slice[] = [
     id: "slice-3",
     n: 3,
     title:
-      "One admission point and the Absurd record: every turn start through the rail, one step per finished message, the record authoritative",
+      "Phase 4 entry: fresh upstream reconciliation, then one admission point and the Absurd record",
     serves: [
       "NG-007",
       "NG-008",
@@ -483,7 +483,7 @@ const ORIGINAL_SLICES: Slice[] = [
     state: "outline",
     depends_on: ["slice-2"],
     why_this_order:
-      "The substrate is the whole design; the three doors that skip the rail today (HTTP dispatch, the comsnet handler, the importer) close here, and every later binding writes through this point.",
+      "T3.07 is the first Phase 4 task after the 0.0.60 source/release foundation and seam proof. The admission/schema tasks depend on it; storage, identity and launcher follow transitively. The substrate is the whole design; the three doors that skip the rail today (HTTP dispatch, the comsnet handler, the importer) close here, and every later binding writes through this point.",
   },
   {
     id: "slice-4",
@@ -684,7 +684,7 @@ const ORIGINAL_SLICES: Slice[] = [
   {
     id: "slice-13",
     n: 13,
-    title: "One version from one commit on five targets, Android included",
+    title: "One version from one commit on Mac, tower, iOS and Android; Raspberry Pi deferred",
     serves: ["NG-119", "NG-118", "NG-120", "NG-121"],
     state: "outline",
     depends_on: ["slice-2", "slice-12"],
@@ -815,6 +815,8 @@ const T1: Task[] = [
     },
     risk: ["read-only"],
     rollback: "none needed; the task writes one JSON file under _meta",
+
+    command_grammar: "IC-002",
   },
   {
     id: "T1.02",
@@ -853,6 +855,8 @@ const T1: Task[] = [
       "github-write-credential: the push needs write access to ryankschmidt/t3code; if the Mac holds no git credential for it, the credential is the access broker's and the push is a broker operation, never a token handed to the seat",
     ],
     rollback: "none needed; a push adds refs; git push origin --delete <ref> removes a wrong one",
+
+    command_grammar: "IC-002",
   },
   {
     id: "T1.04",
@@ -1066,6 +1070,8 @@ const T1: Task[] = [
     ],
     rollback:
       "git revert of the tool commits in core-root (path-limited) and a Ship Warden ship of the previous version; Ship-Pipeline.json restored from the core-root history",
+
+    command_grammar: "IC-002",
   },
   {
     id: "T1.03",
@@ -1205,6 +1211,8 @@ const T1: Task[] = [
     ],
     rollback:
       "mv /Users/Admin/throughline /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream && git -C /Users/Admin/core-root/vault/01_Projects/workbench/infra/t3code/t3-upstream worktree repair; the archived 0.0.51 outputs are restored from the archive path the ledger row names",
+
+    command_grammar: "IC-002",
   },
   {
     id: "T1.05",
@@ -1393,6 +1401,8 @@ const T1: Task[] = [
       "disk and time: about 44 GB cross the tailnet to the Raspberry Pi; resumable per run folder because each tree is its own ledger row",
     ],
     rollback: "restore any tree from the archive path its ledger row names",
+
+    command_grammar: "IC-002",
   },
   {
     id: "T1.06",
@@ -1429,6 +1439,8 @@ const T1: Task[] = [
     },
     risk: ["none; one README edit"],
     rollback: "revert the README edit",
+
+    command_grammar: "IC-002",
   },
   {
     id: "T1.08",
@@ -1472,6 +1484,8 @@ const T1: Task[] = [
     },
     risk: ["none beyond a pathspec commit"],
     rollback: "git revert of that one commit",
+
+    command_grammar: "IC-002",
   },
   {
     id: "T1.09",
@@ -1572,6 +1586,8 @@ const T1: Task[] = [
       "behavior: the source-control panel's commit-message suggestion now reads the working tree; commit-all commits the same set it did, computed at commit time",
     ],
     rollback: "git revert on main; the release that carries it is T1.10",
+
+    command_grammar: "IC-002",
   },
   {
     id: "T1.10",
@@ -1686,6 +1702,8 @@ const T1: Task[] = [
     ],
     rollback:
       "the pipeline's own rollback snapshot and the Mac installer's retained previous build; the tower and Raspberry Pi keep their previous app folders",
+
+    command_grammar: "IC-002",
   },
   {
     id: "T1.07",
@@ -1755,6 +1773,8 @@ const T1: Task[] = [
     ],
     rollback:
       "the exclude lines are two lines of text; the folders were empty; completed_at is one field",
+
+    command_grammar: "IC-002",
   },
 ];
 
@@ -1895,6 +1915,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T2.02",
@@ -1967,6 +1989,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T2.03",
@@ -2076,6 +2100,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T2.04",
@@ -2146,6 +2172,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T3.01",
@@ -2367,7 +2395,7 @@ const OUTLINE: Task[] = [
       expect:
         "exit 0; every named test present and green; the guards stay green; the live-input counterexample in K03 runs against the installed admission service: the observed write is on the record as an effect, no veto is claimed, and the done computation refuses until reconciled; the stock upstream files the fork edits after T3.01, read from the slice-2 seam manifest against the pinned upstream and fork SHAs (T2.01), are no more than the admitted stock-file set and do not include apps/server/src/orchestration/http.ts; a turn start through the HTTP endpoint is refused with the signed-admission reason, counted",
     },
-    depends_on: ["T2.01", "T2.02"],
+    depends_on: ["T2.01", "T2.02", "T3.07"],
     executor: {
       role: "implementer",
       model_preference: "gpt-6.1-sol",
@@ -2405,6 +2433,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T3.02",
@@ -2532,6 +2562,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T3.03",
@@ -2665,6 +2697,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T4.01",
@@ -2678,6 +2712,8 @@ const OUTLINE: Task[] = [
           "Keep K05 sole-not-isolated until T6.02/K04 reach test. Name owning app/keychain identity and use installed boolean ACL diagnostic plus non-secret canary; remove harness env inheritance. Retire readable dev source only in guarded cutover, not in this read-only task.",
         status: "folded in 0.4.0",
         source: "G6-Enforcement.json section B",
+        superseded_by:
+          "R2 three-state interval for current ownership/custody claims; the original finding and correction remain history",
       },
     ],
     slice: "slice-4",
@@ -2685,7 +2721,7 @@ const OUTLINE: Task[] = [
       "The existing tower Postgres bound to the tailnet interface with TLS and one role per host",
     serves: ["NG-016", "NG-066"],
     detail_state: "detailed",
-    what: "The existing user-owned cluster (absurd-pg.service under twr, binaries and data at /home/twr/absurd-pg) stays in place and is rebound: listen_addresses adds the tailnet address 100.96.34.116 beside loopback; ssl=on with a server certificate under /home/twr/absurd-pg/tls (mode 0600, owner twr); pg_hba.conf admits only hostssl rows: one role per connecting host (the tower server role over loopback, the Mac app role from the Mac's tailnet address, the Raspberry Pi server role from the Raspberry Pi's tailnet address) with scram-sha-256; no trust rows, no 0.0.0.0. Role credentials: the tower server role's credential lives in the ThroughLine server unit's private state (readable by the server account only); the Mac app role's credential lives in the app-only keychain entry (D04) proven by the K05 read-refusal test; the Raspberry Pi observer of T4.03 uses no role (credential-free liveness probe). AbsurdRuntimeInProcess.ts takes host identity from the record, not from environment variables. The cluster owner stays twr (existing eligible owner); seat isolation from the record is delivered by T6.01/T6.02, which is where the K04 reach test runs. Measured Oct 9, 2026, structure only (G6 B07): the twr-owned unit file is mode 0664 and carries the database environment assignment; the same twr account owns the server and the database, so 0600 state under that account does not isolate twr agents; the Mac development environment source is mode 0644; the app-only keychain identity and its access list are not yet established. So K05 stays sole holder, not isolated, until T6.02 and the K04 reach test pass. This task names the owning app and keychain identity, proves the access list with the installed boolean diagnostic plus a non-secret canary, removes credential inheritance from the harness environment, and retires the readable development source only in the guarded cutover.",
+    what: "The existing user-owned cluster (absurd-pg.service under twr, binaries and data at /home/twr/absurd-pg) stays in place and is rebound: listen_addresses adds the tailnet address 100.96.34.116 beside loopback; ssl=on with a server certificate under /home/twr/absurd-pg/tls (mode 0600, owner twr); pg_hba.conf admits only hostssl rows: one role per connecting host (the tower server role over loopback, the Mac app role from the Mac's tailnet address) with scram-sha-256; no trust rows, no 0.0.0.0. Role credentials: the tower server role's credential lives in the ThroughLine server unit's private state (readable by the server account only); the Mac app role's credential lives in the app-only keychain entry (D04) proven by the K05 read-refusal test; the Raspberry Pi observer of T4.03 uses no role (credential-free liveness probe). AbsurdRuntimeInProcess.ts takes host identity from the record, not from environment variables. T4.01 rebinds the cluster in place under its current owner twr (state shared-account); T4.06, batched with T6.01 in the Phase 4 sudo act, moves the same binaries and data to the throughline-record account as the system unit throughline-record.service (state record-isolated-seats-shared), and the postgresql.conf and pg_hba.conf edited here travel with the data directory unchanged; seat isolation (state authority-isolated) is delivered by T6.02, where the K04 reach test runs. Measured Oct 9, 2026, structure only (G6 B07): the twr-owned unit file is mode 0664 and carries the database environment assignment; the same twr account owns the server and the database, so 0600 state under that account does not isolate twr agents; the Mac development environment source is mode 0644; the app-only keychain identity and its access list are not yet established. This measured intake is shared-account; record isolation and tower credential custody become claimable only from T4.06, and agent binding and seat isolation only from T6.02 and its K04 reach test. This task names the owning app and keychain identity, proves the access list with the installed boolean diagnostic plus a non-secret canary, removes credential inheritance from the harness environment, and retires the readable development source only in the guarded cutover.",
     files: [
       {
         path: "/home/twr/absurd-pg/data/postgresql.conf",
@@ -2693,7 +2729,7 @@ const OUTLINE: Task[] = [
         host: "twr",
         owner: "twr",
         action: "edit",
-        note: "listen_addresses, ssl, ssl_cert_file, ssl_key_file; backup copy beside it before edit",
+        note: "listen_addresses, ssl, ssl_cert_file, ssl_key_file; backup copy beside it before edit; the two configuration files are edited at /home/twr/absurd-pg/data/ before T4.06 and live at /srv/agents-runtime-state/absurd-pg/data/ after it; the done_when reads whichever path the current state names",
       },
       {
         path: "/home/twr/absurd-pg/data/pg_hba.conf",
@@ -2701,7 +2737,7 @@ const OUTLINE: Task[] = [
         host: "twr",
         owner: "twr",
         action: "edit",
-        note: "hostssl rows only; backup copy beside it",
+        note: "hostssl rows only; backup copy beside it; the two configuration files are edited at /home/twr/absurd-pg/data/ before T4.06 and live at /srv/agents-runtime-state/absurd-pg/data/ after it; the done_when reads whichever path the current state names",
       },
       {
         path: "/home/twr/.config/systemd/user/absurd-pg.service",
@@ -2770,7 +2806,7 @@ const OUTLINE: Task[] = [
     done_when: {
       host: "rpi and the Mac for credential-free transport; twr (as the cluster owner over the local socket) for authenticated consumption observed from the server side; fired by a non-builder; no role or credential is handed to any test process",
       command:
-        "(a) transport and TLS, credential-free, from rpi and from the Mac: timeout 4 bash -c '</dev/tcp/100.96.34.116/5432' && echo OPEN; openssl s_client -starttls postgres -connect 100.96.34.116:5432 -servername twr </dev/null 2>/dev/null | grep -E '^(Protocol|Verify return code|subject=|issuer=)' ; (b) non-TLS refusal, as twr on the tower using the cluster's own client with no password: /home/twr/absurd-pg/bin/psql 'host=100.96.34.116 port=5432 dbname=absurd user=<mac role> sslmode=disable' -c 'select 1' ; (c) authenticated app consumption observed from the server side, as twr over the local socket (peer authentication, no password on the command line) while the installed /Applications/ThroughLine.app is running and shows its record connected: /home/twr/absurd-pg/bin/psql -h /tmp -d absurd -At -c \"select a.usename, a.client_addr, s.ssl, s.version from pg_stat_activity a join pg_stat_ssl s using (pid) where a.usename in ('<mac role>','<rpi role>')\"",
+        "State scope: the twr-owner psql probes below run only before T4.06, in shared-account; after T4.06 consume the server diagnostics and installed-message proof specified by T4.06, never obtain the role credential or run authenticated psql as twr. Configuration reads follow the state-named path. (a) transport and TLS, credential-free, from rpi and from the Mac: timeout 4 bash -c '</dev/tcp/100.96.34.116/5432' && echo OPEN; openssl s_client -starttls postgres -connect 100.96.34.116:5432 -servername twr </dev/null 2>/dev/null | grep -E '^(Protocol|Verify return code|subject=|issuer=)' ; (b) non-TLS refusal, as twr on the tower using the cluster's own client with no password: /home/twr/absurd-pg/bin/psql 'host=100.96.34.116 port=5432 dbname=absurd user=<mac role> sslmode=disable' -c 'select 1' ; (c) authenticated app consumption observed from the server side, as twr over the local socket (peer authentication, no password on the command line) while the installed /Applications/ThroughLine.app is running and shows its record connected: /home/twr/absurd-pg/bin/psql -h /tmp -d absurd -At -c \"select a.usename, a.client_addr, s.ssl, s.version from pg_stat_activity a join pg_stat_ssl s using (pid) where a.usename in ('<mac role>')\"",
       expect:
         "(a) OPEN on both hosts; the handshake reports a TLS 1.2-or-newer protocol and the certificate subject and issuer the T4.01 receipt pinned (self-signed is allowed in this task and its fingerprint is recorded; the verify return code is recorded as observed, not asserted zero); (b) the server refuses before authentication with the pg_hba message naming SSL off, no password prompt, no credential sent; (c) exactly one row per connected host: the Mac role from the Mac's tailnet address with ssl=t, and no row for any unlisted host; keychain boundary: recorded as PENDING-T6.03 in this receipt, proven by T6.03's access check, never by reading the item here",
     },
@@ -2797,34 +2833,54 @@ const OUTLINE: Task[] = [
       "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-27-ryan-slice-close-by-judge-not-self.yaml",
     ],
     interfaces_required: [
-      "T3.03 supplies the admission port the server uses; the role credential placement for the server unit is read from T6.01's StateDirectory decision when T6.01 lands; until then it stays in the user unit's private environment file under /home/twr/.config/absurd-pg/ mode 0600, which every twr process can read: this is part of the declared state sole-not-isolated (readback_revision.cutover_states) and is never reported as satisfying SHAPE-2026-08-19 on the tower",
+      "T3.03 supplies the admission port. Before T4.06, state shared-account, the existing twr private environment file is not credential isolation. T4.06 owns the root-held credential loaded only into throughline-server; its zero-output diagnostics/canary and installed consumption establish custody, not T6.01's seat StateDirectory.",
       "the Mac keychain boundary for the Mac app role (K05's read-refusal test) is proven by T6.03's keychain access check, which owns the adapter and the item; T4.01's receipt records keychain=PENDING-T6.03 and no depends_on edge is added, so the graph is unchanged",
     ],
     proof_limits: [
       "the connection-table read proves the installed app consumed the role over TLS from the Mac's address; it does not prove which process on the Mac holds the credential, which is T6.03's access check",
       "TLS proves transport privacy, not that the certificate is pinned by every client; pinning is named for slice 12",
-      "the twr-side psql commands run as the cluster owner in the declared state sole-not-isolated; they are read-only queries and send no credential, but they are not evidence of seat isolation",
+      "the twr-side psql commands run as the cluster owner in the declared state shared-account before T4.06; they are read-only queries and send no credential, but they are not evidence of seat isolation",
     ],
     reviewer: {
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        what: "The existing user-owned cluster (absurd-pg.service under twr, binaries and data at /home/twr/absurd-pg) stays in place and is rebound: listen_addresses adds the tailnet address 100.96.34.116 beside loopback; ssl=on with a server certificate under /home/twr/absurd-pg/tls (mode 0600, owner twr); pg_hba.conf admits only hostssl rows: one role per connecting host (the tower server role over loopback, the Mac app role from the Mac's tailnet address, the Raspberry Pi server role from the Raspberry Pi's tailnet address) with scram-sha-256; no trust rows, no 0.0.0.0. Role credentials: the tower server role's credential lives in the ThroughLine server unit's private state (readable by the server account only); the Mac app role's credential lives in the app-only keychain entry (D04) proven by the K05 read-refusal test; the Raspberry Pi observer of T4.03 uses no role (credential-free liveness probe). AbsurdRuntimeInProcess.ts takes host identity from the record, not from environment variables. The cluster owner stays twr (existing eligible owner); seat isolation from the record is delivered by T6.01/T6.02, which is where the K04 reach test runs. Measured Oct 9, 2026, structure only (G6 B07): the twr-owned unit file is mode 0664 and carries the database environment assignment; the same twr account owns the server and the database, so 0600 state under that account does not isolate twr agents; the Mac development environment source is mode 0644; the app-only keychain identity and its access list are not yet established. So K05 stays sole holder, not isolated, until T6.02 and the K04 reach test pass. This task names the owning app and keychain identity, proves the access list with the installed boolean diagnostic plus a non-secret canary, removes credential inheritance from the harness environment, and retires the readable development source only in the guarded cutover.",
+        done_when: {
+          host: "rpi and the Mac for credential-free transport; twr (as the cluster owner over the local socket) for authenticated consumption observed from the server side; fired by a non-builder; no role or credential is handed to any test process",
+          command:
+            "(a) transport and TLS, credential-free, from rpi and from the Mac: timeout 4 bash -c '</dev/tcp/100.96.34.116/5432' && echo OPEN; openssl s_client -starttls postgres -connect 100.96.34.116:5432 -servername twr </dev/null 2>/dev/null | grep -E '^(Protocol|Verify return code|subject=|issuer=)' ; (b) non-TLS refusal, as twr on the tower using the cluster's own client with no password: /home/twr/absurd-pg/bin/psql 'host=100.96.34.116 port=5432 dbname=absurd user=<mac role> sslmode=disable' -c 'select 1' ; (c) authenticated app consumption observed from the server side, as twr over the local socket (peer authentication, no password on the command line) while the installed /Applications/ThroughLine.app is running and shows its record connected: /home/twr/absurd-pg/bin/psql -h /tmp -d absurd -At -c \"select a.usename, a.client_addr, s.ssl, s.version from pg_stat_activity a join pg_stat_ssl s using (pid) where a.usename in ('<mac role>','<rpi role>')\"",
+          expect:
+            "(a) OPEN on both hosts; the handshake reports a TLS 1.2-or-newer protocol and the certificate subject and issuer the T4.01 receipt pinned (self-signed is allowed in this task and its fingerprint is recorded; the verify return code is recorded as observed, not asserted zero); (b) the server refuses before authentication with the pg_hba message naming SSL off, no password prompt, no credential sent; (c) exactly one row per connected host: the Mac role from the Mac's tailnet address with ssl=t, and no row for any unlisted host; keychain boundary: recorded as PENDING-T6.03 in this receipt, proven by T6.03's access check, never by reading the item here",
+        },
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
+    },
   },
   {
     id: "T4.02",
     later_named_task: {
-      text: "T4.04 (new, slice 4, after Phase 6 acceptance): drop staging databases, remove the Mac Postgres data directory and the Raspberry Pi's absurd-pg data directory, archive dump files; owner the same seat; no cutover logic",
+      text: "T4.04 (new, slice 4, after Phase 6 acceptance): drop staging databases, remove the Mac Postgres data directory, archive dump files; owner the same seat; no cutover logic",
       numbering:
         "Fable named it T4.04; that id is the existing Raspberry Pi notify.push task, so the cleanup task takes the next free slice-4 number when it is created after Phase 6 acceptance",
       source: "Fable-Delta-Hosts.json item 1",
+      deferred_rpi:
+        "General Raspberry Pi data cleanup remains paused; no recovery-island data is deleted or merged.",
     },
     slice: "slice-4",
-    title:
-      "The Mac and Raspberry Pi records are cut over into the one tower record; the Mac and Raspberry Pi keep none",
+    title: "The Mac record is cut over into the one tower record; the Mac keeps none",
     serves: ["NG-016", "NG-008", "NG-131"],
     detail_state: "detailed",
-    what: "Each source record (the Mac's Homebrew Postgres and the Raspberry Pi's absurd-pg.service user unit) is cut over into the tower cluster's authoritative database by the cutover tool (packages/throughline-record-cutover): fence the source admission with a visible refusal and drain in-flight effects to terminal or unknown; snapshot with pg_dump and a recorded digest; restore into a worker-less staging database on the tower cluster; verify counts, event ordering, blob digests and pending tasks, steps and waits; merge under existing identities with ON CONFLICT DO NOTHING asserting zero conflicts and recording every inserted key in throughline_import_ledger; switch the source server's connection to the tower record through its own host role; the fence stays on the source forever. Rollback inside the window deletes exactly the ledgered rows and repoints the source; before the switch the source is untouched. The absurd-habitat launchd job stops keeping a Mac Postgres alive and stays as a second, report-only observer of the tower record (T4.03 supplies the probe target); it is repurposed, not retired, and it is a transition mechanism only: its Health Hub row is never acceptance evidence for this task or any other (common_definitions.final_visibility), and once T12.04's ThroughLine durability view has proven itself on a real loss the Mac job becomes one watched service among the rest. The Homebrew postgresql@16 service is stopped and disabled only after both T4.03 receipts exist; its data directory is preserved on disk until the Phase-6 acceptance, never deleted by this task. When the tailnet or the tower record is unreachable a new Mac turn is refused with the existing visible error (the turn rail's queue-reachability refusal), the draft stays unsubmitted and cached history is shown as stale (K05). Keep Mac rollback data until authority-isolated and Phase-6 acceptance; no shared twr credential-custody claim before the launcher receipt. The Raspberry Pi's own record is cut over in its own batch and its absurd-pg.service is stopped and disabled only after its receipt and rollback window; its data is kept until Phase 6 acceptance.",
+    what: "The Mac source record (Homebrew Postgres) is cut over into the tower cluster's authoritative database by the cutover tool (packages/throughline-record-cutover): fence the source admission with a visible refusal and drain in-flight effects to terminal or unknown; snapshot with pg_dump and a recorded digest; restore into a worker-less staging database on the tower cluster; verify counts, event ordering, blob digests and pending tasks, steps and waits; merge under existing identities with ON CONFLICT DO NOTHING asserting zero conflicts and recording every inserted key in throughline_import_ledger; switch the source server's connection to the tower record through its own host role; the fence stays on the source forever. Rollback inside the window deletes exactly the ledgered rows and repoints the source; before the switch the source is untouched. The absurd-habitat launchd job stops keeping a Mac Postgres alive and stays as a second, report-only observer of the tower record (T4.03 supplies the probe target); it is repurposed, not retired, and it is a transition mechanism only: its Health Hub row is never acceptance evidence for this task or any other (common_definitions.final_visibility), and once T12.04's ThroughLine durability view has proven itself on a real loss the Mac job becomes one watched service among the rest. The Homebrew postgresql@16 service is stopped and disabled only after both T4.03 receipts exist; its data directory is preserved on disk until the Phase-6 acceptance, never deleted by this task. When the tailnet or the tower record is unreachable a new Mac turn is refused with the existing visible error (the turn rail's queue-reachability refusal), the draft stays unsubmitted and cached history is shown as stale (K05). Keep Mac rollback data until authority-isolated and Phase-6 acceptance; tower credential custody and record isolation are claimable from T4.06; agent binding and seat isolation still wait for T6.02. The Raspberry Pi general-record cutover is deferred under IC-008; the T12.08 recovery-island record is never merged into the tower.",
     files: [
       {
         path: "packages/throughline-record-cutover/",
@@ -2844,14 +2900,6 @@ const OUTLINE: Task[] = [
         owner: "twr",
         action: "add",
         note: "dump files and receipts per batch",
-      },
-      {
-        path: "/home/rpi/.config/systemd/user/absurd-pg.service",
-        side: "host-filesystem",
-        host: "rpi",
-        owner: "rpi",
-        action: "edit",
-        note: "disabled after the Raspberry Pi batch receipt; data kept",
       },
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/habitat-up.ts",
@@ -2886,13 +2934,13 @@ const OUTLINE: Task[] = [
       },
     ],
     signatures: [
-      "one receipt in execution/phase-04/ with the three command outputs and the non-builder's session id, dated after both T4.03 receipts; the receipt's first line is the literal state name sole-not-isolated",
+      "one receipt in execution/phase-04/ with the three command outputs and the non-builder's session id, dated after both T4.03 receipts; the receipt's first line is the literal state name record-isolated-seats-shared",
     ],
     failing_checks: ["PH2-C01"],
     done_when: {
-      host: "the tower as twr for the cutover tool, the Mac and the Raspberry Pi for the switch; a non-builder fires the verify, the switch probe and the rollback rehearsal",
+      host: "the tower as twr for the cutover tool, the Mac for the switch; a non-builder fires the verify, the switch probe and the rollback rehearsal",
       command:
-        "rehearsal first on a copy: run the full tool against a copy of the Mac dump restored to a disposable source cluster, through merge and switch into the tower rehearsal cluster, then `rollback <batch>`; then the real Mac batch, then the real Raspberry Pi batch; after each real switch: send one message in a migrated conversation from the source device and curl the tower snapshot for that conversation; then read throughline_import_ledger counts per table",
+        "rehearsal first on a copy: run the full tool against a copy of the Mac dump restored to a disposable source cluster, through merge and switch into the tower rehearsal cluster, then `rollback <batch>`; then the real Mac batch; after each real switch: send one message in a migrated conversation from the source device and curl the tower snapshot for that conversation; then read throughline_import_ledger counts per table",
       expect:
         "rehearsal: zero conflicts, verify counts equal, rollback leaves the tower rehearsal database row-for-row identical to before the merge (compared by table digests); real batches: the migrated conversation accepts the new message on the tower with its full prior history in order, rewind to its first turn works on the tower (K06), the ledger count equals the staging count, the source record is fenced and refuses a direct write with the visible refusal",
     },
@@ -2906,7 +2954,7 @@ const OUTLINE: Task[] = [
     rollback:
       "`brew services start postgresql@16`; revert the shipped absurd-sandbox version through Ship Warden to 0.2.0; the Mac server's record target reverts to loopback; both T4.03 receipts make this rollback unnecessary in the normal path but it stays executable until Phase-6 acceptance",
     completion_condition:
-      "sole-not-isolated only, after all T4.03 prerequisite receipts; authority-isolated and removal of rollback data remain later conditions, not dependencies through slice 6",
+      "state record-isolated-seats-shared: the tower record is the sole record under the throughline-record account, the Mac keeps none, twr seats cannot stop the record or read its credential; seats still share the twr account, so binding and seat isolation are not claimable until T6.02",
     failing_check_first:
       "before the work, `brew services list` shows postgresql@16 started and the habitat job's arguments name the loopback target (measured in the Tier 1 plist text); that is the real red",
     retained_protection:
@@ -2915,7 +2963,7 @@ const OUTLINE: Task[] = [
       "Fail if: any Mac process starts a local Postgres after the cutover; a send with the tower unreachable is accepted or silently queued on the Mac; the draft is lost; the habitat job restarts a Mac Postgres; the data directory was deleted",
     ryan_act: "none",
     not_guaranteed_in_this_state:
-      "tower seats (account twr) can still stop, edit or replace the record and read its server role credential; no claim of enforced agent binding, authority isolation or tower credential custody may appear in this task's receipt, in CURRENT.json, or in any health row until T6.02's receipt names state authority-isolated",
+      "tower seats (account twr) still share one account with each other and the human account, have no execution generation and can read one another's files; no claim of enforced agent binding or seat isolation may appear in this task's receipt, in CURRENT.json, or in any health row until T6.02's receipt names state authority-isolated; credential custody and record isolation are claimable from T4.06's receipt",
     governing_shapes: [
       "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-31-ryan-tier-1-only-edit-surface-ship-to-all-runtimes.yaml",
       "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-27-ryan-before-saying-you-checked-something-reasoning-is-not-running.yaml",
@@ -2932,6 +2980,87 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        title:
+          "The Mac and Raspberry Pi records are cut over into the one tower record; the Mac and Raspberry Pi keep none",
+        what: "The Mac source record (Homebrew Postgres) is cut over into the tower cluster's authoritative database by the cutover tool (packages/throughline-record-cutover): fence the source admission with a visible refusal and drain in-flight effects to terminal or unknown; snapshot with pg_dump and a recorded digest; restore into a worker-less staging database on the tower cluster; verify counts, event ordering, blob digests and pending tasks, steps and waits; merge under existing identities with ON CONFLICT DO NOTHING asserting zero conflicts and recording every inserted key in throughline_import_ledger; switch the source server's connection to the tower record through its own host role; the fence stays on the source forever. Rollback inside the window deletes exactly the ledgered rows and repoints the source; before the switch the source is untouched. The absurd-habitat launchd job stops keeping a Mac Postgres alive and stays as a second, report-only observer of the tower record (T4.03 supplies the probe target); it is repurposed, not retired, and it is a transition mechanism only: its Health Hub row is never acceptance evidence for this task or any other (common_definitions.final_visibility), and once T12.04's ThroughLine durability view has proven itself on a real loss the Mac job becomes one watched service among the rest. The Homebrew postgresql@16 service is stopped and disabled only after both T4.03 receipts exist; its data directory is preserved on disk until the Phase-6 acceptance, never deleted by this task. When the tailnet or the tower record is unreachable a new Mac turn is refused with the existing visible error (the turn rail's queue-reachability refusal), the draft stays unsubmitted and cached history is shown as stale (K05). Keep Mac rollback data until authority-isolated and Phase-6 acceptance; no shared twr credential-custody claim before the launcher receipt. The Raspberry Pi's own record is cut over in its own batch and its absurd-pg.service is stopped and disabled only after its receipt and rollback window; its data is kept until Phase 6 acceptance.",
+        done_when: {
+          host: "the tower as twr for the cutover tool, the Mac and the Raspberry Pi for the switch; a non-builder fires the verify, the switch probe and the rollback rehearsal",
+          command:
+            "rehearsal first on a copy: run the full tool against a copy of the Mac dump restored to a disposable source cluster, through merge and switch into the tower rehearsal cluster, then `rollback <batch>`; then the real Mac batch, then the real Raspberry Pi batch; after each real switch: send one message in a migrated conversation from the source device and curl the tower snapshot for that conversation; then read throughline_import_ledger counts per table",
+          expect:
+            "rehearsal: zero conflicts, verify counts equal, rollback leaves the tower rehearsal database row-for-row identical to before the merge (compared by table digests); real batches: the migrated conversation accepts the new message on the tower with its full prior history in order, rewind to its first turn works on the tower (K06), the ledger count equals the staging count, the source record is fenced and refuses a direct write with the visible refusal",
+        },
+        files: [
+          {
+            path: "packages/throughline-record-cutover/",
+            side: "fork-namespace",
+            action: "add",
+            note: "TypeScript; subcommands fence, drain, snapshot, transfer, verify, merge, switch, unfence, rollback <batch>; K12 operation id, attempt and receipts; import ledger table migration",
+          },
+          {
+            path: "packages/absurd-runtime/migrations/<next>_throughline_import_ledger.sql",
+            side: "fork-namespace",
+            action: "add",
+          },
+          {
+            path: "/home/twr/absurd-pg-cutover/<batch>/",
+            side: "host-filesystem",
+            host: "twr",
+            owner: "twr",
+            action: "add",
+            note: "dump files and receipts per batch",
+          },
+          {
+            path: "/home/rpi/.config/systemd/user/absurd-pg.service",
+            side: "host-filesystem",
+            host: "rpi",
+            owner: "rpi",
+            action: "edit",
+            note: "disabled after the Raspberry Pi batch receipt; data kept",
+          },
+          {
+            path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/habitat-up.ts",
+            side: "outside-tool",
+            action: "edit",
+            note: "Tier 1 owner. supervise mode reads its probe target from a config file; when the target is remote the recovery ladder is disabled and the mode is report-only; shipped through Ship Warden as a version bump of absurd-sandbox (0.2.0 → next)",
+          },
+          {
+            path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/com.ryan.absurd-habitat.plist",
+            side: "outside-tool",
+            action: "edit",
+            note: "arguments name the remote target config; RunAtLoad and KeepAlive unchanged",
+          },
+          {
+            path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/runtime-targets.json",
+            side: "outside-tool",
+            action: "edit",
+            note: "declares the shipped payloads; Ship Warden is the lane",
+          },
+          {
+            path: "/Users/Admin/core-root/src/tools/absurd-sandbox/dist/habitat-up.mjs",
+            side: "outside-tool",
+            action: "read",
+            note: "never edited; proves the ship landed",
+            surface: "verification",
+          },
+          {
+            path: "apps/server/src/orchestration/AbsurdRuntimeInProcess.ts",
+            side: "fork-namespace",
+            action: "edit",
+            note: "connection target from the record configuration, no localhost default",
+          },
+        ],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
+    },
   },
   {
     id: "T4.03",
@@ -2940,7 +3069,7 @@ const OUTLINE: Task[] = [
       "The tower record is kept alive and watched from the always-on Raspberry Pi before the Mac path retires",
     serves: ["NG-016", "NG-008", "NG-128", "NG-131"],
     detail_state: "detailed",
-    what: "Keep-alive: the existing absurd-pg.service user unit already carries Restart=always with a 3-second interval; it is retained, not replaced, and proven on the rehearsal cluster. Off-host detection: a user unit and 60-second timer under the rpi account on the Raspberry Pi (Linger=yes, always on, independent of the Mac and of the tower) runs a credential-free liveness probe against 100.96.34.116:5432 (TCP connect plus Postgres startup handshake with TLS, the pg_isready shape; no role, no password) and writes a durable status row to /home/rpi/.local/state/absurd-record-watch/status.json plus an append-only loss log. Operator notification: when a loss persists for two consecutive cycles outside a declared maintenance window, the observer asks the Raspberry Pi's own admin-capability-broker (broker-capability.service, account broker-service, a system unit on the Raspberry Pi that holds credentials under root-owned custody and serves typed capabilities over a Unix socket to the rpi group) to push one line to the existing ntfy.sh phone topic Ryan already receives alerts on; recovery pushes one line. That route depends on nothing on the tower and nothing on the Mac: measured 2026-10-09 from the rpi account, ntfy.sh resolves to a public address and is reached through the LAN default gateway 192.168.0.1 on eth0 with no Tailscale exit node, not through the tailnet. A forwarder to the tower broker (broker-tower-tunnel.service) is explicitly not the route, because it dies with the tower. The push capability does not exist in the broker's registry yet; it is a required prerequisite with a named owner and first action (open_dependencies below), so until it is installed the notification cell reads DEPENDENCY-OPEN and is never reported as accepted. The Mac habitat supervisor is a second observer kept only as a transition mechanism; the Health Hub adapter it reports to is retired by SHAPE-2026-09-03 line 28 and counts for nothing in acceptance; it is not the laptop-closed witness. Final visibility is the ThroughLine durability view that T12.01 builds (which shows the Raspberry Pi observer's heartbeat row and its age) plus the Raspberry Pi notification path when the tower or its record is down. Independence from the admission path: the observer writes its loss row to the Raspberry Pi's own disk, calls the Raspberry Pi broker over a local Unix socket, and the broker publishes to ntfy.sh over the LAN; no ThroughLine turn, Absurd task, event or admitted command is involved anywhere in that chain, so the report reaches Ryan while the tower record is the thing that is down. No seat reports the tower record healthy from the tower's own say-so: a health claim cites the Raspberry Pi status row or the durability view's rendering of it. Restart/timer values are read from effective installed configuration; a fast restart alone does not promise a sampled loss. T4.04 and T4.05 receipts are required before cutover; notification is never conditional PASS. Runtime loss testing uses a sustained controlled rehearsal fault through the real consumer, not a shared live-database kill. On a confirmed loss the watcher opens an incident in /home/rpi/.local/state/absurd-record-watch/incidents/<id>.json; T12.08 consumes it (tier 0 before notification; informational line at open and close; a page only by T12.08's tier-2 rule).",
+    what: "Keep-alive: the record at 100.96.34.116:5432, probed by address; the unit that owns that port is state-dependent: absurd-pg.service (twr user unit) in state shared-account, throughline-record.service (system unit, account throughline-record) from state record-isolated-seats-shared onward; the keep-alive proof runs on the rehearsal cluster in whichever state is current and asserts Restart=always on the unit that owns the port at check time. Off-host detection: a user unit and 60-second timer under the rpi account on the Raspberry Pi (Linger=yes, always on, independent of the Mac and of the tower) runs a credential-free liveness probe against 100.96.34.116:5432 (TCP connect plus Postgres startup handshake with TLS, the pg_isready shape; no role, no password) and writes a durable status row to /home/rpi/.local/state/absurd-record-watch/status.json plus an append-only loss log. Operator notification: when a loss persists for two consecutive cycles outside a declared maintenance window, the observer asks the Raspberry Pi's own admin-capability-broker (broker-capability.service, account broker-service, a system unit on the Raspberry Pi that holds credentials under root-owned custody and serves typed capabilities over a Unix socket to the rpi group) to push one line to the existing ntfy.sh phone topic Ryan already receives alerts on; recovery pushes one line. That route depends on nothing on the tower and nothing on the Mac: measured 2026-10-09 from the rpi account, ntfy.sh resolves to a public address and is reached through the LAN default gateway 192.168.0.1 on eth0 with no Tailscale exit node, not through the tailnet. A forwarder to the tower broker (broker-tower-tunnel.service) is explicitly not the route, because it dies with the tower. The push capability does not exist in the broker's registry yet; it is a required prerequisite with a named owner and first action (open_dependencies below), so until it is installed the notification cell reads DEPENDENCY-OPEN and is never reported as accepted. The Mac habitat supervisor is a second observer kept only as a transition mechanism; the Health Hub adapter it reports to is retired by SHAPE-2026-09-03 line 28 and counts for nothing in acceptance; it is not the laptop-closed witness. Final visibility is the ThroughLine durability view that T12.01 builds (which shows the Raspberry Pi observer's heartbeat row and its age) plus the Raspberry Pi notification path when the tower or its record is down. Independence from the admission path: the observer writes its loss row to the Raspberry Pi's own disk, calls the Raspberry Pi broker over a local Unix socket, and the broker publishes to ntfy.sh over the LAN; no ThroughLine turn, Absurd task, event or admitted command is involved anywhere in that chain, so the report reaches Ryan while the tower record is the thing that is down. No seat reports the tower record healthy from the tower's own say-so: a health claim cites the Raspberry Pi status row or the durability view's rendering of it. Restart/timer values are read from effective installed configuration; a fast restart alone does not promise a sampled loss. T4.04 and T4.05 receipts are required before cutover; notification is never conditional PASS. Runtime loss testing uses a sustained controlled rehearsal fault through the real consumer, not a shared live-database kill. On a confirmed loss the watcher opens an incident file in /home/rpi/.local/state/absurd-record-watch/incidents/<id>.json with responder=not-installed and sends one informational line through notify.push reading 'no responder installed yet; no action needed unless paged'; T12.08 later consumes the same incident file and owns tier 0, tier 1, their ordering before further lines, and the page.",
     files: [
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/habitat-up.ts",
@@ -3007,14 +3136,61 @@ const OUTLINE: Task[] = [
     },
     service_binding: {
       host: "twr",
-      owner: "twr",
-      scope: "user",
-      unit: "absurd-pg.service",
-      fragment: "/home/twr/.config/systemd/user/absurd-pg.service",
+      owner: "state-dependent",
+      scope: "state-dependent",
+      unit: "state-dependent",
+      fragment: "state-dependent",
       readback_source:
         "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-02/host-spec-preparation/Host-Identity-Readback.md",
       configuration_at_intake:
         "systemctl --user show absurd-pg.service -p FragmentPath -p Restart -p RestartUSec -p NRestarts -p ActiveState; loginctl show-user twr -p Linger; read-only as twr, no credential output",
+      address: "100.96.34.116:5432",
+      intake_binding: {
+        host: "twr",
+        owner: "twr",
+        scope: "user",
+        unit: "absurd-pg.service",
+        fragment: "/home/twr/.config/systemd/user/absurd-pg.service",
+        readback_source:
+          "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-02/host-spec-preparation/Host-Identity-Readback.md",
+        configuration_at_intake:
+          "systemctl --user show absurd-pg.service -p FragmentPath -p Restart -p RestartUSec -p NRestarts -p ActiveState; loginctl show-user twr -p Linger; read-only as twr, no credential output",
+      },
+      state_rule:
+        "the record at 100.96.34.116:5432, probed by address; the unit that owns that port is state-dependent: absurd-pg.service (twr user unit) in state shared-account, throughline-record.service (system unit, account throughline-record) from state record-isolated-seats-shared onward; the keep-alive proof runs on the rehearsal cluster in whichever state is current and asserts Restart=always on the unit that owns the port at check time",
+      check_adaptation:
+        "the check reads the unit owning port 5432 at check time (ss -ltnp as a privileged read is not available to twr after T4.06; use systemctl show on the state-named unit) and asserts its Restart= is always; it no longer pins the unit name absurd-pg.service; expected_today stays as measured until T4.06 lands",
+      state_bindings: [
+        {
+          state: "shared-account",
+          owner: "twr",
+          scope: "user",
+          unit: "absurd-pg.service",
+          fragment: "/home/twr/.config/systemd/user/absurd-pg.service",
+          readback:
+            "systemctl --user show absurd-pg.service -p FragmentPath -p Restart -p RestartUSec -p ActiveState",
+        },
+        {
+          state: "record-isolated-seats-shared",
+          owner: "throughline-record",
+          scope: "system",
+          unit: "throughline-record.service",
+          fragment: "/etc/systemd/system/throughline-record.service",
+          readback:
+            "systemctl show throughline-record.service -p FragmentPath -p User -p Restart -p RestartUSec -p ActiveState",
+        },
+        {
+          state: "authority-isolated",
+          owner: "throughline-record",
+          scope: "system",
+          unit: "throughline-record.service",
+          fragment: "/etc/systemd/system/throughline-record.service",
+          readback:
+            "systemctl show throughline-record.service -p FragmentPath -p User -p Restart -p RestartUSec -p ActiveState",
+        },
+      ],
+      proof_scope:
+        "Read the T4.06/T6.02 receipts and current state-named unit; assert Restart=always. Never infer ownership from port output requiring privilege. Faults are confined to the owning batch rehearsal copy; no live record or server is stopped or killed.",
     },
     observer: {
       host: "rpi",
@@ -3054,9 +3230,9 @@ const OUTLINE: Task[] = [
     ],
     done_when: {
       command:
-        "Non-builder, disposable rehearsal only: (1) as twr record systemctl --user show absurd-pg-rehearsal.service -p ActiveState -p NRestarts -p Result and the effective Restart/RestartUSec; systemctl --user kill -s SIGKILL absurd-pg-rehearsal.service; wait/poll for the installed restart interval plus a declared margin, then read ActiveState/NRestarts and journalctl --user -u absurd-pg-rehearsal.service for the signal and restart. (2) Through the shipped observer’s real probe consumer, inject a controlled connection-refused/TLS-handshake failure against the disposable rehearsal endpoint for longer than two installed timer cycles, with laptop closed and tower server/record unavailable in a safe rehearsal window; read the Raspberry Pi status/log and local broker receipt, and witness the phone push. Clear the injected fault and witness reachable plus recovery push. (3) Through the owning shipped module’s maintenance interface record a window; as twr systemctl --user stop absurd-pg-rehearsal.service; wait an installed observer cycle, read the stopped-intentionally row/log and unit Result/NRestarts; explicitly start the rehearsal unit for cleanup. Live absurd-pg.service is never stopped, killed or modified by a fault probe.",
+        "Non-builder: select the current state-named unit from service_binding.state_bindings and read its effective Restart=always. Run the keep-alive, sustained-loss and maintenance proofs against the owning T4.06 batch rehearsal copy in that same state. In shared-account the historical user-unit rehearsal command below applies; after T4.06 use the owning batch rehearsal fault interface under its declared account, not twr systemctl kill/stop and never a live shared database. Historical shared-account command: Non-builder, disposable rehearsal only: (1) as twr record systemctl --user show absurd-pg-rehearsal.service -p ActiveState -p NRestarts -p Result and the effective Restart/RestartUSec; systemctl --user kill -s SIGKILL absurd-pg-rehearsal.service; wait/poll for the installed restart interval plus a declared margin, then read ActiveState/NRestarts and journalctl --user -u absurd-pg-rehearsal.service for the signal and restart. (2) Through the shipped observer’s real probe consumer, inject a controlled connection-refused/TLS-handshake failure against the disposable rehearsal endpoint for longer than two installed timer cycles, with laptop closed and tower server/record unavailable in a safe rehearsal window; read the Raspberry Pi status/log and local broker receipt, and witness the phone push. Clear the injected fault and witness reachable plus recovery push. (3) Through the owning shipped module’s maintenance interface record a window; as twr systemctl --user stop absurd-pg-rehearsal.service; wait an installed observer cycle, read the stopped-intentionally row/log and unit Result/NRestarts; explicitly start the rehearsal unit for cleanup. Live absurd-pg.service is never stopped, killed or modified by a fault probe.",
       expect:
-        "Three non-builder receipts: injected crash returns automatically with NRestarts increased and signal/restart journal evidence; sustained controlled loss is durably visible off-host and actually delivered to the phone while Mac and tower are unavailable; maintenance stop stays down, is reported as intentional with Result=success/NRestarts unchanged, and is restored explicitly. A fast restart alone does not promise a sampled loss row. Any missing observer delivery/notify.push grant receipt leaves cutover unaccepted, never a conditional PASS. the loss in step (2) opens an incident and the ledger shows tier 0 attempted before the informational line is sent",
+        "Three non-builder receipts: injected crash returns automatically with NRestarts increased and signal/restart journal evidence; sustained controlled loss is durably visible off-host and actually delivered to the phone while Mac and tower are unavailable; maintenance stop stays down, is reported as intentional with Result=success/NRestarts unchanged, and is restored explicitly. A fast restart alone does not promise a sampled loss row. Any missing observer delivery/notify.push grant receipt leaves cutover unaccepted, never a conditional PASS. the loss in step (2) creates an incident file with responder=not-installed and sends exactly one informational line; no page is sent and nothing attempts a repair",
     },
     governing_shapes: [
       "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-31-ryan-tier-1-only-edit-surface-ship-to-all-runtimes.yaml",
@@ -3136,6 +3312,19 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    phase_scoped_acceptance: {
+      "phase_4_acceptance_T4.03":
+        "T4.03 is accepted in Phase 4 when, on a confirmed rehearsal loss with the Mac lid closed, the watcher creates the incident file with responder=not-installed, sends exactly one informational line reading 'no responder installed yet; no action needed unless paged', attempts no repair and sends no page; the keep-alive proof and the maintenance-window proof pass as written. Phase 4 acceptance makes no claim about tier 0, tier 1 or ordering.",
+      "phase_12_acceptance_T12.08":
+        "T12.08 is accepted in Phase 12 when the same incident mechanism, on a rehearsal loss, records tier 0 attempted before the informational open line is sent, moves the incident's responder field from not-installed through tier-0 and tier-1 to closed, and the page half passes; the ordering 'tier 0 before notify' is a Phase 12 claim only and appears in no Phase 4 receipt.",
+      "T4.03_done_when_expect_final_text":
+        "the loss in step (2) creates an incident file with responder=not-installed and sends exactly one informational line; no page is sent and nothing attempts a repair",
+      "T4.03_what_final_append":
+        "On a confirmed loss the watcher opens an incident file in /home/rpi/.local/state/absurd-record-watch/incidents/<id>.json with responder=not-installed and sends one informational line through notify.push reading 'no responder installed yet; no action needed unless paged'; T12.08 later consumes the same incident file and owns tier 0, tier 1, their ordering before further lines, and the page.",
     },
   },
   {
@@ -3241,6 +3430,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T5.02",
@@ -3374,26 +3565,19 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T6.01",
     slice: "slice-6",
-    title:
-      "The root-owned ThroughLine supervisor on each Linux execution host (tower and Raspberry Pi), installed once per host by Ryan",
+    title: "The root-owned ThroughLine supervisor on the tower, installed once by Ryan",
     serves: ["NG-070", "NG-197", "NG-072"],
     detail_state: "detailed",
-    what: "Two root-owned system unit files: the supervisor service (starts and stops agent units on the admission service's instruction) and the agent template unit with DynamicUser=yes, PrivateNetwork=yes, ProtectHome=yes, StateDirectory per instance, and the two sockets (broker, messaging) bind-mounted in; this wires the two lines in systemd-execution.ts (93 and 94) that declare a dynamic Linux user per agent and are unwired today. Agents keep no sudo. The existing throughline-server.service user unit under twr keeps running through this task; moving the server itself under the supervisor is a later step with its own receipt, not part of this task. Ryan performs the single install act after the nonprivileged preflight passes. The same two unit files install on the Raspberry Pi under its own host configuration (agent account rpi, arm64 launcher build, the Raspberry Pi broker socket path from the broker's installed contract). Privilege authority is host-specific: tower installs are Ryan's sudo act; Raspberry Pi installs are Ryan's act through the admin account. On both hosts the agent prepares the identical nonprivileged preflight (systemd-analyze verify as the agent account; a user-manager rehearsal of the template without DynamicUser; payload sha256 pinned in the request file) and root runs only the root-owned, hash-checked copy. Each host yields its own installed-supervisor receipt; neither stands for the other. The supervisor control socket's peer allowlist is the throughline-server account from T4.06, not twr.",
+    what: "Two root-owned system unit files: the supervisor service (starts and stops agent units on the admission service's instruction) and the agent template unit with DynamicUser=yes, PrivateNetwork=yes, ProtectHome=yes, StateDirectory per instance, and the two sockets (broker, messaging) bind-mounted in; this wires the two lines in systemd-execution.ts (93 and 94) that declare a dynamic Linux user per agent and are unwired today. Agents keep no sudo. T4.06, batched with this task in the same Ryan sudo act, has already moved the ThroughLine server to throughline-server.service, a system unit under the throughline-server account, and the record to throughline-record.service; the twr user units for both are disabled and kept on disk as rollback; this task does not touch either unit, and the supervisor's control socket admits the throughline-server account's uid. Ryan performs the single install act after the nonprivileged preflight passes. Tower installs remain Ryan's sudo act. On the tower the agent prepares the nonprivileged preflight (systemd-analyze verify as the agent account; a user-manager rehearsal of the template without DynamicUser; payload sha256 pinned in the request file) and root runs only the root-owned, hash-checked copy. The tower yields its installed-supervisor receipt; the Raspberry Pi supervisor rollout is retained only as deferred history. The supervisor control socket's peer allowlist is the throughline-server account from T4.06, not twr. The supervisor's polkit grant covers throughline-agent@*.service for start, stop, restart and kill, and additionally throughline-record.service and throughline-server.service for start and restart only; it never covers stop or kill of those two units and no other account holds any grant on them.",
     files: [
       {
-        path: "/etc/systemd/system/throughline-supervisor.service and throughline-agent@.service",
-        side: "host-filesystem",
-        host: "rpi",
-        owner: "root",
-        action: "add",
-        note: "installed by Ryan's act through the admin account",
-      },
-      {
-        path: "packages/throughline-launcher/hosts/twr.json and hosts/rpi.json",
+        path: "packages/throughline-launcher/hosts/twr.json",
         side: "fork-namespace",
         action: "add",
         note: "per-host configuration: agent account, architecture, broker socket contract path, record role name; no credential",
@@ -3438,11 +3622,11 @@ const OUTLINE: Task[] = [
     ],
     failing_checks: ["PH2-C01"],
     done_when: {
-      host: "twr and rpi, each after Ryan's install on that host, fired by a non-builder as the host's agent account (no sudo)",
+      host: "twr, after Ryan's install, fired by a non-builder as twr (no sudo)",
       command:
         "systemctl show throughline-supervisor.service -p ActiveState -p User -p FragmentPath; systemctl show 'throughline-agent@probe.service' -p DynamicUser -p PrivateNetwork -p ProtectHome -p StateDirectory; then ask the supervisor through the admission service to start one probe agent and inside it run: id -u; ls /home/twr; ls -l $BROKER_SOCKET",
       expect:
-        "the supervisor is active, FragmentPath under /etc/systemd/system, root-owned; the template shows DynamicUser=yes, PrivateNetwork=yes, ProtectHome=yes; inside the probe agent id -u is not 1002 (twr) and not 0, ls /home/twr fails, the broker socket exists and is connectable; the same expectations hold on the Raspberry Pi with id -u not 1007 (rpi) and not 0, ls /home/rpi failing inside the probe agent, and the Raspberry Pi broker socket connectable; two receipts, one per host",
+        "the supervisor is active, FragmentPath under /etc/systemd/system, root-owned; the template shows DynamicUser=yes, PrivateNetwork=yes, ProtectHome=yes; inside the probe agent id -u is not 1002 (twr) and not 0, ls /home/twr fails, the broker socket exists and is connectable; one tower receipt",
     },
     depends_on: ["T4.01", "T5.02", "T4.06"],
     executor: {
@@ -3487,6 +3671,77 @@ const OUTLINE: Task[] = [
     },
 
     batched_with: "T4.06 (same Ryan sudo act; scheduling note, not a reverse dependency)",
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        title:
+          "The root-owned ThroughLine supervisor on each Linux execution host (tower and Raspberry Pi), installed once per host by Ryan",
+        what: "Two root-owned system unit files: the supervisor service (starts and stops agent units on the admission service's instruction) and the agent template unit with DynamicUser=yes, PrivateNetwork=yes, ProtectHome=yes, StateDirectory per instance, and the two sockets (broker, messaging) bind-mounted in; this wires the two lines in systemd-execution.ts (93 and 94) that declare a dynamic Linux user per agent and are unwired today. Agents keep no sudo. The existing throughline-server.service user unit under twr keeps running through this task; moving the server itself under the supervisor is a later step with its own receipt, not part of this task. Ryan performs the single install act after the nonprivileged preflight passes. Tower installs remain Ryan's sudo act. On the tower the agent prepares the nonprivileged preflight (systemd-analyze verify as the agent account; a user-manager rehearsal of the template without DynamicUser; payload sha256 pinned in the request file) and root runs only the root-owned, hash-checked copy. Each host yields its own installed-supervisor receipt; neither stands for the other. The supervisor control socket's peer allowlist is the throughline-server account from T4.06, not twr. The supervisor's polkit grant covers throughline-agent@*.service for start, stop, restart and kill, and additionally throughline-record.service and throughline-server.service for start and restart only; it never covers stop or kill of those two units and no other account holds any grant on them.",
+        done_when: {
+          host: "twr and rpi, each after Ryan's install on that host, fired by a non-builder as the host's agent account (no sudo)",
+          command:
+            "systemctl show throughline-supervisor.service -p ActiveState -p User -p FragmentPath; systemctl show 'throughline-agent@probe.service' -p DynamicUser -p PrivateNetwork -p ProtectHome -p StateDirectory; then ask the supervisor through the admission service to start one probe agent and inside it run: id -u; ls /home/twr; ls -l $BROKER_SOCKET",
+          expect:
+            "the supervisor is active, FragmentPath under /etc/systemd/system, root-owned; the template shows DynamicUser=yes, PrivateNetwork=yes, ProtectHome=yes; inside the probe agent id -u is not 1002 (twr) and not 0, ls /home/twr fails, the broker socket exists and is connectable; the same expectations hold on the Raspberry Pi with id -u not 1007 (rpi) and not 0, ls /home/rpi failing inside the probe agent, and the Raspberry Pi broker socket connectable; two receipts, one per host",
+        },
+        files: [
+          {
+            path: "/etc/systemd/system/throughline-supervisor.service and throughline-agent@.service",
+            side: "host-filesystem",
+            host: "rpi",
+            owner: "root",
+            action: "add",
+            note: "installed by Ryan's act through the admin account",
+          },
+          {
+            path: "packages/throughline-launcher/hosts/twr.json and hosts/rpi.json",
+            side: "fork-namespace",
+            action: "add",
+            note: "per-host configuration: agent account, architecture, broker socket contract path, record role name; no credential",
+          },
+          {
+            path: "packages/task-workspaces/src/systemd-execution.ts",
+            side: "fork-namespace",
+            action: "edit",
+            note: "lines 93 and 94 wired; verify by reading the file at intake, the line numbers are from spec 0.3.0",
+          },
+          {
+            path: "packages/throughline-launcher/systemd/throughline-supervisor.service",
+            side: "fork-namespace",
+            action: "add",
+            note: "unit names follow the Command-Grammar-Standard naming of Linux units; the lead confirms the names before the sudo act",
+          },
+          {
+            path: "packages/throughline-launcher/systemd/throughline-agent@.service",
+            side: "fork-namespace",
+            action: "add",
+            note: "unit names follow the Command-Grammar-Standard naming of Linux units; the lead confirms the names before the sudo act",
+          },
+          {
+            path: "/etc/systemd/system/throughline-supervisor.service",
+            side: "host-filesystem",
+            host: "twr",
+            owner: "root",
+            action: "add",
+            note: "installed by Ryan's sudo act",
+          },
+          {
+            path: "/etc/systemd/system/throughline-agent@.service",
+            side: "host-filesystem",
+            host: "twr",
+            owner: "root",
+            action: "add",
+            note: "installed by Ryan's sudo act",
+          },
+        ],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
+    },
   },
   {
     id: "T6.02",
@@ -3502,15 +3757,15 @@ const OUTLINE: Task[] = [
       "The launcher: binds the identity to the execution generation, starts the harness with its mod or extension, registers the socket endpoint",
     serves: ["NG-062", "NG-067", "NG-068", "NG-197", "NG-050"],
     detail_state: "detailed",
-    what: "One program in packages/throughline-launcher executed by the agent template unit: reads its generation (uid from id, $INVOCATION_ID, cgroup from /proc/self/cgroup, process start from /proc/self/stat), writes the identity join row (T5.02 API) binding the public agent id to that generation, creates the agent's messaging socket under the root-owned runtime directory the supervisor passes in, registers the endpoint with the admission service carrying the generation, starts the harness (Claude with the ThroughLine mod, Codex with its approval policy, Pi with the extension) with the mods folder read-only to the agent, passes the broker socket and the broker observer endpoint (IA-05) into the profile, and on exit drains results, closes the endpoint, lets the unit stop, and the dynamic account is removed by systemd; a replayed registration or a late result from a replaced generation is refused by the admission service. Crash resume: a new generation registers fresh; the old generation's unknown effects stay unknown (K01). The launcher is built per architecture (x86_64, arm64) with K12 input digests and reads its host configuration from packages/throughline-launcher/hosts/<host>.json; it runs identically under both supervisors. At every unit start the launcher's supervisor writes the generation registry entry (unit name, invocation id from systemctl show, cgroup path, dynamic uid, unit start time, children_allowed, state=active) under /run/throughline/registry/<unit>.json, root-owned, group-readable by the host's server account; at ExecStopPost it sets state=closed. The host's server forwards the entry to the admission service over its own authenticated record connection; no key is minted.",
+    what: "One program in packages/throughline-launcher executed by the agent template unit: reads its generation (uid from id, $INVOCATION_ID, cgroup from /proc/self/cgroup, process start from /proc/self/stat), writes the identity join row (T5.02 API) binding the public agent id to that generation, creates the agent's messaging socket under the root-owned runtime directory the supervisor passes in, registers the endpoint with the admission service carrying the generation, starts the harness (Claude with the ThroughLine mod, Codex with its approval policy, Pi with the extension) with the mods folder read-only to the agent, passes the broker socket and the broker observer endpoint (IA-05) into the profile, and on exit drains results, closes the endpoint, lets the unit stop, and the dynamic account is removed by systemd; a replayed registration or a late result from a replaced generation is refused by the admission service. Crash resume: a new generation registers fresh; the old generation's unknown effects stay unknown (K01). The launcher is built per architecture (x86_64, arm64) with K12 input digests and reads its host configuration from packages/throughline-launcher/hosts/<host>.json; the active Linux deployment is the tower supervisor; the Raspberry Pi host template is deferred. At every unit start the launcher's supervisor writes the generation registry entry (unit name, invocation id from systemctl show, cgroup path, dynamic uid, unit start time, children_allowed, state=active) under /run/throughline/registry/<unit>.json, root-owned, group-readable by the host's server account; at ExecStopPost it sets state=closed. The host's server forwards the entry to the admission service over its own authenticated record connection; no key is minted. It exposes an optional target-id job input and read-only target-tool binding slot. T9.01 and the provider owners prove target-bound launch/succession later; target-free exploratory launches stay supported and no later-slice edge is added here.",
     files: [
       {
         path: "/run/throughline/registry/",
         side: "host-filesystem",
-        host: "twr and rpi",
+        host: "twr",
         owner: "root directory, entries root-owned, readable by the server account",
         action: "add",
-        note: "created by the supervisor; verification target",
+        note: "created by the supervisor; verification target; Raspberry Pi counterpart deferred under IC-008",
       },
       {
         path: "packages/throughline-launcher/",
@@ -3523,15 +3778,21 @@ const OUTLINE: Task[] = [
         action: "add",
         note: "generation-carrying registration and refusal of replays",
       },
+      {
+        path: "packages/throughline-launcher/src/target-binding.ts",
+        side: "fork-namespace",
+        action: "add",
+        exists_now: false,
+      },
     ],
     signatures: ["one receipt per provider plus the replay receipt"],
     failing_checks: ["PH2-C01"],
     done_when: {
-      host: "twr, under the installed supervisor, non-builder and rpi under its supervisor after the Raspberry Pi server is installed at the same release through the existing per-slice Raspberry Pi install path (pipeline steps build-rpi, gate-rpi, stage-rpi-headless and install-rpi-headless, which T1.10 already requires)",
+      host: "twr, under the installed supervisor, non-builder",
       command:
         "start one agent of each provider; record each registration; then: kill the Claude agent's unit, restart it, and replay the first registration and a result signed with the first generation; inside the restarted Codex agent run: ls $BROKER_SOCKET $OBSERVER_ENDPOINT; curl -s --unix-socket $OBSERVER_ENDPOINT http://x/headroom | jq .freshness; ls /home/twr; cat /etc/passwd | grep -c throughline; then as twr on the tower: ps -u twr -o pid=,comm= | grep -vE '^ *[0-9]+ (postgres|node|systemd|\\(sd-pam\\))$' ; systemctl --user list-units --type=service --no-legend | grep -ciE 'claude|codex|pi-|harness|seat'",
       expect:
-        "three registrations with distinct generations; the replayed registration and the stale result are refused with recorded events; the broker socket and observer endpoint exist and headroom returns a freshness field with no credential in the environment; ls /home/twr fails; the previous dynamic account is gone from the system after its unit stopped; the twr process list shows only the record, the server and systemd (no harness process), and twr's user manager runs no seat unit: this is the no-twr-seat probe that reaches state authority-isolated; a separate Raspberry Pi receipt with the same five outcomes; the per-host provider receipt (the K03 matrix measured on that host) belongs to the provider binding owners T8.01, T11.01 and T11.02 and their device cells, and is not a condition of T6.02",
+        "three registrations with distinct generations; the replayed registration and the stale result are refused with recorded events; the broker socket and observer endpoint exist and headroom returns a freshness field with no credential in the environment; ls /home/twr fails; the previous dynamic account is gone from the system after its unit stopped; the twr process list shows no harness process and neither the record nor the server (those are owned by throughline-record and throughline-server after T4.06), and twr's user manager runs no seat unit: this is the no-twr-seat probe that reaches state authority-isolated; the per-host provider receipt (the K03 matrix measured on that host) belongs to the provider binding owners T8.01, T11.01 and T11.02 and their device cells, and is not a condition of T6.02",
     },
     depends_on: ["T6.01", "T1.10"],
     executor: {
@@ -3566,6 +3827,62 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    target_tool_launch: {
+      owner: "T9.01",
+      source: "packages/throughline-launcher/src/target-binding.ts",
+      input_keys: ["target_id"],
+      adapter_owners: ["T8.03", "T11.02", "T11.01"],
+      tested_after: ["T9.01", "T8.03", "T11.01", "T11.02"],
+      no_back_edge:
+        "The launcher supplies the optional typed input/module slot; target/provider owners prove its target-bound consumption later, not a slice-6 dependency on slice 9.",
+    },
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        done_when: {
+          host: "twr, under the installed supervisor, non-builder and rpi under its supervisor after the Raspberry Pi server is installed at the same release through the existing per-slice Raspberry Pi install path (pipeline steps build-rpi, gate-rpi, stage-rpi-headless and install-rpi-headless, which T1.10 already requires)",
+          command:
+            "start one agent of each provider; record each registration; then: kill the Claude agent's unit, restart it, and replay the first registration and a result signed with the first generation; inside the restarted Codex agent run: ls $BROKER_SOCKET $OBSERVER_ENDPOINT; curl -s --unix-socket $OBSERVER_ENDPOINT http://x/headroom | jq .freshness; ls /home/twr; cat /etc/passwd | grep -c throughline; then as twr on the tower: ps -u twr -o pid=,comm= | grep -vE '^ *[0-9]+ (postgres|node|systemd|\\(sd-pam\\))$' ; systemctl --user list-units --type=service --no-legend | grep -ciE 'claude|codex|pi-|harness|seat'",
+          expect:
+            "three registrations with distinct generations; the replayed registration and the stale result are refused with recorded events; the broker socket and observer endpoint exist and headroom returns a freshness field with no credential in the environment; ls /home/twr fails; the previous dynamic account is gone from the system after its unit stopped; the twr process list shows only the record, the server and systemd (no harness process), and twr's user manager runs no seat unit: this is the no-twr-seat probe that reaches state authority-isolated; a separate Raspberry Pi receipt with the same five outcomes; the per-host provider receipt (the K03 matrix measured on that host) belongs to the provider binding owners T8.01, T11.01 and T11.02 and their device cells, and is not a condition of T6.02",
+        },
+        what: "One program in packages/throughline-launcher executed by the agent template unit: reads its generation (uid from id, $INVOCATION_ID, cgroup from /proc/self/cgroup, process start from /proc/self/stat), writes the identity join row (T5.02 API) binding the public agent id to that generation, creates the agent's messaging socket under the root-owned runtime directory the supervisor passes in, registers the endpoint with the admission service carrying the generation, starts the harness (Claude with the ThroughLine mod, Codex with its approval policy, Pi with the extension) with the mods folder read-only to the agent, passes the broker socket and the broker observer endpoint (IA-05) into the profile, and on exit drains results, closes the endpoint, lets the unit stop, and the dynamic account is removed by systemd; a replayed registration or a late result from a replaced generation is refused by the admission service. Crash resume: a new generation registers fresh; the old generation's unknown effects stay unknown (K01). The launcher is built per architecture (x86_64, arm64) with K12 input digests and reads its host configuration from packages/throughline-launcher/hosts/<host>.json; it runs identically under both supervisors. At every unit start the launcher's supervisor writes the generation registry entry (unit name, invocation id from systemctl show, cgroup path, dynamic uid, unit start time, children_allowed, state=active) under /run/throughline/registry/<unit>.json, root-owned, group-readable by the host's server account; at ExecStopPost it sets state=closed. The host's server forwards the entry to the admission service over its own authenticated record connection; no key is minted. It exposes an optional target-id job input and read-only target-tool binding slot. T9.01 and the provider owners prove target-bound launch/succession later; target-free exploratory launches stay supported and no later-slice edge is added here.",
+        files: [
+          {
+            path: "/run/throughline/registry/",
+            side: "host-filesystem",
+            host: "twr and rpi",
+            owner: "root directory, entries root-owned, readable by the server account",
+            action: "add",
+            note: "created by the supervisor; verification target",
+          },
+          {
+            path: "packages/throughline-launcher/",
+            side: "fork-namespace",
+            action: "add",
+          },
+          {
+            path: "apps/server/src/orchestration/admission/registration.ts",
+            side: "fork-namespace",
+            action: "add",
+            note: "generation-carrying registration and refusal of replays",
+          },
+          {
+            path: "packages/throughline-launcher/src/target-binding.ts",
+            side: "fork-namespace",
+            action: "add",
+            exists_now: false,
+          },
+        ],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -3644,6 +3961,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T7.01",
@@ -3704,6 +4023,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T7.02",
@@ -3741,7 +4062,7 @@ const OUTLINE: Task[] = [
     signatures: ["one receipt with the three outcomes"],
     failing_checks: ["PH2-C01"],
     done_when: {
-      host: "twr under the installed supervisor (and rpi after its receipt), non-builder",
+      host: "twr under the installed supervisor, non-builder",
       command:
         "start agents A and B; from inside A run the CLI child (throughline-coms send --to B) and record the stamp; then stop B's unit and start a new B and replay A's cached endpoint for old B; then as twr run `systemd-run --user --pty -- node <cli> peers` and connect to A's socket; then stage a pid-reuse case: a member process exits immediately after connect and the test harness forks until it obtains the same pid, then attempts to continue the connection",
       expect:
@@ -3774,6 +4095,24 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        done_when: {
+          host: "twr under the installed supervisor (and rpi after its receipt), non-builder",
+          command:
+            "start agents A and B; from inside A run the CLI child (throughline-coms send --to B) and record the stamp; then stop B's unit and start a new B and replay A's cached endpoint for old B; then as twr run `systemd-run --user --pty -- node <cli> peers` and connect to A's socket; then stage a pid-reuse case: a member process exits immediately after connect and the test harness forks until it obtains the same pid, then attempts to continue the connection",
+          expect:
+            "the CLI child's message is accepted and stamped with A's unit generation with the child's own pid and start recorded; the replay to old B is refused generation-replaced; the systemd-run process is refused not-supervised; the pid-reuse case is refused on the start-time recheck; every refusal is a recorded event with its reason",
+        },
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -3852,6 +4191,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T7.04",
@@ -3960,6 +4301,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T7.05",
@@ -3967,7 +4310,7 @@ const OUTLINE: Task[] = [
     title: "Cross-device messaging on every device role, required; the transport chosen under K05",
     serves: ["NG-025", "NG-195", "NG-018"],
     detail_state: "detailed",
-    what: "A message sent from any device role (Mac app, iPhone, Android, tower seat, Raspberry Pi seat) lands as a request on the rail and its reply returns to the sender's device. Transport: the existing pairing transport is the adapter to the admission service on the tower; the HTTP-and-SSE hub from the same upstream repository is adopted only if a measured gap in pairing is recorded with its test; the Cloudflare tunnel to the tower service is preserved for the no-Tailscale case and reaches the same admission service, never a fallback authority (K05). The device matrix messaging row's cold test is this task's done_when.",
+    what: "A message sent from any device role (Mac app, iPhone, Android, tower seat) lands as a request on the rail and its reply returns to the sender's device. Transport: the existing pairing transport is the adapter to the admission service on the tower; the HTTP-and-SSE hub from the same upstream repository is adopted only if a measured gap in pairing is recorded with its test; the Cloudflare tunnel to the tower service is preserved for the no-Tailscale case and reaches the same admission service, never a fallback authority (K05). The device matrix messaging row's cold test is this task's done_when.",
     files: [
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/coms-net/specs/coms-net-v1.md",
@@ -4023,6 +4366,18 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        what: "A message sent from any device role (Mac app, iPhone, Android, tower seat, Raspberry Pi seat) lands as a request on the rail and its reply returns to the sender's device. Transport: the existing pairing transport is the adapter to the admission service on the tower; the HTTP-and-SSE hub from the same upstream repository is adopted only if a measured gap in pairing is recorded with its test; the Cloudflare tunnel to the tower service is preserved for the no-Tailscale case and reaches the same admission service, never a fallback authority (K05). The device matrix messaging row's cold test is this task's done_when.",
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -4114,7 +4469,7 @@ const OUTLINE: Task[] = [
     ],
     done_when: {
       command:
-        "node /Users/Admin/throughline/packages/throughline-claude-mod/scripts/k03-matrix.mts --provider claude --host <mac|twr|rpi> --out <evidence>/k03-claude-<host>.json",
+        "node /Users/Admin/throughline/packages/throughline-claude-mod/scripts/k03-matrix.mts --provider claude --host <mac|twr> --out <evidence>/k03-claude-<host>.json",
       expect:
         "exit 0 on all three hosts; refused pre-tool calls did not execute; fail-closed case refused; a Claude plugin-originated model call without a valid token is refused at the broker and recorded; the mod's turn.step refusal of a turn request is counted",
       judge: "a visible ThroughLine seat that did not build T8.01, medium effort or lower",
@@ -4135,7 +4490,7 @@ const OUTLINE: Task[] = [
       "Claude hook coverage of model requests may be observe-only; K03 records that instead of inventing parity.",
     ],
     window_estimate: "one window: one new package, about 6 files, one host-run script",
-    device_cells: ["exec-claude@mac", "exec-claude@twr", "exec-claude@rpi"],
+    device_cells: ["exec-claude@mac", "exec-claude@twr"],
     proof_limits: [
       "Proves the binding only on the hosts measured and the Claude Code version pinned at measurement; re-measured at every provider pin (K03).",
     ],
@@ -4203,6 +4558,25 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        done_when: {
+          command:
+            "node /Users/Admin/throughline/packages/throughline-claude-mod/scripts/k03-matrix.mts --provider claude --host <mac|twr|rpi> --out <evidence>/k03-claude-<host>.json",
+          expect:
+            "exit 0 on all three hosts; refused pre-tool calls did not execute; fail-closed case refused; a Claude plugin-originated model call without a valid token is refused at the broker and recorded; the mod's turn.step refusal of a turn request is counted",
+          judge: "a visible ThroughLine seat that did not build T8.01, medium effort or lower",
+        },
+        device_cells: ["exec-claude@mac", "exec-claude@twr", "exec-claude@rpi"],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
+    },
   },
   {
     id: "T8.02",
@@ -4251,7 +4625,7 @@ const OUTLINE: Task[] = [
       command:
         "the K06 stale-packet script (target change, tool completion, missing blob, cancelled execution injected between precompute and cut) plus the IA-02 packet test plus the three-provider auto-compaction read (T8.02-protect) before and after the mod installs",
       expect:
-        "no stale packet releases; the shape is carried; on mac, twr and rpi, before and after: Claude autoCompactEnabled false, Codex model_auto_compact_token_limit 100000000, Pi compaction.enabled false",
+        "no stale packet releases; the shape is carried; on mac and twr, before and after: Claude autoCompactEnabled false, Codex model_auto_compact_token_limit 100000000, Pi compaction.enabled false",
       judge: "non-builder seat, medium or lower",
     },
     depends_on: ["T8.01", "T3.02"],
@@ -4271,7 +4645,7 @@ const OUTLINE: Task[] = [
       "Reading the re-entry packet as permission to compact: the packet never turns compaction on; the three-provider protection read is the guard.",
     ],
     window_estimate: "one window if the existing session-handoff compiler is reused",
-    device_cells: ["re-entry@mac", "re-entry@twr", "re-entry@rpi"],
+    device_cells: ["re-entry@mac", "re-entry@twr"],
     proof_limits: ["The intent-index recall rate is not promised (delta IA-02 remaining proof)."],
     detail_state: "detailed",
     annotations: {
@@ -4338,6 +4712,25 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        done_when: {
+          command:
+            "the K06 stale-packet script (target change, tool completion, missing blob, cancelled execution injected between precompute and cut) plus the IA-02 packet test plus the three-provider auto-compaction read (T8.02-protect) before and after the mod installs",
+          expect:
+            "no stale packet releases; the shape is carried; on mac, twr and rpi, before and after: Claude autoCompactEnabled false, Codex model_auto_compact_token_limit 100000000, Pi compaction.enabled false",
+          judge: "non-builder seat, medium or lower",
+        },
+        device_cells: ["re-entry@mac", "re-entry@twr", "re-entry@rpi"],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
+    },
   },
   {
     id: "T9.01",
@@ -4346,7 +4739,7 @@ const OUTLINE: Task[] = [
     title:
       "The target record: a thread's work record exists from its first message in the state exploring; targets have their own ids and revisions",
     serves: ["NG-073", "NG-074", "NG-075", "NG-081"],
-    what: "The lab's target task (steps, waits, events per target) reshaped for ThroughLine under K02 and K08: a target keeps its own id and revisions, distinct from the conversation and from each request; the thread's work record exists from the first message with state exploring and is durable before any target. A target waits on durable events and holds no worker slot while idle. An agent starts from nothing but a target id. Provides the target API and the add, fix and retract tools (consumed by T8.03 and the CLI).",
+    what: "The lab's target task (steps, waits, events per target) reshaped for ThroughLine under K02 and K08: a target keeps its own id and revisions, distinct from the conversation and from each request; the thread's work record exists from the first message with state exploring and is durable before any target. A target waits on durable events and holds no worker slot while idle. An agent starts from nothing but a target id. Provides the target API and the add, fix and retract tools (consumed by T8.03 and the CLI). The common typed target tool interface serves Claude, Codex and Pi through the one owner; every launcher/provider consumes it. The installed target-ID-only succession test is owned by downstream T11.05; it is not a prerequisite of these APIs or their adapters. The existing exploratory-work test remains mandatory here.",
     files: [
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/_meta/tower-pi-absurd-lab-2026-10-02/lab/src/targets.ts",
@@ -4361,6 +4754,12 @@ const OUTLINE: Task[] = [
         exists_now: false,
         assumption: "A03",
       },
+      {
+        path: "packages/throughline-target/src/provider-tools.ts",
+        side: "fork-namespace",
+        action: "add",
+        exists_now: false,
+      },
     ],
     interfaces: {
       consumes: ["I-02", "I-03"],
@@ -4373,11 +4772,13 @@ const OUTLINE: Task[] = [
       "openWorkRecord(conversation_id) -> state exploring",
       "admitTarget(conversation_id, candidate, answer) -> target_id, revision",
       "getTarget(target_id) -> revisions, deliverable_scope, checks",
+      "requestTarget(operation, payload, authenticatedPeer) -> target snapshot | admitted target-change event | typed refusal",
     ],
     done_when: {
       command:
-        "K08 test 1 on the installed tower: a thread with no admitted target runs three turns, writes a file and dispatches a seat",
-      expect: "all recorded, nothing stalled, no target saved, work record state exploring",
+        "K08 test 1 on installed tower: a thread with no admitted target runs three turns, writes a file and dispatches a seat; then the central target API contract test for read/add/fix/retract, before provider wrappers consume it.",
+      expect:
+        "Exploratory work is recorded without an admitted target. Central API preserves exact words and revisions and refuses stale/unauthorized changes. Full provider startup and partial-work succession is accepted by T11.05 after the adapters, never claimed by this task.",
       judge: "non-builder seat",
     },
     depends_on: ["T5.02", "T7.03", "T3.02"],
@@ -4434,6 +4835,64 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    target_only_start: {
+      owner: "T11.05",
+      implementation_file: "packages/throughline-target/src/target-only-start.test.ts",
+      hosts: ["mac", "twr"],
+      providers: ["claude", "codex", "pi"],
+      input_keys: ["target_id"],
+      non_builder_required: true,
+      steps: [
+        "Launch a real installed ThroughLine worker for each supported provider with job input containing only target_id; no prompt transcript, copied target text or hand-authored handoff.",
+        "Read Ryan exact_words, current revision and checks through the central authority; compare bytes with the authoritative source and record the provider/session/generation.",
+        "Record the failing check, save partial work plus a durable step/wait, then replace the worker.",
+        "Launch the replacement with only the same target_id; it reads the authority and recorded partial work, continues without redoing the committed effect and without a hand-written handoff.",
+        "Advance the target revision; a completion for the old revision refuses.",
+        "Builder self-acceptance and acceptance by an unauthorized third seat refuse; the dispatcher-named non-builder can accept the current revision.",
+        "Direct agent writes to target records refuse; add/fix/retract only through the common interface with recorded admission and revision events.",
+      ],
+      refusals: [
+        "stale-revision-completion",
+        "builder-self-acceptance",
+        "unauthorized-check-acceptance",
+        "direct-target-record-write",
+        "stale-generation-tool-call",
+      ],
+      receipt: "{evidence}/target-only-start/<host>-<provider>.json",
+      final_acceptance:
+        "ACCEPT-ALL requires every supported provider on each active execution host; a missing cell is not a pass; unsupported/observe-only behavior cannot be advertised as bound",
+      central_owner: "T9.01",
+    },
+
+    target_interface: {
+      owner: "T9.01",
+      module: "packages/throughline-target/src/provider-tools.ts",
+      transport:
+        "One common typed target tool interface on the existing authenticated ThroughLine server tool surface; Claude mod, Codex launch tool registration and Pi extension are thin adapters. This is not a ComsNet transport and does not restore its retired MCP tools.",
+      operations: ["read", "add", "fix", "retract"],
+      signature:
+        "requestTarget(operation, payload, authenticatedPeer) -> target snapshot | admitted target-change event | typed refusal",
+      payload:
+        "read(target_id); add(conversation_id, candidate_text, source_message_id); fix(target_id, expected_revision, candidate_text, reason, source_message_id); retract(target_id, expected_revision, reason)",
+      read_result: [
+        "target_id",
+        "exact_words",
+        "revision",
+        "checks",
+        "shape_ids",
+        "deliverable_scope",
+        "work_steps",
+        "pending_waits",
+      ],
+      authority:
+        "Identity and execution generation come from the authenticated launch/session, never caller labels; central target owner applies K08 and I-01, calls JEV, admits by code and records each accepted change as one event. No direct record writes, per-provider target store or credential is given to a seat.",
+      launch_binding:
+        "T6.02 passes only the target id as the job input and binds the read-only target-tool module plus the authenticated session/generation. Initial and resumed launches fetch the current revision from the one authority; input cannot supply cached words, check acceptance or authority.",
+      runtime_state: "proposed-not-implemented",
     },
   },
   {
@@ -4498,7 +4957,7 @@ const OUTLINE: Task[] = [
     rollback: "Previous release; with no port, threads stay exploring, which K08 allows.",
     risk: [],
     window_estimate: "one window",
-    device_cells: ["targets@mac", "targets@twr", "targets@rpi"],
+    device_cells: ["targets@mac", "targets@twr"],
     proof_limits: ["The 0.80 value has no evaluated error rate until T9.04."],
     detail_state: "detailed",
     annotations: {
@@ -4563,6 +5022,18 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        device_cells: ["targets@mac", "targets@twr", "targets@rpi"],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -4655,6 +5126,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T10.01",
@@ -4746,11 +5219,11 @@ const OUTLINE: Task[] = [
       consumes: ["I-02", "I-03"],
     },
     signatures: [
-      "Declared cold acceptance interface: K06 test 2 on every provider: rewind to the first turn twice on Mac, tower and Raspberry Pi homed threads, from the Mac app => files unchanged; same session; Claude protection still green",
+      "Declared cold acceptance interface: K06 test 2 on every provider: rewind to the first turn twice on Mac and tower homed threads, from the Mac app => files unchanged; same session; Claude protection still green",
     ],
     done_when: {
       command:
-        "K06 test 2 on every provider: rewind to the first turn twice on Mac, tower and Raspberry Pi homed threads, from the Mac app",
+        "K06 test 2 on every provider: rewind to the first turn twice on Mac and tower homed threads, from the Mac app",
       expect: "files unchanged; same session; Claude protection still green",
       judge: "non-builder seat",
     },
@@ -4770,7 +5243,7 @@ const OUTLINE: Task[] = [
       "Codex or Pi may lack a native same-session rewind; K03 then records it unsupported rather than faking it.",
     ],
     window_estimate: "one window",
-    device_cells: ["rewind@mac", "rewind@twr", "rewind@rpi"],
+    device_cells: ["rewind@mac", "rewind@twr"],
     proof_limits: ["Per provider version measured."],
     detail_state: "detailed",
     annotations: {
@@ -4818,6 +5291,27 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        signatures: [
+          "Declared cold acceptance interface: K06 test 2 on every provider: rewind to the first turn twice on Mac, tower and Raspberry Pi homed threads, from the Mac app => files unchanged; same session; Claude protection still green",
+        ],
+        done_when: {
+          command:
+            "K06 test 2 on every provider: rewind to the first turn twice on Mac, tower and Raspberry Pi homed threads, from the Mac app",
+          expect: "files unchanged; same session; Claude protection still green",
+          judge: "non-builder seat",
+        },
+        device_cells: ["rewind@mac", "rewind@twr", "rewind@rpi"],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -5009,6 +5503,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T10.03",
@@ -5085,6 +5581,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T10.04",
@@ -5195,6 +5693,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T11.01",
@@ -5246,7 +5746,7 @@ const OUTLINE: Task[] = [
     title:
       "Pi bound to the record: one short request workflow per turn under the conversation identity, one step per finished turn, and a stable per-conversation cache key",
     serves: ["NG-032", "NG-037", "NG-132", "NG-133", "NG-033", "NG-035", "NG-036"],
-    what: "Kept from the lab (A18): the Pi loop runs inside the Absurd worker with a lease heartbeat; each finished turn is one step; a retry rebuilds Pi from recorded turns. Changed by K02: there is no long-lived task per conversation; each request is its own short workflow under the conversation identity, and replay reads the conversation's recorded turns plus the request's own steps. ThroughLine keeps spawning Pi in RPC mode through the governed ryan-pi door (A16). Pi already forwards its own session id on every model call of a session (A54); ThroughLine cannot choose that id, so the stable cache key is the Pi session id bound one-to-one to the conversation, recorded as a native alias under the conversation identity (T5.01), and every request workflow resumes that same Pi session (switch_session or the recorded session file) instead of opening a new one. Never a request id, a workflow id or a generation. NG-033: Claude reaching Pi through the Meridian route to the Agent SDK stays, checked as a retained protection. Binding (G6 B05): Pi in RPC mode has full tool access and no approval API, and heartbeats, workflow steps and resume do not veto a tool, so ThroughLine installs its admission extension in every Pi AgentSession loop on the native tool_call block, covering registered custom, MCP and dispatch tools, and classifies extension-owned process and file paths separately; no read-only Pi mode is advertised without a measured external sandbox; a retry keeps the native session file and id. The Pi adapter has no native compaction control today; Pi compaction stays off through pi.compaction.enabled = false, owned by T10.10. Levels 6 and 7 of JEV (NG-087, NG-089) for Pi run on the inputs and results the admission extension intercepts and on each finished turn, through the same K07 port, as recorded steps. Pi's before_provider_request is observe-and-annotate; the durable Pi loop attaches the admission token to every provider request; a swallowed extension failure changes nothing, because the broker refuses an untokened request. The durable Pi loop checkpoints per managed action (a step per model request and per tool start), not per finished turn.",
+    what: "Kept from the lab (A18): the Pi loop runs inside the Absurd worker with a lease heartbeat; each finished turn is one step; a retry rebuilds Pi from recorded turns. Changed by K02: there is no long-lived task per conversation; each request is its own short workflow under the conversation identity, and replay reads the conversation's recorded turns plus the request's own steps. ThroughLine keeps spawning Pi in RPC mode through the governed ryan-pi door (A16). Pi already forwards its own session id on every model call of a session (A54); ThroughLine cannot choose that id, so the stable cache key is the Pi session id bound one-to-one to the conversation, recorded as a native alias under the conversation identity (T5.01), and every request workflow resumes that same Pi session (switch_session or the recorded session file) instead of opening a new one. Never a request id, a workflow id or a generation. NG-033: Claude reaching Pi through the Meridian route to the Agent SDK stays, checked as a retained protection. Binding (G6 B05): Pi in RPC mode has full tool access and no approval API, and heartbeats, workflow steps and resume do not veto a tool, so ThroughLine installs its admission extension in every Pi AgentSession loop on the native tool_call block, covering registered custom, MCP and dispatch tools, and classifies extension-owned process and file paths separately; no read-only Pi mode is advertised without a measured external sandbox; a retry keeps the native session file and id. The Pi adapter has no native compaction control today; Pi compaction stays off through pi.compaction.enabled = false, owned by T10.10. Levels 6 and 7 of JEV (NG-087, NG-089) for Pi run on the inputs and results the admission extension intercepts and on each finished turn, through the same K07 port, as recorded steps. Pi's before_provider_request is observe-and-annotate; the durable Pi loop attaches the admission token to every provider request; a swallowed extension failure changes nothing, because the broker refuses an untokened request. The durable Pi loop checkpoints per managed action (a step per model request and per tool start), not per finished turn. Non-builder, installed Mac and tower: from a real pi seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses. Calls delegate to the common target interface; no provider owns target state. The launcher binds this adapter on every initial and replacement launch.",
     files: [
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/_meta/tower-pi-absurd-lab-2026-10-02/lab/src/durable-pi.ts",
@@ -5266,6 +5766,13 @@ const OUTLINE: Task[] = [
         action: "edit",
         exists_now: true,
       },
+      {
+        path: "packages/throughline-target/src/pi-tools.ts",
+        side: "fork-namespace",
+        action: "add",
+        exists_now: false,
+        note: "thin provider adapter; central target owner retains all policy and storage",
+      },
     ],
     interfaces: {
       consumes: ["I-01", "I-02"],
@@ -5277,12 +5784,13 @@ const OUTLINE: Task[] = [
       "piAdmissionExtension(session) -> blocks the native tool_call when I-01 refuses, for built-in, custom, MCP and dispatch tools; loaded in every AgentSession loop the adapter starts",
     ],
     done_when: {
-      command: "D-CAP-02 test and the Pi K03 script on Mac, tower and Raspberry Pi",
+      command:
+        "D-CAP-02 test and the Pi K03 script on Mac and tower; Non-builder, installed Mac and tower: from a real pi seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses.",
       expect:
-        "stable key on every call including after a worker kill; no workflow outlives its request; K03 cells measured; a Pi request with a stale generation token is refused at the broker and the seat's wait row resumes on the refusal event; a Pi tool start and a Pi model request each carry a step id minted before execution",
+        "stable key on every call including after a worker kill; no workflow outlives its request; K03 cells measured; a Pi request with a stale generation token is refused at the broker and the seat's wait row resumes on the refusal event; a Pi tool start and a Pi model request each carry a step id minted before execution Add/read/fix/retract consumption passes through the central owner; no direct target writes or per-provider store; no fixture-only provider claim.",
       judge: "non-builder seat",
     },
-    depends_on: ["T3.02", "T8.01", "T3.01"],
+    depends_on: ["T3.02", "T8.01", "T3.01", "T9.01"],
     executor: {
       role: "implementer",
       model_preference: "gpt-6.1-sol",
@@ -5296,7 +5804,7 @@ const OUTLINE: Task[] = [
       "If RPC mode cannot carry a caller-chosen sessionId, the key comes from a per-conversation --session-dir and resumed session file; record which.",
     ],
     window_estimate: "one window",
-    device_cells: ["exec-pi@mac", "exec-pi@twr", "exec-pi@rpi"],
+    device_cells: ["exec-pi@mac", "exec-pi@twr"],
     proof_limits: [
       "The Mac sandbox's 73 and 93 percent cached shares (A15) are evidence of the mechanism, not of ThroughLine.",
     ],
@@ -5348,6 +5856,39 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    target_tools: {
+      provider: "pi",
+      owner: "T11.01",
+      file: "packages/throughline-target/src/pi-tools.ts",
+      interface_owner: "T9.01",
+      interface_module: "packages/throughline-target/src/provider-tools.ts",
+      launch_owner: "T6.02",
+      launch_file: "packages/throughline-launcher/src/target-binding.ts",
+      operations: ["read", "add", "fix", "retract"],
+      cold_test:
+        "Non-builder, installed Mac and tower: from a real pi seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses.",
+      no_provider_store: true,
+    },
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        done_when: {
+          command:
+            "D-CAP-02 test and the Pi K03 script on Mac, tower and Raspberry Pi; Non-builder, installed Mac and tower: from a real pi seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses.",
+          expect:
+            "stable key on every call including after a worker kill; no workflow outlives its request; K03 cells measured; a Pi request with a stale generation token is refused at the broker and the seat's wait row resumes on the refusal event; a Pi tool start and a Pi model request each carry a step id minted before execution Add/read/fix/retract consumption passes through the central owner; no direct target writes or per-provider store; no fixture-only provider claim.",
+          judge: "non-builder seat",
+        },
+        device_cells: ["exec-pi@mac", "exec-pi@twr", "exec-pi@rpi"],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -5411,13 +5952,20 @@ const OUTLINE: Task[] = [
     title:
       "Codex binds through its approval requests; the cost of one round trip per tool call is measured",
     serves: ["NG-031", "NG-038", "NG-035", "NG-036"],
-    what: "The adapter already maps each approval request to a typed kind (A19). Each becomes an I-01 admission request whose effect_kind comes from that typed kind; a refused decision declines the approval; an unreachable admission point declines (fail-closed). Under a launch policy that never asks for approval, approvals give no pre-tool veto (A20), but Codex native hooks do: hooks are stable and enabled on the Mac (Codex 0.161.0) and the tower (0.159.3) and support a scoped local-tool PreToolUse veto even under never (G6 B01). The binding therefore has two parts: approval requests for escalations, and a native PreToolUse hook bound to the same I-01 admission point, with mandatory loading and trust and a scoped coverage matrix in the K03 row. The Codex launch policy is not changed just to create approvals. The round-trip cost is measured, not assumed. There is one Codex provider; this task changes no seat's launch policy, and T10.10 removes the duplicate Codex provider entry (ryan-codex-worker) from ThroughLine's settings. Levels 6 and 7 of JEV (NG-087, NG-089) for Codex run on the inputs and results the native hooks and approval requests intercept and on each turn end, through the same K07 port, as recorded steps. Codex binds shell start through its native PreToolUse hook under the never approval policy (B01), counted; write_stdin and hosted or specialized tool paths are the live-input cell, observe-only, with their effects recorded from the host's changed-path record; the capability matrix row for Codex names both cells with their measured counts. Codex approvals never gate model requests; the Codex route carries the admission token the launcher passed, and the broker is the per-model gate. The Codex native PreToolUse hook attaches the step id to each tool start; a start with no step id is denied by the hook.",
+    what: "The adapter already maps each approval request to a typed kind (A19). Each becomes an I-01 admission request whose effect_kind comes from that typed kind; a refused decision declines the approval; an unreachable admission point declines (fail-closed). Under a launch policy that never asks for approval, approvals give no pre-tool veto (A20), but Codex native hooks do: hooks are stable and enabled on the Mac (Codex 0.161.0) and the tower (0.159.3) and support a scoped local-tool PreToolUse veto even under never (G6 B01). The binding therefore has two parts: approval requests for escalations, and a native PreToolUse hook bound to the same I-01 admission point, with mandatory loading and trust and a scoped coverage matrix in the K03 row. The Codex launch policy is not changed just to create approvals. The round-trip cost is measured, not assumed. There is one Codex provider; this task changes no seat's launch policy, and T10.10 removes the duplicate Codex provider entry (ryan-codex-worker) from ThroughLine's settings. Levels 6 and 7 of JEV (NG-087, NG-089) for Codex run on the inputs and results the native hooks and approval requests intercept and on each turn end, through the same K07 port, as recorded steps. Codex binds shell start through its native PreToolUse hook under the never approval policy (B01), counted; write_stdin and hosted or specialized tool paths are the live-input cell, observe-only, with their effects recorded from the host's changed-path record; the capability matrix row for Codex names both cells with their measured counts. Codex approvals never gate model requests; the Codex route carries the admission token the launcher passed, and the broker is the per-model gate. The Codex native PreToolUse hook attaches the step id to each tool start; a start with no step id is denied by the hook. Non-builder, installed Mac and tower: from a real codex seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses. Calls delegate to the common target interface; no provider owns target state. The launcher binds this adapter on every initial and replacement launch.",
     files: [
       {
         path: "apps/server/src/provider/Layers/CodexAdapter.ts",
         side: "upstream-edit",
         action: "edit",
         exists_now: true,
+      },
+      {
+        path: "packages/throughline-target/src/codex-tools.ts",
+        side: "fork-namespace",
+        action: "add",
+        exists_now: false,
+        note: "thin provider adapter; central target owner retains all policy and storage",
       },
     ],
     interfaces: {
@@ -5430,12 +5978,12 @@ const OUTLINE: Task[] = [
     ],
     done_when: {
       command:
-        "the Codex K03 script on Mac, tower and Raspberry Pi with the round-trip cost recorded",
+        "the Codex K03 script on Mac and tower with the round-trip cost recorded; Non-builder, installed Mac and tower: from a real codex seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses.",
       expect:
-        "measured counts; refused approvals did not execute; measured counts for Codex: shell-start vetoes fire before execution under never; a write_stdin protected-path edit is recorded as an observed effect and refuses the thread's done computation; a Codex model request without a token is refused at the broker, counted",
+        "measured counts; refused approvals did not execute; measured counts for Codex: shell-start vetoes fire before execution under never; a write_stdin protected-path edit is recorded as an observed effect and refuses the thread's done computation; a Codex model request without a token is refused at the broker, counted Add/read/fix/retract consumption passes through the central owner; no direct target writes or per-provider store; no fixture-only provider claim.",
       judge: "non-builder seat",
     },
-    depends_on: ["T3.01", "T3.02"],
+    depends_on: ["T3.01", "T3.02", "T9.01"],
     executor: {
       role: "implementer",
       model_preference: "gpt-6.1-sol",
@@ -5447,7 +5995,7 @@ const OUTLINE: Task[] = [
     rollback: "Previous release.",
     risk: [],
     window_estimate: "one window",
-    device_cells: ["exec-codex@mac", "exec-codex@twr", "exec-codex@rpi"],
+    device_cells: ["exec-codex@mac", "exec-codex@twr"],
     proof_limits: ["Per Codex version pinned."],
     detail_state: "detailed",
     annotations: {
@@ -5482,6 +6030,39 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    target_tools: {
+      provider: "codex",
+      owner: "T11.02",
+      file: "packages/throughline-target/src/codex-tools.ts",
+      interface_owner: "T9.01",
+      interface_module: "packages/throughline-target/src/provider-tools.ts",
+      launch_owner: "T6.02",
+      launch_file: "packages/throughline-launcher/src/target-binding.ts",
+      operations: ["read", "add", "fix", "retract"],
+      cold_test:
+        "Non-builder, installed Mac and tower: from a real codex seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses.",
+      no_provider_store: true,
+    },
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        done_when: {
+          command:
+            "the Codex K03 script on Mac, tower and Raspberry Pi with the round-trip cost recorded; Non-builder, installed Mac and tower: from a real codex seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses.",
+          expect:
+            "measured counts; refused approvals did not execute; measured counts for Codex: shell-start vetoes fire before execution under never; a write_stdin protected-path edit is recorded as an observed effect and refuses the thread's done computation; a Codex model request without a token is refused at the broker, counted Add/read/fix/retract consumption passes through the central owner; no direct target writes or per-provider store; no fixture-only provider claim.",
+          judge: "non-builder seat",
+        },
+        device_cells: ["exec-codex@mac", "exec-codex@twr", "exec-codex@rpi"],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -5675,6 +6256,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T12.01",
@@ -5726,7 +6309,7 @@ const OUTLINE: Task[] = [
     action: "amend",
     title: "Every ThroughLine service comes back after a reboot on every host",
     serves: ["NG-128", "NG-072", "NG-142"],
-    what: "Units with run-at-load and keep-alive on the Mac, the tower and the headless Raspberry Pi server, proven by a bootout-and-bootstrap or a real reboot receipt per unit, fired by a seat that did not configure the unit. The watcher layer moves to T12.04 and the recovery route to T12.05. Under S6 each unit also has a Tier 1 home, ships through Ship Warden or an equivalent lane, and is git-backed. On the tower, the reboot-survival proof for every unit is bootout-and-bootstrap only; a real reboot is never a test step. The tower boots to an encrypted-disk password prompt that only Ryan at the KVM can answer, so any planned reboot waits for Ryan's explicit yes in the current conversation, is announced to the Raspberry Pi watcher as a reboot marker before it starts, and a tower that does not return is reported as waiting for Ryan's unlock, never as broken.",
+    what: "Units with run-at-load and keep-alive on the Mac and the tower; on the Raspberry Pi only the watcher/responder and its explicitly scoped broker/recovery-island units, proven by a bootout-and-bootstrap receipt per unit, fired by a seat that did not configure the unit. The watcher layer moves to T12.04 and the recovery route to T12.05. Under S6 each unit also has a Tier 1 home, ships through Ship Warden or an equivalent lane, and is git-backed. On the tower, the reboot-survival proof for every unit is bootout-and-bootstrap only; a real reboot is never a test step. The tower boots to an encrypted-disk password prompt that only Ryan at the KVM can answer, so any planned reboot waits for Ryan's explicit yes in the current conversation, is announced to the Raspberry Pi watcher as a reboot marker before it starts, and a tower that does not return is reported as waiting for Ryan's unlock, never as broken.",
     files: [
       {
         path: "apps/desktop/linux/install-linux.sh",
@@ -5745,11 +6328,11 @@ const OUTLINE: Task[] = [
       consumes: ["T6.01 supervisor"],
     },
     signatures: [
-      "Declared cold acceptance interface: one reboot or bootout-and-bootstrap receipt per unit per host, in a safe window, never a casual kill of a shared database => every unit back without a human",
+      "Declared cold acceptance interface: one unit bootout-and-bootstrap receipt per unit per host, in a safe window, never a casual kill of a shared database => every unit back without a human",
     ],
     done_when: {
       command:
-        "one reboot or bootout-and-bootstrap receipt per unit per host, in a safe window, never a casual kill of a shared database",
+        "one unit bootout-and-bootstrap receipt per unit per host, in a safe window, never a casual kill of a shared database",
       expect:
         "every unit back without a human the tower receipts show bootout-and-bootstrap commands only; no receipt shows a reboot command on the tower",
       judge: "non-builder seat",
@@ -5804,6 +6387,26 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        what: "Units with run-at-load and keep-alive on the Mac, the tower and the headless Raspberry Pi server, proven by a bootout-and-bootstrap or a real reboot receipt per unit, fired by a seat that did not configure the unit. The watcher layer moves to T12.04 and the recovery route to T12.05. Under S6 each unit also has a Tier 1 home, ships through Ship Warden or an equivalent lane, and is git-backed. On the tower, the reboot-survival proof for every unit is bootout-and-bootstrap only; a real reboot is never a test step. The tower boots to an encrypted-disk password prompt that only Ryan at the KVM can answer, so any planned reboot waits for Ryan's explicit yes in the current conversation, is announced to the Raspberry Pi watcher as a reboot marker before it starts, and a tower that does not return is reported as waiting for Ryan's unlock, never as broken.",
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
+    },
+
+    unit_proof_rule: {
+      operator_words:
+        "Any proof that something survives a reboot uses a launchd or systemd unit bootout-and-bootstrap, never a machine reboot.",
+      source:
+        "User instruction in this writer thread beginning Hard rule from Ryan, for every Phase 3 seat, effective now",
+      runtime_action_by_writer: false,
+    },
   },
   {
     id: "T12.02",
@@ -5834,7 +6437,7 @@ const OUTLINE: Task[] = [
     action: "amend",
     title: "Logins renew before they expire, and agents pair and re-pair every device",
     serves: ["NG-129"],
-    what: "The login each Linux server gives the Mac app renews before the expiresAt recorded on the issued session (read each admitted grant/session’s current expiry contract; never a frozen lifetime). Delta IA-03 with the review's corrections: per device, the access broker holds the pairing credential (I-06); the adapter (Mac) or launcher (tower, Raspberry Pi) performs first pairing, renewal and permission recovery after an app replacement; the pairing link form is used, never a code handed to Ryan. Phones are paired by an agent: the iPhone through iPhone Mirroring (A13), using current capabilities and reserving a physical act only with cited governing authority and its alternative; Android once an agent route to the phone exists (D-CAP-05). A denied OS permission is reported as denied. The no-Tailscale route moves to T12.06.",
+    what: "The login each Linux server gives the Mac app renews before the expiresAt recorded on the issued session (read each admitted grant/session’s current expiry contract; never a frozen lifetime). Delta IA-03 with the review's corrections: per device, the access broker holds the pairing credential (I-06); the adapter (Mac) or launcher (tower) performs first pairing, renewal and permission recovery after an app replacement; the pairing link form is used, never a code handed to Ryan. Phones are paired by an agent: the iPhone through iPhone Mirroring (A13), using current capabilities and reserving a physical act only with cited governing authority and its alternative; Android once an agent route to the phone exists (D-CAP-05). A denied OS permission is reported as denied. The no-Tailscale route moves to T12.06.",
     delta_carried: ["IA-03 append on T12.02"],
     files: [
       {
@@ -5853,7 +6456,7 @@ const OUTLINE: Task[] = [
     ],
     done_when: {
       command:
-        "the delta IA-03 failure test with the review's corrections, and row tests pairing on mac, rpi, ios, android",
+        "the delta IA-03 failure test with the review's corrections, and row tests pairing on mac, ios, android",
       expect:
         "no token typed by Ryan; phone loads its threads and completes one exchange; denied permission shown as denied; disallowed scope refused",
       judge: "non-builder seat",
@@ -5871,7 +6474,7 @@ const OUTLINE: Task[] = [
     rollback: "Previous release; an existing paired session keeps working until its expiresAt.",
     risk: [],
     window_estimate: "one window",
-    device_cells: ["pairing@mac", "pairing@rpi", "pairing@ios", "pairing@android"],
+    device_cells: ["pairing@mac", "pairing@ios", "pairing@android"],
     proof_limits: ["Android physical cell waits on D-CAP-05."],
     detail_state: "detailed",
     annotations: {
@@ -5906,6 +6509,26 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        what: "The login each Linux server gives the Mac app renews before the expiresAt recorded on the issued session (read each admitted grant/session’s current expiry contract; never a frozen lifetime). Delta IA-03 with the review's corrections: per device, the access broker holds the pairing credential (I-06); the adapter (Mac) or launcher (tower, Raspberry Pi) performs first pairing, renewal and permission recovery after an app replacement; the pairing link form is used, never a code handed to Ryan. Phones are paired by an agent: the iPhone through iPhone Mirroring (A13), using current capabilities and reserving a physical act only with cited governing authority and its alternative; Android once an agent route to the phone exists (D-CAP-05). A denied OS permission is reported as denied. The no-Tailscale route moves to T12.06.",
+        done_when: {
+          command:
+            "the delta IA-03 failure test with the review's corrections, and row tests pairing on mac, rpi, ios, android",
+          expect:
+            "no token typed by Ryan; phone loads its threads and completes one exchange; denied permission shown as denied; disallowed scope refused",
+          judge: "non-builder seat",
+        },
+        device_cells: ["pairing@mac", "pairing@rpi", "pairing@ios", "pairing@android"],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -5987,6 +6610,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T13.01",
@@ -6087,6 +6712,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T3.04",
@@ -6148,7 +6775,7 @@ const OUTLINE: Task[] = [
         "node /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/checks/slice-3-admission-record.mts --repo /Users/Admin/throughline --only S3-C07 && cd /Users/Admin/throughline/packages/absurd-runtime && pnpm exec vp test run src/absurd-upgrade.test.ts",
       expect: "exit 0; the upgrade test creates, migrates and drops its own database",
     },
-    depends_on: ["T2.01"],
+    depends_on: ["T2.01", "T3.07"],
     executor: {
       role: "implementer",
       model_preference: "gpt-6.1-sol",
@@ -6173,6 +6800,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T8.03",
@@ -6181,7 +6810,7 @@ const OUTLINE: Task[] = [
     parent: "T8.01",
     title: "Target tools in the Claude mod: add, fix and retract a target, each an event",
     serves: ["NG-081", "NG-082"],
-    what: "The mod registers the K08 target tools that T9.01 provides; every call is an admission request of effect_kind target-change and an event on the record. Split from T8.01 because the tools need the target package, which T8.01 does not.",
+    what: "The mod registers the K08 target tools that T9.01 provides; every call is an admission request of effect_kind target-change and an event on the record. Split from T8.01 because the tools need the target package, which T8.01 does not. Non-builder, installed Mac and tower: from a real claude seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses. Calls delegate to the common target interface; no provider owns target state. The launcher binds this adapter on every initial and replacement launch.",
     files: [
       {
         path: "packages/throughline-claude-mod/src/target-tools.ts",
@@ -6197,9 +6826,10 @@ const OUTLINE: Task[] = [
       "addTarget(text) | fixTarget(target_id, revision, text) | retractTarget(target_id, reason) -> event id",
     ],
     done_when: {
-      command: "the same script on the installed Mac and tower",
+      command:
+        "the same script on the installed Mac and tower; Non-builder, installed Mac and tower: from a real claude seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses.",
       expect:
-        "each tool call produces one admitted command and one target event with the caller's identity",
+        "each tool call produces one admitted command and one target event with the caller's identity Add/read/fix/retract consumption passes through the central owner; no direct target writes or per-provider store; no fixture-only provider claim.",
       judge: "non-builder seat",
     },
     depends_on: ["T8.01", "T9.01"],
@@ -6249,6 +6879,22 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    target_tools: {
+      provider: "claude",
+      owner: "T8.03",
+      file: "packages/throughline-claude-mod/src/target-tools.ts",
+      interface_owner: "T9.01",
+      interface_module: "packages/throughline-target/src/provider-tools.ts",
+      launch_owner: "T6.02",
+      launch_file: "packages/throughline-launcher/src/target-binding.ts",
+      operations: ["read", "add", "fix", "retract"],
+      cold_test:
+        "Non-builder, installed Mac and tower: from a real claude seat add a candidate using source-bound Ryan words, read its exact words/revision/checks, fix it against the expected revision, read the new revision, retract it with reason and read the retraction event. Verify one admitted change/event per operation and the authenticated caller/generation. A stale revision or direct record write refuses.",
+      no_provider_store: true,
     },
   },
   {
@@ -6325,6 +6971,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T9.04",
@@ -6406,6 +7054,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T9.05",
@@ -6507,6 +7157,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T10.05",
@@ -6602,6 +7254,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T10.06",
@@ -6683,6 +7337,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T10.07",
@@ -6800,6 +7456,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T10.08",
@@ -6932,6 +7590,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T10.09",
@@ -7042,6 +7702,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T10.10",
@@ -7129,7 +7791,7 @@ const OUTLINE: Task[] = [
     parent: "T10.04",
     title: "Settings carry Ryan's intent to every eligible host",
     serves: ["NG-114"],
-    what: "Delta IA-04 as written: the application-intent source (contracts/Protected-Settings.json widened to the curated set, versioned) and one adapter per host; a setting changed on any host lands on every eligible host in the same act through the record; effective state is read back and drift is reported with a rollback; privileges, credential access and intentional device differences are excluded; each entry names its eligible hosts. The phones' app-owned settings survive every upgrade. Two of Ryan's Oct 9, 2026 rulings land here as product defaults on mac, twr and rpi. First, no agent auto-compacts (\"I don't want any agent—Claude, Codex, nobody—to AutoCompact\"): the curated set carries one auto-compaction entry per provider, Claude, Codex and Pi, and the adapters write and read back each one. Second, there is one Codex provider (\"this additional Codex lane, needs to not be in future versions\"): the settings migration removes the duplicate Codex provider instance that lives today in ThroughLine's own settings file as providerInstances.codexWorker, displayed as ryan-codex-worker with its own Codex home at /Users/Admin/.local/state/codex-worker-lane/home; the registry-keyed refusal hook built for that lane is retired through its own component. Self-driving (NG-115) is an application-intent setting that is off on a fresh install and on every upgrade that has no recorded Ryan request; it turns on only through an explicit enable event that carries his words, and the running state shown matches the effective state.",
+    what: "Delta IA-04 as written: the application-intent source (contracts/Protected-Settings.json widened to the curated set, versioned) and one adapter per host; a setting changed on any host lands on every eligible host in the same act through the record; effective state is read back and drift is reported with a rollback; privileges, credential access and intentional device differences are excluded; each entry names its eligible hosts. The phones' app-owned settings survive every upgrade. Two of Ryan's Oct 9, 2026 rulings land here as product defaults on mac and twr. First, no agent auto-compacts (\"I don't want any agent—Claude, Codex, nobody—to AutoCompact\"): the curated set carries one auto-compaction entry per provider, Claude, Codex and Pi, and the adapters write and read back each one. Second, there is one Codex provider (\"this additional Codex lane, needs to not be in future versions\"): the settings migration removes the duplicate Codex provider instance that lives today in ThroughLine's own settings file as providerInstances.codexWorker, displayed as ryan-codex-worker with its own Codex home at /Users/Admin/.local/state/codex-worker-lane/home; the registry-keyed refusal hook built for that lane is retired through its own component. Self-driving (NG-115) is an application-intent setting that is off on a fresh install and on every upgrade that has no recorded Ryan request; it turns on only through an explicit enable event that carries his words, and the running state shown matches the effective state.",
     delta_carried: ["IA-04 replace on T10.04"],
     files: [
       {
@@ -7144,7 +7806,7 @@ const OUTLINE: Task[] = [
         side: "fork-namespace",
         action: "add",
         exists_now: false,
-        note: "Also holds migrateProviderInstances, run at server start on every host against that host's ThroughLine settings.json (Mac: /Users/Admin/.t3/userdata/settings.json; tower: /srv/agents-runtime-state/throughline/userdata/settings.json; Raspberry Pi: /home/rpi/.t3/userdata/settings.json).",
+        note: "Also holds migrateProviderInstances, run at server start on every host against that host's ThroughLine settings.json (Mac: /Users/Admin/.t3/userdata/settings.json; tower: /srv/agents-runtime-state/throughline/userdata/settings.json; Raspberry Pi settings path is deferred, not an execution target).",
       },
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/protected-settings/check-protected-settings.ts",
@@ -7166,14 +7828,14 @@ const OUTLINE: Task[] = [
     },
     signatures: [
       "applyIntent(setting, value) -> event; adapters read back effective state per host",
-      'Auto-compaction entries in Protected-Settings.json, eligible hosts mac, twr, rpi: claude.autoCompactEnabled = false in ~/.claude/settings.json and ~/.claude.json; codex.model_auto_compact_token_limit = 100000000 with model_auto_compact_token_limit_scope = "total" in ~/.codex/config.toml; pi.compaction.enabled = false in ~/.pi/agent/settings.json (the Pi harness reads compaction?.enabled ?? true in @earendil-works/pi-coding-agent dist/core/settings-manager.js, so an absent key means on).',
+      'Auto-compaction entries in Protected-Settings.json, eligible hosts mac, twr: claude.autoCompactEnabled = false in ~/.claude/settings.json and ~/.claude.json; codex.model_auto_compact_token_limit = 100000000 with model_auto_compact_token_limit_scope = "total" in ~/.codex/config.toml; pi.compaction.enabled = false in ~/.pi/agent/settings.json (the Pi harness reads compaction?.enabled ?? true in @earendil-works/pi-coding-agent dist/core/settings-manager.js, so an absent key means on).',
       "migrateProviderInstances(settings) -> {settings, receipt}: leaves exactly one provider instance per driver among claudeAgent, codex and pi; removes providerInstances.codexWorker; threads bound to codexWorker are rebound to codex and listed in the receipt; idempotent, so a second run changes nothing.",
     ],
     done_when: {
       command:
         "the delta IA-04 failure test on installed hosts, with the propagation interval measured",
       expect:
-        "same effective value on every eligible host; one event; no privilege setting moved; no release needed; on mac, twr and rpi exactly one codex provider instance and auto-compaction off for Claude, Codex and Pi, read back by the existing protected-settings checker",
+        "same effective value on every eligible host; one event; no privilege setting moved; no release needed; on mac and twr exactly one codex provider instance and auto-compaction off for Claude, Codex and Pi, read back by the existing protected-settings checker",
       judge: "non-builder seat",
     },
     depends_on: ["T3.02"],
@@ -7188,13 +7850,7 @@ const OUTLINE: Task[] = [
     rollback: "Each change carries its prior value; drift report offers the revert.",
     risk: [],
     window_estimate: "one window",
-    device_cells: [
-      "settings@mac",
-      "settings@twr",
-      "settings@rpi",
-      "settings@ios",
-      "settings@android",
-    ],
+    device_cells: ["settings@mac", "settings@twr", "settings@ios", "settings@android"],
     proof_limits: ["Android physical cell waits on D-CAP-05."],
     detail_state: "detailed",
     annotations: {
@@ -7287,6 +7943,37 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        what: "Delta IA-04 as written: the application-intent source (contracts/Protected-Settings.json widened to the curated set, versioned) and one adapter per host; a setting changed on any host lands on every eligible host in the same act through the record; effective state is read back and drift is reported with a rollback; privileges, credential access and intentional device differences are excluded; each entry names its eligible hosts. The phones' app-owned settings survive every upgrade. Two of Ryan's Oct 9, 2026 rulings land here as product defaults on mac, twr and rpi. First, no agent auto-compacts (\"I don't want any agent—Claude, Codex, nobody—to AutoCompact\"): the curated set carries one auto-compaction entry per provider, Claude, Codex and Pi, and the adapters write and read back each one. Second, there is one Codex provider (\"this additional Codex lane, needs to not be in future versions\"): the settings migration removes the duplicate Codex provider instance that lives today in ThroughLine's own settings file as providerInstances.codexWorker, displayed as ryan-codex-worker with its own Codex home at /Users/Admin/.local/state/codex-worker-lane/home; the registry-keyed refusal hook built for that lane is retired through its own component. Self-driving (NG-115) is an application-intent setting that is off on a fresh install and on every upgrade that has no recorded Ryan request; it turns on only through an explicit enable event that carries his words, and the running state shown matches the effective state.",
+        signatures: [
+          "applyIntent(setting, value) -> event; adapters read back effective state per host",
+          'Auto-compaction entries in Protected-Settings.json, eligible hosts mac, twr, rpi: claude.autoCompactEnabled = false in ~/.claude/settings.json and ~/.claude.json; codex.model_auto_compact_token_limit = 100000000 with model_auto_compact_token_limit_scope = "total" in ~/.codex/config.toml; pi.compaction.enabled = false in ~/.pi/agent/settings.json (the Pi harness reads compaction?.enabled ?? true in @earendil-works/pi-coding-agent dist/core/settings-manager.js, so an absent key means on).',
+          "migrateProviderInstances(settings) -> {settings, receipt}: leaves exactly one provider instance per driver among claudeAgent, codex and pi; removes providerInstances.codexWorker; threads bound to codexWorker are rebound to codex and listed in the receipt; idempotent, so a second run changes nothing.",
+        ],
+        done_when: {
+          command:
+            "the delta IA-04 failure test on installed hosts, with the propagation interval measured",
+          expect:
+            "same effective value on every eligible host; one event; no privilege setting moved; no release needed; on mac, twr and rpi exactly one codex provider instance and auto-compaction off for Claude, Codex and Pi, read back by the existing protected-settings checker",
+          judge: "non-builder seat",
+        },
+        device_cells: [
+          "settings@mac",
+          "settings@twr",
+          "settings@rpi",
+          "settings@ios",
+          "settings@android",
+        ],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -7381,7 +8068,7 @@ const OUTLINE: Task[] = [
       "Previous release; with no headroom input the admission point admits and the provider result decides.",
     risk: [],
     window_estimate: "one window",
-    device_cells: ["limits@mac", "limits@twr", "limits@rpi"],
+    device_cells: ["limits@mac", "limits@twr"],
     proof_limits: [
       "Controlled exhausted/reset responses through the real consumer; no deliberately depleted subscription.",
     ],
@@ -7422,6 +8109,18 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        device_cells: ["limits@mac", "limits@twr", "limits@rpi"],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
+    },
   },
   {
     id: "T12.04",
@@ -7446,11 +8145,11 @@ const OUTLINE: Task[] = [
       provides: ["the ThroughLine durability view the host proposal names as final visibility"],
     },
     signatures: [
-      "Declared cold acceptance interface: the integration decision's cross-device test: laptop closed, tower record unavailable; then a Mac reboot watched from the tower => the Raspberry Pi detects and notifies without the tower record; the durability view shows the loss and the return; the Mac's keep-alive layer is seen coming back",
+      "Declared cold acceptance interface: the integration decision's cross-device test: laptop closed, tower record unavailable; then Mac unit bootout-and-bootstrap watched from the tower => the Raspberry Pi detects and notifies without the tower record; the durability view shows the loss and the return; the Mac's keep-alive layer is seen coming back",
     ],
     done_when: {
       command:
-        "the integration decision's cross-device test: laptop closed, tower record unavailable; then a Mac reboot watched from the tower",
+        "the integration decision's cross-device test: laptop closed, tower record unavailable; then Mac unit bootout-and-bootstrap watched from the tower",
       expect:
         "the Raspberry Pi detects and notifies without the tower record; the durability view shows the loss and the return; the Mac's keep-alive layer is seen coming back",
       judge: "a visible ThroughLine seat that did not build T12.04, medium effort or lower",
@@ -7505,6 +8204,16 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
+
+    unit_proof_rule: {
+      operator_words:
+        "Any proof that something survives a reboot uses a launchd or systemd unit bootout-and-bootstrap, never a machine reboot.",
+      source:
+        "User instruction in this writer thread beginning Hard rule from Ryan, for every Phase 3 seat, effective now",
+      runtime_action_by_writer: false,
+    },
   },
   {
     id: "T12.05",
@@ -7514,7 +8223,7 @@ const OUTLINE: Task[] = [
     title:
       "The health-recovery route restarts a stalled service without waiting on operator presence",
     serves: ["NG-128"],
-    what: "Delta IA-09 as written: one ship-tool internal step, recover-service, taking host and unit, restarts a stalled service without the presence step, preserves drafts, writes a recovery receipt and reuses the restart-courtesy step; the routine install route keeps its presence step; neither route has a skip flag. No public command is added. recover-service is also the tier-0 ladder the Raspberry Pi watcher and the responder call over the rpi-to-tower ssh identity as twr; after T4.06 the server and record are system units, so recover-service acts on them through a polkit grant scoped to exactly throughline-server.service and throughline-record.service start, stop and restart for the ssh identity's account, installed in the same Phase 4 batch; no public command and no new flag; its recovery receipt is copied into the incident ledger.",
+    what: "Delta IA-09 as written: one ship-tool internal step, recover-service, taking host and unit, restarts a stalled service without the presence step, preserves drafts, writes a recovery receipt and reuses the restart-courtesy step; the routine install route keeps its presence step; neither route has a skip flag. No public command is added. recover-service is also the tier-0 ladder the Raspberry Pi watcher and the responder call over the rpi-to-tower ssh identity as twr; for the system units it does not call systemctl and holds no polkit grant: it sends heal <unit> to the supervisor's control socket, and the supervisor, under its own scoped grant (start and restart only for throughline-record.service and throughline-server.service), acts only if its own credential-free probe shows that unit down or unresponsive at that moment and otherwise answers already-healthy; no public command and no new flag; its recovery receipt is copied into the incident ledger.",
     delta_carried: ["IA-09 append on T12.01"],
     files: [
       {
@@ -7578,6 +8287,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T12.06",
@@ -7655,13 +8366,15 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T13.02",
     slice: "slice-13",
     action: "split-child",
     parent: "T13.01",
-    title: "Every five-target pipeline step resumes from its own effect state",
+    title: "Every active-target pipeline step resumes from its own effect state",
     serves: ["NG-120", "NG-121"],
     what: "The new Android and five-target install steps carry the K12 fields of the existing step contract (I-07); interrupt each before and after its side effect and before its receipt; resume without a duplicate upload or install. Simulator and device resources are namespaced per run. Does not re-implement the slice-1 contract.",
     files: [
@@ -7730,6 +8443,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T13.03",
@@ -7800,7 +8515,7 @@ const OUTLINE: Task[] = [
     rollback: "Not a code change on its own; refuse the release on failure.",
     risk: [],
     window_estimate: "one window",
-    device_cells: ["updates@mac", "updates@twr", "updates@rpi", "updates@ios", "updates@android"],
+    device_cells: ["updates@mac", "updates@twr", "updates@ios", "updates@android"],
     proof_limits: ["Android physical cell waits on D-CAP-05."],
     detail_state: "detailed",
     annotations: {
@@ -7834,6 +8549,24 @@ const OUTLINE: Task[] = [
       role: "reviewer",
       model_preference: "gpt-6.1-sol",
       effort: "high",
+    },
+
+    command_grammar: "IC-002",
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        device_cells: [
+          "updates@mac",
+          "updates@twr",
+          "updates@rpi",
+          "updates@ios",
+          "updates@android",
+        ],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -7893,9 +8626,9 @@ const OUTLINE: Task[] = [
     action: "split-child",
     parent: "T13.01",
     title:
-      "One version from one commit installed on five targets, with a screenshot per host; a slice release, not whole-design acceptance",
+      "One version from one commit installed on the four active targets; Raspberry Pi deferred",
     serves: ["NG-119", "NG-120", "NG-121", "NG-142"],
-    what: "Install the release on the Mac, tower, Raspberry Pi, iPhone and Android phone from one commit; each target reads back the release and commit; one screenshot per upgrade; the cycle cheap enough for agents to iterate. This is one slice release; whole-design acceptance remains ACCEPT-ALL (K10, D21). Concretely: one new pipeline step, five-device-acceptance, in the existing release tool and its existing step contract (I-07, K12), appended after rewind-live-proof as the new final step and run by the close job that outlives the Mac app restart. It reads the expected candidate identity from the run's own {evidence}/source-commit.json (fields release and commit, the 40-character frozen source commit) and refuses before probing if run-binding.json names a different release. Each target then reports its own release and commit through one named readback (acceptance_interface.per_target_readback): the Mac, tower and Raspberry Pi servers answer a new fork-namespace loopback route /.well-known/throughline/release from the build identity file the version-stamp step writes; the iPhone and Android apps report through the hello they send at connect (T3.05), recorded on the tower. Each target leaves one readback receipt and one screenshot; the step compares release and full commit per target, requires the three retained protection steps passed in the same run, and refuses with a named code on any mismatch, missing readback, missing or stale screenshot, or excluded verifier (acceptance_interface.refusals).",
+    what: "Install the release on the Mac, tower, iPhone and Android phone from one commit; each target reads back the release and commit; one screenshot per upgrade; the cycle cheap enough for agents to iterate. This is one slice release; whole-design acceptance remains ACCEPT-ALL (K10, D21). Concretely: one new pipeline step, five-device-acceptance, in the existing release tool and its existing step contract (I-07, K12), appended after rewind-live-proof as the new final step and run by the close job that outlives the Mac app restart. It reads the expected candidate identity from the run's own {evidence}/source-commit.json (fields release and commit, the 40-character frozen source commit) and refuses before probing if run-binding.json names a different release. Each target then reports its own release and commit through one named readback (acceptance_interface.per_target_readback): the Mac and tower servers answer a new fork-namespace loopback route /.well-known/throughline/release from the build identity file the version-stamp step writes; the iPhone and Android apps report through the hello they send at connect (T3.05), recorded on the tower. Each target leaves one readback receipt and one screenshot; the step compares release and full commit per target, requires the active retained protection steps passed in the same run, and refuses with a named code on any mismatch, missing readback, missing or stale screenshot, or excluded verifier (acceptance_interface.refusals). Final architecture install also consumes T3.07: refuse unless the pinned upstream head is an ancestor of the installed source or every deliberate non-inclusion is source-backed and recorded. A preserve-base foundation release does not satisfy this gate. The existing five-device-acceptance identifier remains a compatibility name, not a five-device obligation: its required target set is the preserved admission snapshot amended only by IC-008. Raspberry Pi rows and rpi-cold-turn remain deferred, never passed.",
     files: [
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/Ship-Pipeline.json",
@@ -7916,7 +8649,7 @@ const OUTLINE: Task[] = [
         side: "fork-namespace",
         action: "add",
         exists_now: false,
-        note: "Committed placeholder {release: '0.0.0-unstamped', commit: null}; the version-stamp step overwrites it in the release checkout from {evidence}/source-commit.json before build-mac, build-tower and build-rpi, so the bundler inlines one identity into every server build.",
+        note: "Committed placeholder {release: '0.0.0-unstamped', commit: null}; the version-stamp step overwrites it in the release checkout from {evidence}/source-commit.json before build-mac and build-tower; build-rpi remains deferred, so the bundler inlines one identity into every server build.",
       },
       {
         path: "apps/server/src/server.ts",
@@ -8011,19 +8744,19 @@ const OUTLINE: Task[] = [
       "FiveDeviceReleaseAcceptance owned by I-07/K12 through throughline-ship native step five-device-acceptance: exact FiveDeviceAcceptanceInput + owned run/source/attempt/lease context => FiveDeviceAcceptanceResult at {evidence}/T13.04/five-device-acceptance.attempt-{attempt}.json.",
       "export async function fiveDeviceAcceptance(context: OwnedAcceptanceContext, input: FiveDeviceAcceptanceInput, probes: FiveDeviceAcceptanceProbes): Promise<FiveDeviceAcceptanceResult> — context = {run_id, evidence, attempt, lease_path}; input = {candidate: {release, commit} from {evidence}/source-commit.json, install_finished_at per target from that target's install receipt, protected_receipts}; probes = {readback(target) -> {release, commit, captured_at, raw_sha256}, screenshot(target) -> {path, sha256, captured_at, shows} | waiting(reason)}, injectable so the negative fixtures run with no device.",
       "GET /.well-known/throughline/release (fork-namespace route apps/server/src/throughline/release/http.ts, unauthenticated, loopback) -> {schema: 'throughline.release-identity.v1', release, commit} read from release-identity.generated.json, written by the version-stamp step from {evidence}/source-commit.json before any build; the T3.05 hello's server_release and server_commit read the same file.",
-      "Installed readbacks and fresh source-bound, independently viewed screenshots for every identity in the immutable admitted version contract must report one effective release and full commit. Verification actors exclude actual build/install/proof-author actors and the verified current build/ship caller resolved by I-07 identity ownership; invocation alone is not classification or exemption.",
+      "Installed readbacks and fresh source-bound, independently viewed screenshots for every identity in the immutable admitted version contract after the source-bound IC-008 pause projection must report one effective release and full commit. Verification actors exclude actual build/install/proof-author actors and the verified current build/ship caller resolved by I-07 identity ownership; invocation alone is not classification or exemption.",
       "Per target: readback.release === candidate.release and readback.commit === candidate.commit (40 lowercase hex, whole string), readback and screenshot captured after that target's install receipt finished; otherwise one refusal code from acceptance_interface.refusals per target, all collected, outcome failed (or waiting for the Android screen proof only).",
-      "Android app-reported hello proves installed identity only; missing physical screen proof stays not-proven/waiting, never silently passes full five-target release.",
-      "Retain testflight-readback, tower-cold-turn and rpi-cold-turn as distinct required protections; a slice release never grants ACCEPT-ALL.",
+      "Android app-reported hello proves installed identity only; missing physical screen proof stays not-proven/waiting, never silently passes full active-target release.",
+      "Retain testflight-readback and tower-cold-turn as distinct required protections; retain rpi-cold-turn deferred, never passed; a slice release never grants ACCEPT-ALL.",
       "Retained helper receipts bind effective run/source/install effects; version/build-only helper metadata is not same-commit installed proof. passed/waiting/failed map to existing runner outcomes, with waiting/failed non-pass; no new runner state.",
     ],
     done_when: {
       command: "ryan throughline ship <release> --retry-step five-device-acceptance --json",
       expect:
-        "owning step outcome passed and hash-bound five-target result receipt; all installed release+commit/readback/screenshot/non-builder/protection comparisons pass; no whole-design acceptance. The receipt lists, for each of mac, twr, rpi, ios and android, the readback method, the reported release and commit, the screenshot path and sha256, and outcome passed; refusals is empty; accept_all_granted is false. The four negative fixtures in planned_checks refuse with their named codes.",
+        "owning step outcome passed and hash-bound active-target result receipt; all installed release+commit/readback/screenshot/non-builder/protection comparisons pass; no whole-design acceptance. The receipt lists, for each of mac, twr, ios and android, the readback method, the reported release and commit, the screenshot path and sha256, and outcome passed; refusals is empty; accept_all_granted is false. The four negative fixtures in planned_checks refuse with their named codes. The same-candidate upstream reconciliation gate passes; missing, stale or incomplete proof refuses.",
       judge: "non-builder seat",
     },
-    depends_on: ["T13.01", "T13.02", "T13.03", "T12.01", "T12.04", "T3.05"],
+    depends_on: ["T13.01", "T13.02", "T13.03", "T12.01", "T12.04", "T3.05", "T3.07"],
     executor: {
       role: "implementer",
       model_preference: "gpt-6.1-sol",
@@ -8037,7 +8770,7 @@ const OUTLINE: Task[] = [
       "Rollback snapshot step (Mac app, prior IPA, prior AppImage) already in the pipeline.",
     risk: [],
     window_estimate: "one window",
-    device_cells: ["version@mac", "version@twr", "version@rpi", "version@ios", "version@android"],
+    device_cells: ["version@mac", "version@twr", "version@ios", "version@android"],
     proof_limits: ["Android physical cell waits on D-CAP-05."],
     detail_state: "detailed",
     annotations: {
@@ -8055,7 +8788,8 @@ const OUTLINE: Task[] = [
       {
         id: "T13.04-protect",
         kind: "retained-protection",
-        command: "pipeline steps testflight-readback, tower-cold-turn and rpi-cold-turn",
+        command:
+          "pipeline steps testflight-readback and tower-cold-turn required; rpi-cold-turn retained as deferred and never counted passed",
         expected_today: "exist (A12)",
         measured: false,
         spec_projection: {
@@ -8084,9 +8818,9 @@ const OUTLINE: Task[] = [
         id: "T13.04-neg-commit",
         kind: "contract-test",
         command:
-          "five-device-acceptance.test.ts: probes return the candidate release on all five targets and a different 40-hex commit on rpi",
+          "five-device-acceptance.test.ts: probes return the candidate release on all four active targets and a different 40-hex commit on twr",
         expect:
-          "outcome failed; refusals contains TARGET_COMMIT_MISMATCH:rpi; the other four targets still recorded",
+          "outcome failed; refusals contains TARGET_COMMIT_MISMATCH:twr; the other three active targets still recorded",
         spec_projection: {
           kind: "real-disk",
           expected_today: "measure on first run",
@@ -8150,7 +8884,7 @@ const OUTLINE: Task[] = [
       result_schema: "throughline.five-device-release-acceptance.v1",
       receipt: "{evidence}/T13.04/five-device-acceptance.attempt-{attempt}.json",
       runtime_state: "proposed-not-implemented",
-      required_targets: ["mac", "twr", "rpi", "ios", "android"],
+      required_targets: ["mac", "twr", "ios", "android"],
       required_targets_source:
         "immutable preserved pre-correction source snapshot and stable version-row digest",
       source_module:
@@ -8185,7 +8919,17 @@ const OUTLINE: Task[] = [
           sha256: "42199fd2dbdd80c8803340a84d0308d777b28d282a621a1a60ad46dc984c7909",
           target_ids: ["mac", "twr", "rpi", "ios", "android"],
         },
-        rule: "Snapshot is preserved bytes, never regenerated; stable row digest and identity set remain valid while corrected spec changes.",
+        rule: "The original snapshot and version-row digest stay byte-preserved; active targets are its required identities minus only the IC-008 removed_targets. Deferred rows stay visible and cannot satisfy acceptance.",
+        scope_amendment: {
+          instruction: "IC-008",
+          source:
+            "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Ryan-Instruction-Coverage.json",
+          source_message_id: "5a024d4c-6a95-4d33-a6b6-77124d0a2471",
+          removed_targets: ["rpi"],
+          reason:
+            "Ryan paused general Raspberry Pi install/execution; archive and watcher/responder exceptions do not require a general release cell.",
+          counts_as_passed: false,
+        },
       },
       actor_binding: {
         authority: "I-07 and identity ownership, not caller labels",
@@ -8201,7 +8945,7 @@ const OUTLINE: Task[] = [
           "authors of submitted install/readback/capture proofs, not mere author of an independent verification result",
       },
       protected_readbacks: {
-        step_ids: ["testflight-readback", "tower-cold-turn", "rpi-cold-turn"],
+        step_ids: ["testflight-readback", "tower-cold-turn"],
         binding_authority: "I-07 effective run/source/install effects",
         require_run_source_install_effects: true,
         helper_metadata_alone_proves_installed_commit: false,
@@ -8224,12 +8968,6 @@ const OUTLINE: Task[] = [
           target: "twr",
           readback_target: "twr",
           screenshot_target: "twr",
-          role: "execution-host",
-        },
-        {
-          target: "rpi",
-          readback_target: "rpi",
-          screenshot_target: "rpi",
           role: "execution-host",
         },
         {
@@ -8305,20 +9043,6 @@ const OUTLINE: Task[] = [
           },
         },
         {
-          target: "rpi",
-          method: "loopback-route",
-          run_on: "Raspberry Pi, over ssh -o BatchMode=yes rpi",
-          command:
-            "curl --fail --silent --max-time 10 http://127.0.0.1:13774/.well-known/throughline/release",
-          fields: ["release", "commit"],
-          readback_receipt: "{evidence}/T13.04/readback-rpi.attempt-{attempt}.json",
-          screenshot: {
-            path: "{evidence}/T13.04/version-rpi.png",
-            how: "Mac ThroughLine Settings, Connections, the rpi environment entry, screencapture -x",
-            shows: "the Raspberry Pi environment connected after the install",
-          },
-        },
-        {
           target: "ios",
           method: "client-hello-record",
           run_on: "tower, read-only",
@@ -8358,7 +9082,7 @@ const OUTLINE: Task[] = [
         screenshot:
           "file exists, is a PNG, sha256 recorded, viewed by the verifier named in the result",
         protected:
-          "testflight-readback, tower-cold-turn and rpi-cold-turn each have a passed receipt in this run, bound by receipt path and sha256",
+          "testflight-readback and tower-cold-turn each have a passed receipt in this run, bound by receipt path and sha256; rpi-cold-turn remains deferred, not passed",
         all_collected:
           "every target is probed and every refusal recorded; the step never stops at the first refusal",
       },
@@ -8385,7 +9109,7 @@ const OUTLINE: Task[] = [
         },
         {
           code: "TARGET_SCREENSHOT_MISSING:<target>",
-          when: "no screenshot file for mac, twr, rpi or ios",
+          when: "no screenshot file for mac, twr or ios",
           outcome: "failed",
         },
         {
@@ -8400,7 +9124,7 @@ const OUTLINE: Task[] = [
         },
         {
           code: "PROTECTED_READBACK_NOT_PASSED:<step>",
-          when: "testflight-readback, tower-cold-turn or rpi-cold-turn has no passed receipt in this run",
+          when: "testflight-readback or tower-cold-turn has no passed receipt in this run",
           outcome: "failed",
         },
         {
@@ -8422,6 +9146,454 @@ const OUTLINE: Task[] = [
         "refusals[]",
         "accept_all_granted: false",
       ],
+      deferred_targets: {
+        rpi: {
+          state: "deferred",
+          instruction: "IC-008",
+          target_bindings: [
+            {
+              target: "rpi",
+              readback_target: "rpi",
+              screenshot_target: "rpi",
+              role: "execution-host",
+            },
+          ],
+          per_target_readback: [
+            {
+              target: "rpi",
+              method: "loopback-route",
+              run_on: "Raspberry Pi, over ssh -o BatchMode=yes rpi",
+              command:
+                "curl --fail --silent --max-time 10 http://127.0.0.1:13774/.well-known/throughline/release",
+              fields: ["release", "commit"],
+              readback_receipt: "{evidence}/T13.04/readback-rpi.attempt-{attempt}.json",
+              screenshot: {
+                path: "{evidence}/T13.04/version-rpi.png",
+                how: "Mac ThroughLine Settings, Connections, the rpi environment entry, screencapture -x",
+                shows: "the Raspberry Pi environment connected after the install",
+              },
+            },
+          ],
+          protected_steps: ["rpi-cold-turn"],
+          counts_as_passed: false,
+        },
+      },
+    },
+
+    command_grammar: "IC-002",
+
+    upstream_reconciliation: {
+      owner: "T13.04",
+      receipt: "{evidence}/upstream-reconciliation.json",
+      same_candidate_required: true,
+      gate: "pinned upstream head is an ancestor of the effective installed source OR every non-included incoming change has a deliberate source-backed disposition; no missing rows, unclaimed conflicts or stale candidate receipt",
+      seam_ceilings: "unchanged; counts may only fall",
+      capability_tests: "all pinned fork capability regressions; all must execute and pass",
+      not_all_updates_when_exceptions: true,
+    },
+
+    deferred_rpi: {
+      state: "deferred",
+      instruction: "IC-008",
+      counts_as_passed: false,
+      former_fields: {
+        device_cells: [
+          "version@mac",
+          "version@twr",
+          "version@rpi",
+          "version@ios",
+          "version@android",
+        ],
+        title:
+          "One version from one commit installed on five targets, with a screenshot per host; a slice release, not whole-design acceptance",
+        what: "Install the release on the Mac, tower, iPhone and Android phone from one commit; each target reads back the release and commit; one screenshot per upgrade; the cycle cheap enough for agents to iterate. This is one slice release; whole-design acceptance remains ACCEPT-ALL (K10, D21). Concretely: one new pipeline step, five-device-acceptance, in the existing release tool and its existing step contract (I-07, K12), appended after rewind-live-proof as the new final step and run by the close job that outlives the Mac app restart. It reads the expected candidate identity from the run's own {evidence}/source-commit.json (fields release and commit, the 40-character frozen source commit) and refuses before probing if run-binding.json names a different release. Each target then reports its own release and commit through one named readback (acceptance_interface.per_target_readback): the Mac and tower servers answer a new fork-namespace loopback route /.well-known/throughline/release from the build identity file the version-stamp step writes; the iPhone and Android apps report through the hello they send at connect (T3.05), recorded on the tower. Each target leaves one readback receipt and one screenshot; the step compares release and full commit per target, requires the active retained protection steps passed in the same run, and refuses with a named code on any mismatch, missing readback, missing or stale screenshot, or excluded verifier (acceptance_interface.refusals). Final architecture install also consumes T3.07: refuse unless the pinned upstream head is an ancestor of the installed source or every deliberate non-inclusion is source-backed and recorded. A preserve-base foundation release does not satisfy this gate.",
+        done_when: {
+          command: "ryan throughline ship <release> --retry-step five-device-acceptance --json",
+          expect:
+            "owning step outcome passed and hash-bound five-target result receipt; all installed release+commit/readback/screenshot/non-builder/protection comparisons pass; no whole-design acceptance. The receipt lists, for each of mac, twr, rpi, ios and android, the readback method, the reported release and commit, the screenshot path and sha256, and outcome passed; refusals is empty; accept_all_granted is false. The four negative fixtures in planned_checks refuse with their named codes. The same-candidate upstream reconciliation gate passes; missing, stale or incomplete proof refuses.",
+          judge: "non-builder seat",
+        },
+        signatures: [
+          "acceptAll(evidence_root) -> ACCEPT-ALL verdict over every done receipt, slice state, ledger acceptance proof and device-cell receipt; a separate entrypoint from five-device-acceptance, run only by a non-builder; a slice release never calls it.",
+          "FiveDeviceReleaseAcceptance owned by I-07/K12 through throughline-ship native step five-device-acceptance: exact FiveDeviceAcceptanceInput + owned run/source/attempt/lease context => FiveDeviceAcceptanceResult at {evidence}/T13.04/five-device-acceptance.attempt-{attempt}.json.",
+          "export async function fiveDeviceAcceptance(context: OwnedAcceptanceContext, input: FiveDeviceAcceptanceInput, probes: FiveDeviceAcceptanceProbes): Promise<FiveDeviceAcceptanceResult> — context = {run_id, evidence, attempt, lease_path}; input = {candidate: {release, commit} from {evidence}/source-commit.json, install_finished_at per target from that target's install receipt, protected_receipts}; probes = {readback(target) -> {release, commit, captured_at, raw_sha256}, screenshot(target) -> {path, sha256, captured_at, shows} | waiting(reason)}, injectable so the negative fixtures run with no device.",
+          "GET /.well-known/throughline/release (fork-namespace route apps/server/src/throughline/release/http.ts, unauthenticated, loopback) -> {schema: 'throughline.release-identity.v1', release, commit} read from release-identity.generated.json, written by the version-stamp step from {evidence}/source-commit.json before any build; the T3.05 hello's server_release and server_commit read the same file.",
+          "Installed readbacks and fresh source-bound, independently viewed screenshots for every identity in the immutable admitted version contract must report one effective release and full commit. Verification actors exclude actual build/install/proof-author actors and the verified current build/ship caller resolved by I-07 identity ownership; invocation alone is not classification or exemption.",
+          "Per target: readback.release === candidate.release and readback.commit === candidate.commit (40 lowercase hex, whole string), readback and screenshot captured after that target's install receipt finished; otherwise one refusal code from acceptance_interface.refusals per target, all collected, outcome failed (or waiting for the Android screen proof only).",
+          "Android app-reported hello proves installed identity only; missing physical screen proof stays not-proven/waiting, never silently passes full five-target release.",
+          "Retain testflight-readback, tower-cold-turn and rpi-cold-turn as distinct required protections; a slice release never grants ACCEPT-ALL.",
+          "Retained helper receipts bind effective run/source/install effects; version/build-only helper metadata is not same-commit installed proof. passed/waiting/failed map to existing runner outcomes, with waiting/failed non-pass; no new runner state.",
+        ],
+        acceptance_interface: {
+          id: "I-07/FiveDeviceReleaseAcceptance",
+          owner: "throughline-ship",
+          adapter: "five-device-acceptance",
+          input_schema: "throughline.five-device-acceptance-input.v1",
+          result_schema: "throughline.five-device-release-acceptance.v1",
+          receipt: "{evidence}/T13.04/five-device-acceptance.attempt-{attempt}.json",
+          runtime_state: "proposed-not-implemented",
+          required_targets: ["mac", "twr", "rpi", "ios", "android"],
+          required_targets_source:
+            "immutable preserved pre-correction source snapshot and stable version-row digest",
+          source_module:
+            "/Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship/src/five-device-acceptance.ts",
+          compiled_module:
+            "/Users/Admin/core-root/src/tools/throughline-ship/dist/five-device-acceptance.js",
+          function_signature:
+            "export async function fiveDeviceAcceptance(context: OwnedAcceptanceContext, input: FiveDeviceAcceptanceInput, probes: FiveDeviceAcceptanceProbes): Promise<FiveDeviceAcceptanceResult>",
+          invocation_argv: [
+            "ryan",
+            "throughline",
+            "ship",
+            "<release>",
+            "--retry-step",
+            "five-device-acceptance",
+            "--json",
+          ],
+          android_proof_modes: {
+            app_reported:
+              "authenticated installed physical-phone hello can prove version/commit only",
+            screen_driven:
+              "physical screenshot/control proof remains not-proven under current D-CAP-05 limit until actual authorized route",
+            full_release:
+              "requires both obligations; no Android omission or trace-as-screen substitution",
+          },
+          required_targets_binding: {
+            source_snapshot: {
+              path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-02/packets/Acceptance-Correction-Before-spec.json",
+              sha256: "8d67f3b15bf3bf9a4675d65b68ccde9ae6136f0d2c344d265f1807641a7d7b32",
+            },
+            version_row: {
+              key: "version",
+              sha256: "42199fd2dbdd80c8803340a84d0308d777b28d282a621a1a60ad46dc984c7909",
+              target_ids: ["mac", "twr", "rpi", "ios", "android"],
+            },
+            rule: "Snapshot is preserved bytes, never regenerated; stable row digest and identity set remain valid while corrected spec changes.",
+          },
+          actor_binding: {
+            authority: "I-07 and identity ownership, not caller labels",
+            excluded_actual_actor_classes: [
+              "build",
+              "install",
+              "proof-author",
+              "verified-current-build-ship-caller",
+            ],
+            exclude_invocation_alone: false,
+            read_only_verifier_allowed_only_if_not_excluded: true,
+            proof_author_scope:
+              "authors of submitted install/readback/capture proofs, not mere author of an independent verification result",
+          },
+          protected_readbacks: {
+            step_ids: ["testflight-readback", "tower-cold-turn", "rpi-cold-turn"],
+            binding_authority: "I-07 effective run/source/install effects",
+            require_run_source_install_effects: true,
+            helper_metadata_alone_proves_installed_commit: false,
+          },
+          outcome_mapping: {
+            passed: "passed",
+            waiting: "waiting",
+            failed: "failed",
+            non_pass_behavior: "existing runner/PIPELINE_STEP_NOT_PASSED",
+            adds_runner_state: false,
+          },
+          target_bindings: [
+            {
+              target: "mac",
+              readback_target: "mac",
+              screenshot_target: "mac",
+              role: "both",
+            },
+            {
+              target: "twr",
+              readback_target: "twr",
+              screenshot_target: "twr",
+              role: "execution-host",
+            },
+            {
+              target: "rpi",
+              readback_target: "rpi",
+              screenshot_target: "rpi",
+              role: "execution-host",
+            },
+            {
+              target: "ios",
+              readback_target: "ios",
+              screenshot_target: "ios",
+              role: "control-client",
+            },
+            {
+              target: "android",
+              readback_target: "android",
+              screenshot_target: "android",
+              role: "control-client",
+            },
+          ],
+          pipeline_step: {
+            file: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/Ship-Pipeline.json",
+            id: "five-device-acceptance",
+            placement:
+              "after rewind-live-proof; becomes final_step; run by the existing close job after the Mac app restart",
+            requires: ["rewind-live-proof", "the Android native-device step that T13.01 adds"],
+            k12_fields: {
+              operation_id: "five-device-acceptance",
+              attempt: "runner attempt number",
+              lease: "{evidence}/five-device-acceptance.lease.json (existing runner lease)",
+              retry_class:
+                "idempotent: every probe is a read; screenshots are recaptured on each attempt",
+              input_digests: [
+                "sha256 of {evidence}/source-commit.json",
+                "sha256 of each protected step receipt",
+              ],
+            },
+            second_pipeline: false,
+          },
+          candidate_identity: {
+            source: "{evidence}/source-commit.json",
+            fields: {
+              release: "x.y.z, must equal {evidence}/run-binding.json release",
+              commit: "40 lowercase hex, the frozen source commit the run built from",
+            },
+            stamped_into_builds_by:
+              "the existing version-stamp step writes apps/server/src/throughline/release/release-identity.generated.json in the release checkout; APP_COMMIT for the web and Expo builds comes from the same field (fork commit 47065c2a65 already carries APP_COMMIT in apps/web/vite.config.ts and apps/mobile/app.config.ts)",
+            refuse_before_probing: "CANDIDATE_IDENTITY_INCONSISTENT",
+          },
+          per_target_readback: [
+            {
+              target: "mac",
+              method: "loopback-route",
+              run_on: "Mac",
+              command:
+                "curl --fail --silent --max-time 10 http://127.0.0.1:3773/.well-known/throughline/release",
+              also: "/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /Applications/ThroughLine.app/Contents/Info.plist equals release",
+              fields: ["release", "commit"],
+              readback_receipt: "{evidence}/T13.04/readback-mac.attempt-{attempt}.json",
+              screenshot: {
+                path: "{evidence}/T13.04/version-mac.png",
+                how: "bring ThroughLine forward through System Events only, open Settings, screencapture -x",
+                shows: "the installed release on the Settings screen",
+              },
+            },
+            {
+              target: "twr",
+              method: "loopback-route",
+              run_on: "tower, over ssh -o BatchMode=yes twr",
+              command:
+                "curl --fail --silent --max-time 10 http://127.0.0.1:3773/.well-known/throughline/release",
+              fields: ["release", "commit"],
+              readback_receipt: "{evidence}/T13.04/readback-twr.attempt-{attempt}.json",
+              screenshot: {
+                path: "{evidence}/T13.04/version-twr.png",
+                how: "Mac ThroughLine Settings, Connections, the twr environment entry, screencapture -x",
+                shows: "the tower environment connected after the install",
+              },
+            },
+            {
+              target: "rpi",
+              method: "loopback-route",
+              run_on: "Raspberry Pi, over ssh -o BatchMode=yes rpi",
+              command:
+                "curl --fail --silent --max-time 10 http://127.0.0.1:13774/.well-known/throughline/release",
+              fields: ["release", "commit"],
+              readback_receipt: "{evidence}/T13.04/readback-rpi.attempt-{attempt}.json",
+              screenshot: {
+                path: "{evidence}/T13.04/version-rpi.png",
+                how: "Mac ThroughLine Settings, Connections, the rpi environment entry, screencapture -x",
+                shows: "the Raspberry Pi environment connected after the install",
+              },
+            },
+            {
+              target: "ios",
+              method: "client-hello-record",
+              run_on: "tower, read-only",
+              command:
+                "read the newest row for platform ios in the hello table T3.05 writes to the tower's state database (opened read-only), received_at after the install-phone receipt finished",
+              fields: ["release", "commit", "platform", "received_at"],
+              also: "testflight-readback passed in this run for the same marketing version",
+              readback_receipt: "{evidence}/T13.04/readback-ios.attempt-{attempt}.json",
+              screenshot: {
+                path: "{evidence}/T13.04/version-ios.png",
+                how: "iPhone Mirroring window on the Mac, the app's Settings screen, screencapture -x",
+                shows: "the installed release on the iPhone Settings screen",
+              },
+            },
+            {
+              target: "android",
+              method: "client-hello-record",
+              run_on: "tower, read-only",
+              command:
+                "read the newest row for platform android in the same hello table, received_at after the Android native-device receipt finished",
+              fields: ["release", "commit", "platform", "received_at"],
+              readback_receipt: "{evidence}/T13.04/readback-android.attempt-{attempt}.json",
+              screenshot: {
+                path: "{evidence}/T13.04/version-android.png",
+                how: "adb -s <physical serial> exec-out screencap -p of the app's Settings screen",
+                shows: "the installed release on the physical Android phone",
+                prerequisite:
+                  "USB or wireless debugging authorized on the physical phone (D-CAP-05); until then this probe returns waiting",
+              },
+            },
+          ],
+          comparison: {
+            release: "readback.release === candidate.release",
+            commit:
+              "readback.commit === candidate.commit, whole 40-character string, no prefix match",
+            freshness:
+              "readback.captured_at and screenshot.captured_at are later than that target's install receipt finished_at",
+            screenshot:
+              "file exists, is a PNG, sha256 recorded, viewed by the verifier named in the result",
+            protected:
+              "testflight-readback, tower-cold-turn and rpi-cold-turn each have a passed receipt in this run, bound by receipt path and sha256",
+            all_collected:
+              "every target is probed and every refusal recorded; the step never stops at the first refusal",
+          },
+          refusals: [
+            {
+              code: "CANDIDATE_IDENTITY_INCONSISTENT",
+              when: "source-commit.json is missing, its commit is not 40 lowercase hex, or its release differs from run-binding.json",
+              outcome: "failed",
+            },
+            {
+              code: "TARGET_RELEASE_MISMATCH:<target>",
+              when: "the target reports a different release",
+              outcome: "failed",
+            },
+            {
+              code: "TARGET_COMMIT_MISMATCH:<target>",
+              when: "the target reports a different commit, or a null commit",
+              outcome: "failed",
+            },
+            {
+              code: "TARGET_READBACK_MISSING:<target>",
+              when: "the host is unreachable, the route is absent or answers RELEASE_IDENTITY_UNSTAMPED, a field is missing, or no hello row is newer than the install",
+              outcome: "failed",
+            },
+            {
+              code: "TARGET_SCREENSHOT_MISSING:<target>",
+              when: "no screenshot file for mac, twr, rpi or ios",
+              outcome: "failed",
+            },
+            {
+              code: "ANDROID_SCREEN_PROOF_WAITING",
+              when: "the Android hello matches but the physical screenshot cannot be taken because debugging is not authorized",
+              outcome: "waiting",
+            },
+            {
+              code: "STALE_PROOF:<target>",
+              when: "a readback or screenshot was captured before that target's install finished",
+              outcome: "failed",
+            },
+            {
+              code: "PROTECTED_READBACK_NOT_PASSED:<step>",
+              when: "testflight-readback, tower-cold-turn or rpi-cold-turn has no passed receipt in this run",
+              outcome: "failed",
+            },
+            {
+              code: "VERIFIER_EXCLUDED",
+              when: "the verifying actor is in actor_binding.excluded_actual_actor_classes",
+              outcome: "failed",
+            },
+          ],
+          result_fields: [
+            "schema",
+            "run_id",
+            "release",
+            "commit",
+            "attempt",
+            "outcome",
+            "targets[{target, method, readback{release, commit, captured_at, raw_sha256, receipt_path}, screenshot{path, sha256, captured_at, shows}, outcome, refusals[]}]",
+            "protected_readbacks[{step_id, receipt_path, receipt_sha256, outcome}]",
+            "verifier{actor, class}",
+            "refusals[]",
+            "accept_all_granted: false",
+          ],
+        },
+        planned_checks: [
+          {
+            id: "T13.04-protect",
+            kind: "retained-protection",
+            command: "pipeline steps testflight-readback, tower-cold-turn and rpi-cold-turn",
+            expected_today: "exist (A12)",
+            measured: false,
+            spec_projection: {
+              kind: "real-disk",
+              expected_today: "measure on first run",
+              file_ready: false,
+              note: "add to spec.checks only when the check file exists on disk (spec check X05)",
+            },
+          },
+          {
+            id: "T13.04-red",
+            kind: "first-act-red",
+            command:
+              "curl --fail --silent --max-time 10 http://127.0.0.1:3773/.well-known/throughline/release on the Mac",
+            expected_today:
+              "fails: the route does not exist; every install step today compares only serverVersion from /.well-known/t3/environment and no step reads a commit (throughline-ship src/rpi.ts and src/tower-headless.ts)",
+            measured: true,
+            spec_projection: {
+              kind: "real-disk",
+              expected_today: "FAIL",
+              file_ready: false,
+              note: "add to spec.checks only when the check file exists on disk (spec check X05)",
+            },
+          },
+          {
+            id: "T13.04-neg-commit",
+            kind: "contract-test",
+            command:
+              "five-device-acceptance.test.ts: probes return the candidate release on all five targets and a different 40-hex commit on rpi",
+            expect:
+              "outcome failed; refusals contains TARGET_COMMIT_MISMATCH:rpi; the other four targets still recorded",
+            spec_projection: {
+              kind: "real-disk",
+              expected_today: "measure on first run",
+              file_ready: false,
+              note: "add to spec.checks only when the check file exists on disk (spec check X05)",
+            },
+          },
+          {
+            id: "T13.04-neg-missing",
+            kind: "contract-test",
+            command:
+              "five-device-acceptance.test.ts: the twr readback probe throws (unreachable) and the ios hello query returns no row newer than install-phone",
+            expect:
+              "outcome failed; refusals contains TARGET_READBACK_MISSING:twr and TARGET_READBACK_MISSING:ios",
+            spec_projection: {
+              kind: "real-disk",
+              expected_today: "measure on first run",
+              file_ready: false,
+              note: "add to spec.checks only when the check file exists on disk (spec check X05)",
+            },
+          },
+          {
+            id: "T13.04-neg-android-screen",
+            kind: "contract-test",
+            command:
+              "five-device-acceptance.test.ts: android hello matches the candidate; the android screenshot probe returns waiting (no debugging authorization)",
+            expect:
+              "outcome waiting (non-pass, existing runner state); refusals contains ANDROID_SCREEN_PROOF_WAITING; never passed",
+            spec_projection: {
+              kind: "real-disk",
+              expected_today: "measure on first run",
+              file_ready: false,
+              note: "add to spec.checks only when the check file exists on disk (spec check X05)",
+            },
+          },
+          {
+            id: "T13.04-neg-stale",
+            kind: "contract-test",
+            command:
+              "five-device-acceptance.test.ts: the mac screenshot captured_at is earlier than the install-mac receipt finished_at",
+            expect: "outcome failed; refusals contains STALE_PROOF:mac",
+            spec_projection: {
+              kind: "real-disk",
+              expected_today: "measure on first run",
+              file_ready: false,
+              note: "add to spec.checks only when the check file exists on disk (spec check X05)",
+            },
+          },
+        ],
+      },
+      note: "Historical clauses only; not active commands, tests or execution authority. Current active fields above govern.",
     },
   },
   {
@@ -8513,6 +9685,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T3.05",
@@ -8709,6 +9883,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    command_grammar: "IC-002",
   },
   {
     id: "T4.04",
@@ -8760,6 +9936,8 @@ const OUTLINE: Task[] = [
     },
     owning_component:
       "/Users/Admin/core-root/vault/01_Projects/workbench/infra/admin-capability-broker",
+
+    command_grammar: "IC-002",
   },
   {
     id: "T4.05",
@@ -8816,6 +9994,8 @@ const OUTLINE: Task[] = [
       judge: "Named non-builder reviewer at the live deep-audit policy; never the implementer",
     },
     owning_component: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox",
+
+    command_grammar: "IC-002",
   },
 ];
 
@@ -9161,7 +10341,7 @@ export const WATCHER_SERVER_REBOOT_DELTA = {
     },
     {
       path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R2.json",
-      sha256: "d28eca4e76662693fde41e8be7ea152a0428a595561da259537395dca7a622ec",
+      sha256: "d81e7b0eb7a7412c12c6d25de8b3f1ce5c3bd16950dafc55c9651982144caa30",
     },
   ],
   source_precedence:
@@ -9187,6 +10367,7 @@ export const WATCHER_SERVER_REBOOT_DELTA = {
   projection_notes: [
     "Host add/edit intents are retained in intended_install_action; action read denotes their explicit verification-only surface.",
     "The R2 single three-state interval replaces the original interval; the obsolete retained-twr-unit sentence is removed per R2 k05_interval_settled.also_delete.",
+    "The source author confirmed the verification action projection and single K05 interval; the later R2 amendment withdraws twr polkit and binds conditional supervisor heal.",
   ],
 };
 
@@ -9309,7 +10490,7 @@ TASKS.push(
         "the rehearsed rollback script from item 2 of the superseded file: disable the system units, move the data directory back under /home/twr/absurd-pg/data and chown twr, chown the state tree back to twr, re-enable the twr user units, remove the root credential files",
       signatures: ["one non-builder receipt per polarity, with the rehearsal receipt first"],
       counterexample_must_fail:
-        "after the batch a twr process stops the record unit, opens the record role credential file, or opens the server's state.sqlite; or either unit shows User=root or User=twr; or any test prints a credential value or its hash",
+        "after the batch a twr process stops the record unit, opens the record role credential file, or opens the server's state.sqlite; or either unit shows User=root or User=twr; or any test prints a credential value or its hash or a process running as twr causes a healthy record unit to stop or restart through any path, including the supervisor's heal verb while the supervisor's own probe reads the unit healthy.",
       failing_checks: ["PH2-C01"],
       governing_shapes: [
         "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-10-04-ryan-performs-tower-sudo-installs-for-now.yaml",
@@ -9389,6 +10570,8 @@ TASKS.push(
         counterexample_must_fail:
           "After the batch, a process running as twr stops the record unit, reads the record role credential, or reads the server's state.sqlite; or the server unit shows User=root or User=twr; or the credential appears in the unit's Environment= or in any file readable by the server account outside its credentials directory. Any of these means the design has failed.",
       },
+
+      command_grammar: "IC-002",
     },
     {
       id: "T4.07",
@@ -9476,6 +10659,8 @@ TASKS.push(
         scope_note:
           "The Raspberry Pi stays paused for execution and device acceptance (Oct 9 ruling); Ryan's Oct 10 words put exactly two things on it: the watcher (T4.03, T4.04, T4.05 as already in 0.4.16) and the responder this delta adds. Nothing else on the Raspberry Pi is in scope.",
       },
+
+      command_grammar: "IC-002",
     },
     {
       id: "T12.08",
@@ -9527,7 +10712,7 @@ TASKS.push(
         command:
           "the cold test in item 1 of the superseded file, both halves, plus: after the repair half, read the tower record for events under the responder identity for the incident id",
         expect:
-          "the repair half and the page half as written there; the tower record carries the incident's steps as events with the incident id after recovery; the island admitted no thread while no incident was open (its thread list for the window shows only the responder)",
+          "the repair half and the page half as written there; the tower record carries the incident's steps as events with the incident id after recovery; the island admitted no thread while no incident was open (its thread list for the window shows only the responder) in the repair half, the ledger shows the tier-0 heal request and the supervisor's answer; a second test sends heal throughline-record.service while the record is healthy and expects already-healthy with the unit's ActiveEnterTimestamp unchanged the incident file created by T4.03 for the rehearsal loss is the one T12.08 consumes (same id), its responder field moves from not-installed through tier-0 and tier-1 to closed, and the informational open line is sent after tier 0 is recorded as attempted, so the ordering T4.03 could not promise is proven here",
       },
       failing_check_first:
         "before the work, a confirmed loss on the rehearsal cluster produces a notification and nothing else: no incident file exists under incidents/ (directory absent, measured) and no responder; that is the red",
@@ -9608,7 +10793,32 @@ TASKS.push(
           K05_append_sentence:
             "One bounded exception exists and is owned by T12.08: while an incident is open on the Raspberry Pi watcher's ledger, the Raspberry Pi's own ThroughLine server and its local record form the recovery island, which admits exactly one thread kind, the responder, whose effects are limited to the responder authority list and whose every step is appended to the tower record as events when the record returns; the island admits nothing for the one record, is never merged into it, admits nothing outside an open incident, and is not an execution authority for ThroughLine work; a responder step that needs the tower record is recorded unknown and surfaced, never executed on the island.",
         },
+        conditional_heal: {
+          finding_accepted:
+            "T12.05's append granted the rpi-to-tower ssh identity (which lands as twr) a polkit grant to start, stop and restart throughline-record.service and throughline-server.service; that lets any twr seat stop the record, which the three-state sentence forbids in the record-isolated-seats-shared state",
+          decision:
+            "Withdraw the polkit grant to the ssh identity entirely; twr holds no grant on any system unit. The heal path runs through the supervisor service account, which already holds the scoped polkit grant for agent units: its grant widens by exactly two units and two verbs, start and restart of throughline-record.service and throughline-server.service, never stop or kill. The supervisor exposes one more verb on its control socket, heal <unit>, accepted from any local peer, and it honors heal only when its own credential-free probe shows the unit inactive, failed or unresponsive at that moment; otherwise it answers already-healthy and does nothing. A twr process can therefore cause nothing the unit's own Restart=always policy would not do, cannot stop the record, and cannot restart a healthy record. The tier-0 ladder (recover-service over the ssh identity as twr) calls heal through the control socket instead of systemctl.",
+          alternative_rejected:
+            "A dedicated recovery account for the ssh identity with its own scoped grant. Rejected because the Raspberry Pi's existing ssh identity lands as twr and a new account is a new trust arrangement; the conditional heal verb gives the same recovery with no new account and no new authority.",
+          replacement_text: {
+            "T12.05_what_append":
+              "recover-service is also the tier-0 ladder the Raspberry Pi watcher and the responder call over the rpi-to-tower ssh identity as twr; for the system units it does not call systemctl and holds no polkit grant: it sends heal <unit> to the supervisor's control socket, and the supervisor, under its own scoped grant (start and restart only for throughline-record.service and throughline-server.service), acts only if its own credential-free probe shows that unit down or unresponsive at that moment and otherwise answers already-healthy; no public command and no new flag; its recovery receipt is copied into the incident ledger.",
+            "T6.01_what_append":
+              "The supervisor's polkit grant covers throughline-agent@*.service for start, stop, restart and kill, and additionally throughline-record.service and throughline-server.service for start and restart only; it never covers stop or kill of those two units and no other account holds any grant on them.",
+            "T4.06_counterexample_append":
+              "or a process running as twr causes a healthy record unit to stop or restart through any path, including the supervisor's heal verb while the supervisor's own probe reads the unit healthy.",
+            K05_three_state_sentence:
+              "unchanged: no twr seat can stop the record in the record-isolated-seats-shared state; heal cannot stop it and cannot restart it while healthy",
+            "T12.08_done_when_append":
+              "in the repair half, the ledger shows the tier-0 heal request and the supervisor's answer; a second test sends heal throughline-record.service while the record is healthy and expects already-healthy with the unit's ActiveEnterTimestamp unchanged",
+          },
+        },
       },
+
+      command_grammar: "IC-002",
+
+      phase_scoped_acceptance:
+        "T12.08 is accepted in Phase 12 when the same incident mechanism, on a rehearsal loss, records tier 0 attempted before the informational open line is sent, moves the incident's responder field from not-installed through tier-0 and tier-1 to closed, and the page half passes; the ordering 'tier 0 before notify' is a Phase 12 claim only and appears in no Phase 4 receipt.",
     },
     {
       id: "T12.09",
@@ -9756,6 +10966,8 @@ TASKS.push(
       },
       counterexample_must_fail:
         "a responder is started for an unreachable host; a page says the tower is broken or down without the state name; any test receipt on the tower contains a reboot command; a planned reboot proceeds without Ryan's yes recorded in the marker",
+
+      command_grammar: "IC-002",
     },
   ] as Task[]),
 );
@@ -9931,7 +11143,7 @@ export const DECISIONS: Decision[] = [
     id: "D20",
     title: "The first slice ends with one release from the new home",
     statement:
-      "The repository move is proven by release 0.0.60 through the re-pointed pipeline, installed on every host, with the vault copies bound to its frozen commit and the staging fix measured on the installed server; no slice closes on configuration alone.",
+      "The repository move is proven by release 0.0.60 through the re-pointed pipeline, installed on every host, with the vault copies bound to its frozen commit and the staging fix measured on the installed server; no slice closes on configuration alone. Later IC-008 limits the active set to Mac, tower, iOS and then Android; Raspberry Pi general rollout is deferred, not passed. Archive and watcher/responder exceptions remain.",
     serves: ["NG-120", "NG-119"],
     quote_from: "NG-120",
   },
@@ -10044,3 +11256,473 @@ export const GOAL = {
     },
   ],
 };
+
+// Ryan instruction audit: exact source words, with the owning execution contracts.
+export const INSTRUCTION_COVERAGE = {
+  source: {
+    path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Ryan-Instruction-Coverage.json",
+    sha256: "ae3a72e26191a029b584b834a0f8643efd8e82df6476d1d0ef1b08b479b8df9e",
+  },
+  order:
+    "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Order-Spec-Writer-Watcher-And-Coverage-2026-10-10.txt",
+  rows: [
+    {
+      id: "IC-049",
+      ryan_exact_words:
+        "Also, When we install the new version of ThroughLine, I want it to have all of the downloads from upstream. We have not folded in upstreams updates in a while. They've been building up. I don't want to ship ThroughLine with upstream updates not reconciled and included in the install.",
+      source: {
+        exact_words:
+          "Also, When we install the new version of ThroughLine, I want it to have all of the downloads from upstream. We have not folded in upstreams updates in a while. They've been building up. I don't want to ship ThroughLine with upstream updates not reconciled and included in the install.",
+        thread_id: "619f77ee-d97f-430f-b917-ef1427b74191",
+        message_id: "2a41a9b1-50b3-4d10-aa37-a49685792530",
+        time: "2026-10-10T10:48:57.516Z",
+        source_file: "/Users/Admin/.t3/userdata/state.sqlite",
+        event_sequence: 1034198,
+        event_id: "4cd896fd-f7db-4477-8687-4196c3633ca9",
+        quote_start_character: 667,
+        quote_end_character: 951,
+        source_text_sha256: "d49af5756ec9aab545e0878c36745700ec396204c3cc15ac16957d08a3acce58",
+      },
+    },
+    {
+      id: "IC-052",
+      ryan_exact_words:
+        "The end state is every ThroughLine agent starts with nothing but a target ID and works toward your words.",
+      source: {
+        exact_words:
+          "The end state is every ThroughLine agent starts with nothing but a target ID and works toward your words.",
+        thread_id: "619f77ee-d97f-430f-b917-ef1427b74191",
+        message_id: "17252cb6-f0a0-40ff-bba0-22623b2e50e7",
+        time: "2026-10-10T10:49:39.117Z",
+        source_file: "/Users/Admin/.t3/userdata/state.sqlite",
+        event_sequence: 1034236,
+        event_id: "c5c3e49b-911b-4285-807e-db0aa67de8dd",
+        quote_start_character: 121,
+        quote_end_character: 226,
+        source_text_sha256: "7ed9af93a22fe6b99958f2ecc39ccfb9de2169b1b229e4f0c77c05b6ebca1a0f",
+      },
+    },
+    {
+      id: "IC-056",
+      ryan_exact_words:
+        "how do agents and threads bind to them and how do they start with a target and my words to drive to and how can the target chain be changed if it needs to be changed or added later in the session?",
+      source: {
+        exact_words:
+          "how do agents and threads bind to them and how do they start with a target and my words to drive to and how can the target chain be changed if it needs to be changed or added later in the session?",
+        thread_id: "619f77ee-d97f-430f-b917-ef1427b74191",
+        message_id: "17252cb6-f0a0-40ff-bba0-22623b2e50e7",
+        time: "2026-10-10T10:49:39.117Z",
+        source_file: "/Users/Admin/.t3/userdata/state.sqlite",
+        event_sequence: 1034236,
+        event_id: "c5c3e49b-911b-4285-807e-db0aa67de8dd",
+        quote_start_character: 1259,
+        quote_end_character: 1455,
+        source_text_sha256: "7ed9af93a22fe6b99958f2ecc39ccfb9de2169b1b229e4f0c77c05b6ebca1a0f",
+      },
+    },
+    {
+      id: "IC-002",
+      ryan_exact_words:
+        "For example, if your design touches a violating command — now that you know the standards, you can include in your structured deliverable, as part of the execution, for the agent to fix the command and shift it to the correct shape. \n\nAlso, if you are planning to design any new commands, any new families use $ryan-command-layer  and the two grammar standard docs to make their shape and composition intentional and alligned:\n\n`/Users/Admin/core-root/vault/01_Projects/workbench/infra/first-class-command-layer/Command-Grammar-Standard-V1.html` \n\n`/Users/Admin/core-root/vault/01_Projects/workbench/infra/grammar/Folder-Grammar-Standard-V1.html`\n\n``/Users/Admin/core-root/vault/01_Projects/workbench/infra/grammar/Folder-Grammar-Standard-V1-Dependencies.json``",
+      source: {
+        exact_words:
+          "For example, if your design touches a violating command — now that you know the standards, you can include in your structured deliverable, as part of the execution, for the agent to fix the command and shift it to the correct shape. \n\nAlso, if you are planning to design any new commands, any new families use $ryan-command-layer  and the two grammar standard docs to make their shape and composition intentional and alligned:\n\n`/Users/Admin/core-root/vault/01_Projects/workbench/infra/first-class-command-layer/Command-Grammar-Standard-V1.html` \n\n`/Users/Admin/core-root/vault/01_Projects/workbench/infra/grammar/Folder-Grammar-Standard-V1.html`\n\n``/Users/Admin/core-root/vault/01_Projects/workbench/infra/grammar/Folder-Grammar-Standard-V1-Dependencies.json``",
+        thread_id: "44973766-bbeb-4c80-b506-a4b171273e33",
+        message_id: "a47f865c-a45e-4fd6-a52a-2c81eb12fd2b",
+        time: "2026-10-07T21:59:52.792Z",
+        source_file: "/Users/Admin/.t3/userdata/state.sqlite",
+        event_sequence: 834360,
+        event_id: "fb854fbb-6480-48ae-9a51-707a15ae4020",
+        quote_start_character: 600,
+        quote_end_character: 1361,
+        source_text_sha256: "6a550a82631556ff8c5730e7d1cf5d6d5fe6f2b37105fe48d86b5d60998f25e3",
+      },
+    },
+    {
+      id: "IC-008",
+      ryan_exact_words:
+        "Because if that's right, I would prefer we take Raspberry Pi off the list and focus on Mac, tower, and iOS as priority, and when those three are done, then Android, number four. For Raspberry Pi, I think I want to pause",
+      source: {
+        exact_words:
+          "Because if that's right, I would prefer we take Raspberry Pi off the list and focus on Mac, tower, and iOS as priority, and when those three are done, then Android, number four. For Raspberry Pi, I think I want to pause",
+        thread_id: "abf5e046-bb33-4f0e-97bc-d1ccbba31693",
+        message_id: "5a024d4c-6a95-4d33-a6b6-77124d0a2471",
+        time: "2026-10-10T02:46:44.191Z",
+        source_file: "/Users/Admin/.t3/userdata/state.sqlite",
+        event_sequence: 1008000,
+        event_id: "a61422b5-05e1-41ad-8d12-191806f8cf84",
+        quote_start_character: 494,
+        quote_end_character: 713,
+        source_text_sha256: "1faab045dd25c95fc0b35d4edd77b0de49575f9fc74ed5ae4b95808f4abdb7ef",
+      },
+    },
+  ],
+  upstream_reconciliation: {
+    owner: "T3.07",
+    phase: 4,
+    first: true,
+    foundation: {
+      release: "0.0.60",
+      mode: "preserve-base",
+      not_final_architecture: true,
+    },
+    pin: {
+      fields: ["remote", "ref", "commit", "fetched_at", "previous_merge_base", "candidate_commit"],
+      fresh_fetch_required: true,
+    },
+    dispositions: {
+      coverage: "every incoming commit and changed path",
+      choices: ["adopt", "retain", "replace", "defer"],
+      requires: [
+        "source citation",
+        "reason",
+        "conflict decision",
+        "resulting path or deliberate non-inclusion",
+      ],
+      unclaimed_conflict: "refuse; never blanket take-upstream",
+    },
+    final_install: {
+      owner: "T13.04",
+      receipt: "{evidence}/upstream-reconciliation.json",
+      same_candidate_required: true,
+      gate: "pinned upstream head is an ancestor of the effective installed source OR every non-included incoming change has a deliberate source-backed disposition; no missing rows, unclaimed conflicts or stale candidate receipt",
+      seam_ceilings: "unchanged; counts may only fall",
+      capability_tests: "all pinned fork capability regressions; all must execute and pass",
+      not_all_updates_when_exceptions: true,
+    },
+  },
+  target_interface: {
+    owner: "T9.01",
+    module: "packages/throughline-target/src/provider-tools.ts",
+    transport:
+      "One common typed target tool interface on the existing authenticated ThroughLine server tool surface; Claude mod, Codex launch tool registration and Pi extension are thin adapters. This is not a ComsNet transport and does not restore its retired MCP tools.",
+    operations: ["read", "add", "fix", "retract"],
+    signature:
+      "requestTarget(operation, payload, authenticatedPeer) -> target snapshot | admitted target-change event | typed refusal",
+    payload:
+      "read(target_id); add(conversation_id, candidate_text, source_message_id); fix(target_id, expected_revision, candidate_text, reason, source_message_id); retract(target_id, expected_revision, reason)",
+    read_result: [
+      "target_id",
+      "exact_words",
+      "revision",
+      "checks",
+      "shape_ids",
+      "deliverable_scope",
+      "work_steps",
+      "pending_waits",
+    ],
+    authority:
+      "Identity and execution generation come from the authenticated launch/session, never caller labels; central target owner applies K08 and I-01, calls JEV, admits by code and records each accepted change as one event. No direct record writes, per-provider target store or credential is given to a seat.",
+    launch_binding:
+      "T6.02 passes only the target id as the job input and binds the read-only target-tool module plus the authenticated session/generation. Initial and resumed launches fetch the current revision from the one authority; input cannot supply cached words, check acceptance or authority.",
+    runtime_state: "proposed-not-implemented",
+  },
+  target_only_start: {
+    owner: "T9.01",
+    implementation_file: "packages/throughline-target/src/target-only-start.test.ts",
+    hosts: ["mac", "twr"],
+    providers: ["claude", "codex", "pi"],
+    input_keys: ["target_id"],
+    non_builder_required: true,
+    steps: [
+      "Launch a real installed ThroughLine worker for each supported provider with job input containing only target_id; no prompt transcript, copied target text or hand-authored handoff.",
+      "Read Ryan exact_words, current revision and checks through the central authority; compare bytes with the authoritative source and record the provider/session/generation.",
+      "Record the failing check, save partial work plus a durable step/wait, then replace the worker.",
+      "Launch the replacement with only the same target_id; it reads the authority and recorded partial work, continues without redoing the committed effect and without a hand-written handoff.",
+      "Advance the target revision; a completion for the old revision refuses.",
+      "Builder self-acceptance and acceptance by an unauthorized third seat refuse; the dispatcher-named non-builder can accept the current revision.",
+      "Direct agent writes to target records refuse; add/fix/retract only through the common interface with recorded admission and revision events.",
+    ],
+    refusals: [
+      "stale-revision-completion",
+      "builder-self-acceptance",
+      "unauthorized-check-acceptance",
+      "direct-target-record-write",
+      "stale-generation-tool-call",
+    ],
+    receipt: "{evidence}/target-only-start/<host>-<provider>.json",
+    final_acceptance:
+      "ACCEPT-ALL requires every supported provider on each active execution host; a missing cell is not a pass; unsupported/observe-only behavior cannot be advertised as bound",
+  },
+  command_grammar: {
+    id: "IC-002",
+    skill: "/Users/Admin/.codex/skills/ryan-command-layer/SKILL.md",
+    sources: [
+      "/Users/Admin/core-root/vault/01_Projects/workbench/infra/first-class-command-layer/Command-Grammar-Standard-V1.html",
+      "/Users/Admin/core-root/vault/01_Projects/workbench/infra/grammar/Folder-Grammar-Standard-V1.html",
+      "/Users/Admin/core-root/vault/01_Projects/workbench/infra/grammar/Folder-Grammar-Standard-V1-Dependencies.json",
+    ],
+    when: "Every task that adds, changes, names or touches a command, command family, wrapper, installer or caller; applies before command implementation.",
+    owner:
+      "The task executor through the owning command-layer module; independent reviewer checks the resulting command and current callers.",
+    required: [
+      "Read the command-layer skill and both grammar standards plus the folder dependency record.",
+      "For every touched command, record current grammar compliance; include correction of a touched violation in the same execution task.",
+      "Use the owning door upgrade/proposal path; keep old callers answering during the declared compatibility window; enumerate callers from source and runtime audit, migrate them and prove the old route drains before removal.",
+      "Read current help and execute the actual resulting door in the environment of record; no guessed spelling or ad-hoc shim.",
+      "Public additions/renames follow the standards authority path; this spec pass renames no live command.",
+    ],
+    receipt: "{evidence}/<task>/command-grammar.json",
+    acceptance:
+      "non-builder verifies grammar, preserved caller behavior and the measured drain; explicit not-applicable with reason only when the task touches no command",
+  },
+};
+TASKS.splice(
+  TASKS.findIndex((t) => t.slice === "slice-3"),
+  0,
+  {
+    id: "T3.07",
+    slice: "slice-3",
+    title: "First Phase 4 task: reconcile a freshly pinned upstream before new architecture work",
+    serves: ["NG-123", "NG-124", "NG-125", "NG-126", "NG-130"],
+    detail_state: "detailed",
+    what: "0.0.60 is the preserve-base foundation, not the completed architecture. Before any other Phase 4 task, fetch upstream T3 Code, pin its full commit and fetch time, enumerate every incoming commit and changed path from the prior merge base, and record adopt/retain/replace/defer with source-backed conflict decisions. Integrate the selected changes without losing fork capabilities. Every deliberate non-inclusion stays explicit; never describe that result as all updates included. Preserve the seam ceilings and run every pinned capability regression. The final install refuses without the same-candidate reconciliation receipt and ancestry or exhaustive deliberate-non-inclusion proof.",
+    files: [
+      {
+        path: "docs/throughline/seam/",
+        side: "fork-namespace",
+        action: "edit",
+        note: "existing seam manifest and pinned capability contracts; no ceiling increase",
+      },
+      {
+        path: "docs/throughline/capabilities/",
+        side: "fork-namespace",
+        action: "read",
+        note: "every retained capability regression",
+      },
+      {
+        path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship/src/source-sync.ts",
+        side: "outside-tool",
+        action: "edit",
+        note: "owning source integration/final install gate, no separate pipeline",
+      },
+      {
+        path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/Ship-Pipeline.json",
+        side: "config",
+        action: "edit",
+        note: "bind reconciliation proof to final architecture release; retain 0.0.60 preserve-base",
+      },
+    ],
+    depends_on: ["T1.10", "T2.04"],
+    executor: {
+      role: "implementer",
+      model_preference: "gpt-6.1-sol",
+      effort: "high",
+    },
+    governing_shapes: [
+      "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-31-ryan-tier-1-only-edit-surface-ship-to-all-runtimes.yaml",
+      "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-27-ryan-before-saying-you-checked-something-reasoning-is-not-running.yaml",
+      "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-27-ryan-slice-close-by-judge-not-self.yaml",
+    ],
+    signatures: [
+      "UpstreamReconciliationReceipt { upstream_commit, fetched_at, previous_merge_base, candidate_commit, incoming_changes[], dispositions[], conflicts[], seam_results, capability_results, ancestry_result, non_inclusions[] }",
+      "refuseUpstreamAcceptance(candidate, receipt): rejects stale candidate, missing disposition, unclaimed conflict, increased seam counts or unexecuted/failing capability tests",
+    ],
+    failing_checks: ["PH2-C01"],
+    planned_checks: [
+      {
+        id: "T3.07-red",
+        command:
+          "Before integration, prove the candidate does not contain the freshly fetched upstream head and the reconciliation receipt is absent; preserve that failed gate.",
+      },
+      {
+        id: "T3.07-neg",
+        command:
+          "Remove one incoming-change disposition, change candidate_commit, drop one capability result and raise a seam count in separate disposable receipts: every mutation must refuse.",
+      },
+    ],
+    done_when: {
+      command:
+        "Non-builder: in the repository run git fetch upstream refs/heads/main, record git rev-parse FETCH_HEAD with the actual fetch time, and verify the integrator pinned that exact cut. Walk the complete incoming-change/disposition table, run git merge-base --is-ancestor <pinned-upstream> <candidate>, run the installed seam self-test and every pinned capability regression. Exercise the final-install gate with the valid receipt and all T3.07-neg mutations; no install is performed by this test.",
+      expect:
+        "Fresh full upstream SHA and time; exact incoming-change coverage; no unclaimed conflicts; ancestry succeeds or every deliberate non-inclusion has source-backed proof; seam counts do not rise; every capability test executes and passes; all negative receipts refuse. 0.0.60 remains preserve-base.",
+    },
+    rollback:
+      "Keep the pinned source and failed proof history; return to the pre-reconciliation source through the owning integration lane, without overwriting other work.",
+    risk: [
+      "A fresh fetch can change the reconciliation cut; receipt and installed source must share the exact candidate.",
+      "No force reset, lost fork capability or increased seam ceiling.",
+    ],
+    upstream_reconciliation: {
+      owner: "T3.07",
+      phase: 4,
+      first: true,
+      foundation: {
+        release: "0.0.60",
+        mode: "preserve-base",
+        not_final_architecture: true,
+      },
+      pin: {
+        fields: [
+          "remote",
+          "ref",
+          "commit",
+          "fetched_at",
+          "previous_merge_base",
+          "candidate_commit",
+        ],
+        fresh_fetch_required: true,
+      },
+      dispositions: {
+        coverage: "every incoming commit and changed path",
+        choices: ["adopt", "retain", "replace", "defer"],
+        requires: [
+          "source citation",
+          "reason",
+          "conflict decision",
+          "resulting path or deliberate non-inclusion",
+        ],
+        unclaimed_conflict: "refuse; never blanket take-upstream",
+      },
+      final_install: {
+        owner: "T13.04",
+        receipt: "{evidence}/upstream-reconciliation.json",
+        same_candidate_required: true,
+        gate: "pinned upstream head is an ancestor of the effective installed source OR every non-included incoming change has a deliberate source-backed disposition; no missing rows, unclaimed conflicts or stale candidate receipt",
+        seam_ceilings: "unchanged; counts may only fall",
+        capability_tests: "all pinned fork capability regressions; all must execute and pass",
+        not_all_updates_when_exceptions: true,
+      },
+    },
+    command_grammar: "IC-002",
+  } as Task,
+);
+
+Object.assign(INSTRUCTION_COVERAGE, {
+  raspberry_pi_pause: {
+    instruction: "IC-008",
+    state: "deferred",
+    scope:
+      "General Raspberry Pi software installation, account rollout, execution and device acceptance are paused; the Pi software provider on Mac and tower stays required.",
+    active_targets: ["mac", "twr", "ios", "android"],
+    foundation_targets: ["twr", "ios", "mac"],
+    priority: [["mac", "twr", "ios"], ["android"]],
+    exceptions: [
+      {
+        kind: "archive-drive",
+        owners: ["T1.03", "T1.05"],
+        purpose:
+          "External archive storage and verified archive reads; not a general ThroughLine install.",
+      },
+      {
+        kind: "watcher-responder",
+        owners: ["T4.03", "T4.04", "T4.05", "T4.07", "T12.04", "T12.08", "T12.09"],
+        purpose:
+          "Watcher in the rpi account, local broker notification/provider prerequisites and the bounded recovery island only, under the Oct 10 design; never general execution.",
+      },
+    ],
+    re_enable:
+      "Requires a later explicit Ryan scope change; deferred is not passed and no current conjunction requires the deferred host.",
+  },
+});
+
+TASKS.push({
+  id: "T11.05",
+  slice: "slice-11",
+  title: "Installed target-ID-only startup and succession for every provider",
+  serves: ["NG-073", "NG-074", "NG-075", "NG-081"],
+  detail_state: "detailed",
+  what: "After the central target owner and all provider adapters are installed, a non-builder fires the target-ID-only initial/replacement job for Claude, Codex and Pi on Mac and tower. This is the end-to-end proof, not a prerequisite of the adapters it tests; T9.01 keeps its separate exploratory and API acceptance. Partial work, exact current Ryan words, revisions and checks survive replacement without a hand-written handoff.",
+  files: [
+    {
+      path: "packages/throughline-target/src/target-only-start.test.ts",
+      side: "fork-namespace",
+      action: "add",
+      exists_now: false,
+      note: "real installed launch route; no mock provider or lab-only substitute",
+    },
+  ],
+  depends_on: ["T8.03", "T11.01", "T11.02", "T9.03", "T6.03"],
+  executor: {
+    role: "implementer",
+    model_preference: "gpt-6.1-sol",
+    effort: "high",
+  },
+  governing_shapes: [
+    "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-27-ryan-slice-close-by-judge-not-self.yaml",
+    "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-08-06-ryan-prove-it-in-the-environment-of-record-before-claiming-it-works.yaml",
+  ],
+  signatures: [
+    "targetOnlyStart(installedHost, provider, target_id) -> source-bound non-builder receipt including initial and replacement generations, partial-work proof, current revision and all refusal polarities",
+  ],
+  failing_checks: ["PH2-C01"],
+  done_when: {
+    command:
+      "Run packages/throughline-target/src/target-only-start.test.ts through installed ThroughLine on Mac and tower for Claude, Codex and Pi, following target_only_start.steps; input contains only target_id.",
+    expect:
+      "Every provider/host receipt proves exact-word/revision/check fetch, saved partial-work continuation without repeated committed effects or a hand-written handoff, and all target_only_start.refusals refuse. The named non-builder accepts only the current revision.",
+    judge: "non-builder, not the target builder or any provider adapter builder",
+  },
+  rollback:
+    "Keep all failed receipts. Revert the proof harness through its owning source lane; never change target history or weaken admission to pass.",
+  risk: [
+    "A mocked or lab-only worker is not installed ThroughLine proof.",
+    "The core target task cannot depend on its downstream provider proof.",
+  ],
+  planned_checks: [
+    {
+      id: "T11.05-red",
+      command:
+        "A real installed target_id-only job cannot continue saved partial work before the adapters exist; preserve that refusal.",
+    },
+  ],
+  target_only_start: {
+    owner: "T11.05",
+    implementation_file: "packages/throughline-target/src/target-only-start.test.ts",
+    hosts: ["mac", "twr"],
+    providers: ["claude", "codex", "pi"],
+    input_keys: ["target_id"],
+    non_builder_required: true,
+    steps: [
+      "Launch a real installed ThroughLine worker for each supported provider with job input containing only target_id; no prompt transcript, copied target text or hand-authored handoff.",
+      "Read Ryan exact_words, current revision and checks through the central authority; compare bytes with the authoritative source and record the provider/session/generation.",
+      "Record the failing check, save partial work plus a durable step/wait, then replace the worker.",
+      "Launch the replacement with only the same target_id; it reads the authority and recorded partial work, continues without redoing the committed effect and without a hand-written handoff.",
+      "Advance the target revision; a completion for the old revision refuses.",
+      "Builder self-acceptance and acceptance by an unauthorized third seat refuse; the dispatcher-named non-builder can accept the current revision.",
+      "Direct agent writes to target records refuse; add/fix/retract only through the common interface with recorded admission and revision events.",
+    ],
+    refusals: [
+      "stale-revision-completion",
+      "builder-self-acceptance",
+      "unauthorized-check-acceptance",
+      "direct-target-record-write",
+      "stale-generation-tool-call",
+    ],
+    receipt: "{evidence}/target-only-start/<host>-<provider>.json",
+    final_acceptance:
+      "ACCEPT-ALL requires every supported provider on each active execution host; a missing cell is not a pass; unsupported/observe-only behavior cannot be advertised as bound",
+    central_owner: "T9.01",
+  },
+  command_grammar: "IC-002",
+} as Task);
+Object.assign(INSTRUCTION_COVERAGE, {
+  target_only_start: {
+    owner: "T11.05",
+    implementation_file: "packages/throughline-target/src/target-only-start.test.ts",
+    hosts: ["mac", "twr"],
+    providers: ["claude", "codex", "pi"],
+    input_keys: ["target_id"],
+    non_builder_required: true,
+    steps: [
+      "Launch a real installed ThroughLine worker for each supported provider with job input containing only target_id; no prompt transcript, copied target text or hand-authored handoff.",
+      "Read Ryan exact_words, current revision and checks through the central authority; compare bytes with the authoritative source and record the provider/session/generation.",
+      "Record the failing check, save partial work plus a durable step/wait, then replace the worker.",
+      "Launch the replacement with only the same target_id; it reads the authority and recorded partial work, continues without redoing the committed effect and without a hand-written handoff.",
+      "Advance the target revision; a completion for the old revision refuses.",
+      "Builder self-acceptance and acceptance by an unauthorized third seat refuse; the dispatcher-named non-builder can accept the current revision.",
+      "Direct agent writes to target records refuse; add/fix/retract only through the common interface with recorded admission and revision events.",
+    ],
+    refusals: [
+      "stale-revision-completion",
+      "builder-self-acceptance",
+      "unauthorized-check-acceptance",
+      "direct-target-record-write",
+      "stale-generation-tool-call",
+    ],
+    receipt: "{evidence}/target-only-start/<host>-<provider>.json",
+    final_acceptance:
+      "ACCEPT-ALL requires every supported provider on each active execution host; a missing cell is not a pass; unsupported/observe-only behavior cannot be advertised as bound",
+    central_owner: "T9.01",
+  },
+});

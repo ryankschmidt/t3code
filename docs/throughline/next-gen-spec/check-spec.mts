@@ -653,12 +653,37 @@ check(
     if (
       !b ||
       b.host !== "twr" ||
-      b.owner !== "twr" ||
-      b.scope !== "user" ||
-      b.unit !== "absurd-pg.service" ||
-      b.fragment !== "/home/twr/.config/systemd/user/absurd-pg.service"
+      b.unit !== "state-dependent" ||
+      b.scope !== "state-dependent" ||
+      b.address !== "100.96.34.116:5432"
     )
-      f.push("T4.03 does not bind the actual twr-owned user unit");
+      f.push("T4.03 state-scoped record binding missing");
+    for (const [state, owner, scope, unit] of [
+      ["shared-account", "twr", "user", "absurd-pg.service"],
+      [
+        "record-isolated-seats-shared",
+        "throughline-record",
+        "system",
+        "throughline-record.service",
+      ],
+      ["authority-isolated", "throughline-record", "system", "throughline-record.service"],
+    ]) {
+      const row = b?.state_bindings?.find((r: any) => r.state === state);
+      if (
+        !row ||
+        row.owner !== owner ||
+        row.scope !== scope ||
+        row.unit !== unit ||
+        !row.readback?.includes("systemctl") ||
+        !row.readback.includes("Restart")
+      )
+        f.push("T4.03 incorrect unit for state " + state);
+    }
+    if (
+      !t.done_when.command.includes("Restart=always") ||
+      !b?.proof_scope?.includes("no live record")
+    )
+      f.push("T4.03 lacks state-scoped restart proof boundary");
     if (!b?.readback_source || !existsSync(b.readback_source) || !b.configuration_at_intake)
       f.push("unit readback source or intake probe missing");
     if (
@@ -754,9 +779,20 @@ check(
     if (!row) return [...f, "admitted version contract missing"];
     const rowDigest = createHash("sha256").update(JSON.stringify(row)).digest("hex");
     if (b.version_row?.sha256 !== rowDigest) f.push("stable version-row digest mismatch");
-    const expected: string[] = row.cells
+    const admitted: string[] = row.cells
       .filter((x: any) => x.state === "required")
       .map((x: any) => x.device);
+    const amendment = b.scope_amendment;
+    if (
+      !amendment ||
+      amendment.instruction !== "IC-008" ||
+      amendment.source !== spec.instruction_coverage?.source?.path ||
+      amendment.source_message_id !== "5a024d4c-6a95-4d33-a6b6-77124d0a2471" ||
+      JSON.stringify(amendment.removed_targets) !== '["rpi"]' ||
+      amendment.counts_as_passed !== false
+    )
+      return [...f, "Raspberry Pi pause is not bound to the exact later instruction"];
+    const expected = admitted.filter((id) => id !== "rpi");
     if (
       !expected.length ||
       new Set(expected).size !== expected.length ||
@@ -768,7 +804,10 @@ check(
       got.every((x) => typeof x === "string") &&
       new Set(got).size === got.length &&
       JSON.stringify([...got].sort()) === JSON.stringify([...expected].sort());
-    if (!sameIds(a.required_targets) || !sameIds(b.version_row.target_ids))
+    if (
+      !sameIds(a.required_targets) ||
+      JSON.stringify(b.version_row.target_ids) !== JSON.stringify(admitted)
+    )
       f.push("incomplete/duplicate/mismatched required target coverage");
     if (
       !Array.isArray(t.device_cells) ||
@@ -779,9 +818,39 @@ check(
     const currentRow = spec.device_matrix.rows.find((x: any) => x.key === "version");
     if (
       !currentRow ||
-      createHash("sha256").update(JSON.stringify(currentRow)).digest("hex") !== rowDigest
+      createHash("sha256")
+        .update(
+          JSON.stringify({
+            ...currentRow,
+            cells: currentRow.cells.map((c: any) => (c.device === "rpi" ? c.deferred_contract : c)),
+          }),
+        )
+        .digest("hex") !== rowDigest
     )
       f.push("current version contract drift from preserved source");
+    const pausedCell = currentRow?.cells.find((c: any) => c.device === "rpi");
+    if (
+      pausedCell?.state !== "deferred" ||
+      pausedCell?.instruction !== "IC-008" ||
+      pausedCell?.counts_as_passed !== false
+    )
+      f.push("paused version cell is missing, required or counted passed");
+    const deferred = a.deferred_targets?.rpi;
+    if (
+      deferred?.state !== "deferred" ||
+      deferred?.counts_as_passed !== false ||
+      JSON.stringify(deferred.protected_steps) !== '["rpi-cold-turn"]' ||
+      createHash("sha256")
+        .update(
+          JSON.stringify({
+            target_bindings: deferred.target_bindings,
+            per_target_readback: deferred.per_target_readback,
+            protected_steps: deferred.protected_steps,
+          }),
+        )
+        .digest("hex") !== "05401991b81577c90b1f1f41d7a87dcea6c72e8675e0c407cecabd0d595e1119"
+    )
+      f.push("deferred Raspberry Pi bindings or readback history changed");
     const bindings = a.target_bindings;
     if (
       !Array.isArray(bindings) ||
@@ -800,7 +869,7 @@ check(
       actor.read_only_verifier_allowed_only_if_not_excluded !== true
     )
       f.push("actual actor exclusions/current build-ship caller/read-only distinction invalid");
-    const protectedSteps = ["testflight-readback", "tower-cold-turn", "rpi-cold-turn"],
+    const protectedSteps = ["testflight-readback", "tower-cold-turn"],
       p = a.protected_readbacks;
     if (
       !p ||
@@ -1002,12 +1071,65 @@ check(
       if (
         edit.field === "what" &&
         !edit.append.startsWith("unchanged from") &&
-        !t?.what.includes(edit.append)
+        !t?.what.includes(
+          edit.task === "T12.05"
+            ? r2.r2_amendment_2026_10_10_writer_questions.t12_05_conflict.replacement_text[
+                "T12.05_what_append"
+              ]
+            : edit.task === "T4.03"
+              ? r2.r2_amendment_2026_10_10_phase_scoped_bindings.tier_0_acceptance_wording[
+                  "T4.03_what_final_append"
+                ]
+              : edit.append,
+        )
       )
         f.push(`${edit.task}: corrected text missing`);
     }
+    const ordering = r2.r2_amendment_2026_10_10_review_findings.finding_b_t4_03_ordering;
+    if (
+      !task("T4.03")?.done_when.expect.includes(
+        ordering["T4.03_done_when_expect_append_replacement"].replace(
+          "replace the earlier T4.03 expect append with: ",
+          "",
+        ),
+      ) ||
+      !task("T12.08")?.done_when.expect.includes(ordering["T12.08_done_when_expect_append"])
+    )
+      f.push("phase-scoped notification and responder acceptance missing");
+    const phase =
+      r2.r2_amendment_2026_10_10_phase_scoped_bindings.record_ownership_phase_scoped_replacements;
+    for (const [id, key] of [
+      ["T4.01", "T4.01_what_replace"],
+      ["T6.01", "T6.01_what_replace"],
+    ])
+      if (!task(id)?.what.includes(phase[key].to) || task(id)?.what.includes(phase[key].from))
+        f.push(id + ": stale ownership clause");
+    if (
+      task("T4.02")?.completion_condition !== phase["T4.02_completion_condition_replace"].to ||
+      task("T4.02")?.not_guaranteed_in_this_state !== phase["T4.02_not_guaranteed_replace"].to
+    )
+      f.push("Mac cutover uses superseded ownership state");
     const responder = task("T12.08"),
       reboot = task("T12.09");
+    const heal = r2.r2_amendment_2026_10_10_writer_questions.t12_05_conflict;
+    for (const [id, field, sourceKey] of [
+      ["T12.05", "what", "T12.05_what_append"],
+      ["T6.01", "what", "T6.01_what_append"],
+      ["T4.06", "counterexample_must_fail", "T4.06_counterexample_append"],
+      ["T12.08", "done_when", "T12.08_done_when_append"],
+    ]) {
+      const t = task(id);
+      const text = field === "done_when" ? t?.done_when?.expect : t?.[field];
+      if (
+        typeof heal.replacement_text[sourceKey] !== "string" ||
+        !text?.includes(heal.replacement_text[sourceKey])
+      )
+        f.push(`${id}: conditional supervisor heal boundary missing`);
+    }
+    if (!same(responder?.design_details?.conditional_heal, heal))
+      f.push("conditional heal design differs from the source author's correction");
+    if (/polkit grant scoped to exactly throughline-server\.service/.test(task("T12.05")?.what))
+      f.push("withdrawn twr polkit grant remains");
     if (!same(responder?.design_details?.authority, remapValue(r1.items[0].authority)))
       f.push("responder authority list changed");
     if (!same(responder?.design_details?.recovery_island, r2.k05_recovery_exception))
@@ -1019,6 +1141,14 @@ check(
       )
     )
       f.push("future-only unlock proposal changed");
+    for (const id of ["T12.01", "T12.04"])
+      if (
+        /one reboot or|a real reboot receipt|a Mac reboot/.test(
+          JSON.stringify(task(id)?.done_when),
+        ) ||
+        !task(id)?.unit_proof_rule?.operator_words.includes("never a machine reboot")
+      )
+        f.push(`${id}: machine reboot became a proof step`);
     const towerRule = remap(r1.items[2].spec_edits["T12.01"].what.replace(/^append: /, ""));
     if (!task("T12.01")?.what.includes(towerRule))
       f.push("tower unit-only reboot-survival constraint missing");
@@ -1039,6 +1169,260 @@ check(
       k5.includes(r1.items[1].spec_edits.K05.replace_sentence.from)
     )
       f.push("superseded twr-owned interval or unit statement remains");
+    return f;
+  },
+);
+
+check(
+  "X22",
+  "instruction audit words stay source-bound and upstream reconciliation is Phase 4's first task",
+  () => {
+    const f: Fail[] = [],
+      b = spec.instruction_coverage;
+    if (!b?.source?.path || !existsSync(b.source.path)) return ["instruction audit source missing"];
+    const bytes = readFileSync(b.source.path);
+    if (createHash("sha256").update(bytes).digest("hex") !== b.source.sha256)
+      f.push("instruction audit hash changed");
+    const source = JSON.parse(bytes.toString("utf8"));
+    for (const id of ["IC-049", "IC-052", "IC-056", "IC-002", "IC-008"]) {
+      const row = b.rows?.find((r: any) => r.id === id),
+        original = source.instructions.find((r: any) => r.id === id);
+      if (
+        !row ||
+        row.ryan_exact_words !== original?.ryan_exact_words ||
+        JSON.stringify(row.source) !== JSON.stringify(original?.source)
+      )
+        f.push(`${id}: source words/provenance changed`);
+    }
+    const task = spec.tasks.find((t: any) => t.id === "T3.07"),
+      u = task?.upstream_reconciliation;
+    if (
+      !task ||
+      task.slice !== "slice-3" ||
+      !["T1.10", "T2.04"].every((id) => task.depends_on.includes(id)) ||
+      !u?.first ||
+      u.phase !== 4
+    )
+      f.push("upstream reconciliation is not Phase 4 entry");
+    const reaches = (id: string, seen = new Set<string>()): boolean => {
+      if (id === "T3.07") return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      const t = spec.tasks.find((t: any) => t.id === id);
+      return (t?.depends_on ?? []).some((d: string) => reaches(d, seen));
+    };
+    for (const t of spec.tasks.filter((t: any) =>
+      ["slice-3", "slice-4", "slice-5", "slice-6"].includes(t.slice),
+    ))
+      if (!reaches(t.id)) f.push(`${t.id}: can precede upstream reconciliation`);
+    if (spec.slices.find((s: any) => s.id === "slice-3")?.tasks[0] !== "T3.07")
+      f.push("first Phase 4 task is not displayed first");
+    if (
+      u?.foundation?.mode !== "preserve-base" ||
+      u.foundation.release !== "0.0.60" ||
+      u.foundation.not_final_architecture !== true ||
+      u.pin?.fresh_fetch_required !== true ||
+      !["commit", "fetched_at", "candidate_commit"].every((k) => u.pin?.fields?.includes(k))
+    )
+      f.push("foundation mode or fresh upstream pin missing");
+    if (
+      u?.dispositions?.coverage !== "every incoming commit and changed path" ||
+      u.dispositions.unclaimed_conflict !== "refuse; never blanket take-upstream"
+    )
+      f.push("incoming-change coverage or conflict refusal missing");
+    const final = spec.tasks.find((t: any) => t.id === "T13.04");
+    if (
+      !final?.depends_on.includes("T3.07") ||
+      JSON.stringify(final.upstream_reconciliation) !== JSON.stringify(u?.final_install) ||
+      u?.final_install?.same_candidate_required !== true ||
+      u.final_install.seam_ceilings !== "unchanged; counts may only fall" ||
+      !u.final_install.gate.includes("OR every non-included incoming change") ||
+      !spec.acceptance.rule.includes("T3.07 upstream reconciliation")
+    )
+      f.push("final installed-source upstream gate missing");
+    return f;
+  },
+);
+
+check(
+  "X23",
+  "target-only startup and provider target tools have one authority and installed non-builder acceptance",
+  () => {
+    const f: Fail[] = [],
+      t = spec.tasks.find((t: any) => t.id === "T9.01"),
+      start = t?.target_only_start,
+      api = t?.target_interface;
+    const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+    if (
+      !api ||
+      !same(api.operations, ["read", "add", "fix", "retract"]) ||
+      api.owner !== "T9.01" ||
+      api.module !== "packages/throughline-target/src/provider-tools.ts" ||
+      !api.authority.includes("No direct record writes, per-provider target store")
+    )
+      f.push("common target authority missing");
+    if (
+      !start ||
+      !same(start.input_keys, ["target_id"]) ||
+      !same(start.providers, ["claude", "codex", "pi"]) ||
+      !same(start.hosts, ["mac", "twr"]) ||
+      start.non_builder_required !== true ||
+      start.steps?.length !== 7
+    )
+      f.push("target-ID-only cold provider/host proof incomplete");
+    for (const refusal of [
+      "stale-revision-completion",
+      "builder-self-acceptance",
+      "unauthorized-check-acceptance",
+      "direct-target-record-write",
+      "stale-generation-tool-call",
+    ])
+      if (!start?.refusals?.includes(refusal)) f.push(`target refusal missing: ${refusal}`);
+    if (!start?.steps.some((x: string) => /compare bytes/i.test(x) && x.includes("exact_words")))
+      f.push("exact-word source comparison missing");
+    if (
+      !start?.steps.some((x: string) => x.includes("partial work")) ||
+      !start.steps.some((x: string) => x.includes("without a hand-written handoff"))
+    )
+      f.push("partial-work succession missing");
+    const proof = spec.tasks.find((t: any) => t.id === "T11.05");
+    if (
+      !proof?.done_when.command.includes("target-only-start.test.ts") ||
+      !t?.done_when.command.includes("no admitted target") ||
+      !["T8.03", "T11.01", "T11.02", "T9.03", "T6.03"].every((id) =>
+        proof?.depends_on.includes(id),
+      ) ||
+      start?.owner !== "T11.05" ||
+      !same(proof?.target_only_start, start) ||
+      !spec.acceptance.rule.includes("T11.05 owns installed target-ID-only")
+    )
+      f.push("installed target-only proof must follow its providers and retain exploration");
+    for (const [provider, id, file] of [
+      ["claude", "T8.03", "packages/throughline-claude-mod/src/target-tools.ts"],
+      ["codex", "T11.02", "packages/throughline-target/src/codex-tools.ts"],
+      ["pi", "T11.01", "packages/throughline-target/src/pi-tools.ts"],
+    ]) {
+      const row = spec.tasks.find((t: any) => t.id === id),
+        tools = row?.target_tools;
+      if (
+        !tools ||
+        tools.provider !== provider ||
+        tools.file !== file ||
+        tools.interface_owner !== "T9.01" ||
+        tools.interface_module !== api?.module ||
+        tools.no_provider_store !== true ||
+        !same(tools.operations, ["read", "add", "fix", "retract"]) ||
+        tools.launch_owner !== "T6.02" ||
+        !row.depends_on.includes("T9.01") ||
+        !row.files.some((f: any) => f.path === file) ||
+        !row.done_when.command.includes(tools.cold_test)
+      )
+        f.push(`${provider}: target tools lack file, launch or cold consumption binding`);
+    }
+    const launch = spec.tasks.find((t: any) => t.id === "T6.02")?.target_tool_launch;
+    if (
+      !same(launch?.input_keys, ["target_id"]) ||
+      launch?.owner !== "T9.01" ||
+      !launch?.tested_after.includes("T11.02")
+    )
+      f.push("target-only launcher binding missing");
+    if (!spec.acceptance.rule.includes("T9.01 target-ID-only startup/succession"))
+      f.push("target-only proof not required by final acceptance");
+    return f;
+  },
+);
+
+check(
+  "X24",
+  "every command-touching task inherits grammar and caller-preservation obligations",
+  () => {
+    const f: Fail[] = [],
+      g = spec.instruction_coverage?.command_grammar;
+    const sources = [
+      "/Users/Admin/core-root/vault/01_Projects/workbench/infra/first-class-command-layer/Command-Grammar-Standard-V1.html",
+      "/Users/Admin/core-root/vault/01_Projects/workbench/infra/grammar/Folder-Grammar-Standard-V1.html",
+      "/Users/Admin/core-root/vault/01_Projects/workbench/infra/grammar/Folder-Grammar-Standard-V1-Dependencies.json",
+    ];
+    if (
+      g?.id !== "IC-002" ||
+      g.skill !== "/Users/Admin/.codex/skills/ryan-command-layer/SKILL.md" ||
+      JSON.stringify(g.sources) !== JSON.stringify(sources) ||
+      ![...sources, g?.skill ?? ""].every(existsSync)
+    )
+      return ["grammar skill/standards binding missing"];
+    if (
+      !g.required?.some(
+        (x: string) => x.includes("old callers answering") && x.includes("drains before removal"),
+      ) ||
+      !g.required.some((x: string) => x.includes("correction of a touched violation")) ||
+      !g.required.some((x: string) => x.includes("this spec pass renames no live command"))
+    )
+      f.push("caller preservation, touched repair or no-live-rename boundary missing");
+    for (const t of spec.tasks)
+      if (t.command_grammar !== "IC-002") f.push(`${t.id}: command grammar not bound`);
+    return f;
+  },
+);
+
+check(
+  "X25",
+  "Raspberry Pi remains deferred without losing archive/watcher exceptions or Pi-provider coverage",
+  () => {
+    const f: Fail[] = [],
+      p = spec.instruction_coverage?.raspberry_pi_pause;
+    if (
+      p?.state !== "deferred" ||
+      JSON.stringify(p.active_targets) !== '["mac","twr","ios","android"]' ||
+      JSON.stringify(p.foundation_targets) !== '["twr","ios","mac"]' ||
+      JSON.stringify(p.priority) !== '[["mac","twr","ios"],["android"]]'
+    )
+      f.push("pause/active release target set or priority changed");
+    if (
+      JSON.stringify(p?.exceptions?.map((x: any) => x.kind)) !==
+      '["archive-drive","watcher-responder"]'
+    )
+      f.push("archive/watcher exceptions lost or broadened");
+    for (const r of spec.device_matrix.rows)
+      for (const c of r.cells)
+        if (
+          c.device === "rpi" &&
+          c.state !== "not-applicable" &&
+          c.state !== "deferred-exploration" &&
+          (c.state !== "deferred" ||
+            c.counts_as_passed !== false ||
+            c.instruction !== "IC-008" ||
+            c.deferred_contract?.state !== "required")
+        )
+          f.push(`${r.key}: paused hardware cell requires execution or lost history`);
+    if (spec.acceptance.depends_on.device_cells.some((x: string) => x.endsWith("@rpi")))
+      f.push("paused hardware remains in the acceptance conjunction");
+    for (const t of spec.tasks) {
+      if (t.device_cells?.some((x: string) => x.endsWith("@rpi")))
+        f.push(`${t.id}: active Raspberry Pi device cell`);
+      if (
+        !["T4.03", "T4.04", "T4.05", "T4.07", "T12.04", "T12.08", "T12.09"].includes(t.id) &&
+        t.files?.some((f: any) => f.host === "rpi" && f.action !== "read")
+      )
+        f.push(`${t.id}: general Raspberry Pi deployment remains active`);
+      const active = JSON.stringify({ what: t.what, done_when: t.done_when });
+      if (
+        /Mac, tower and Raspberry Pi|mac, twr and rpi|<mac\|twr\|rpi>|then the real Raspberry Pi batch|two receipts, one per host/.test(
+          active,
+        )
+      )
+        f.push(`${t.id}: paused execution remains in an active body`);
+    }
+    for (const id of ["T4.03", "T4.04", "T4.05", "T4.07", "T12.08", "T12.09"])
+      if (!spec.acceptance.depends_on.tasks.includes(id))
+        f.push(`${id}: watcher/responder scope lost`);
+    for (const host of ["mac", "twr"])
+      if (!spec.acceptance.depends_on.device_cells.includes(`exec-pi@${host}`))
+        f.push(`Pi software provider was confused with paused hardware on ${host}`);
+    if (
+      !spec.acceptance.rule.includes("all four active targets") ||
+      spec.acceptance.rule.includes("0.0.60 declares mac, twr, rpi")
+    )
+      f.push("active acceptance prose retains five-host demand");
     return f;
   },
 );
