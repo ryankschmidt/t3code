@@ -65,6 +65,18 @@ const sideClass: Record<string, string> = {
 };
 
 const chip = (txt: string, cls = "") => `<span class="chip ${cls}">${esc(txt)}</span>`;
+const designDetails = (value: any): string => {
+  if (Array.isArray(value))
+    return `<ul>${value.map((v) => `<li>${designDetails(v)}</li>`).join("")}</ul>`;
+  if (value && typeof value === "object")
+    return `<dl>${Object.entries(value)
+      .map(
+        ([key, v]) =>
+          `<dt><b>${esc(key.replaceAll("_", " "))}</b></dt><dd>${designDetails(v)}</dd>`,
+      )
+      .join("")}</dl>`;
+  return `<p>${esc(String(value ?? ""))}</p>`;
+};
 const taskCard = (t: any) => {
   const detailed = t.detail_state === "detailed";
   const sides = [
@@ -77,6 +89,8 @@ const taskCard = (t: any) => {
     <span class="sides">${sides.map((s) => chip(s, sideClass[s] ?? "")).join("")}</span></summary>
   <div class="body">
     <p class="what">${esc(t.what)}</p>
+    ${t.design_details ? `<details class="design-details"><summary>Source-bound design details</summary><p>The corrected delta governs identifiers, proof clauses and the declared ownership interval. Original decision context below is retained; it does not authorize a runtime action.</p>${designDetails(t.design_details)}</details>` : ""}
+    ${t.delta_sources?.length ? `<p><b>Design sources</b> ${t.delta_sources.map((p: string) => `<code>${esc(p)}</code>`).join("<br>")}</p>` : ""}
     ${t.depends_on?.length ? `<p class="deps"><b>After</b> ${t.depends_on.map((d: string) => (taskById.has(d) ? `<a href="#${esc(d)}">${esc(d)}</a>` : chip(d, "pre"))).join(" ")}</p>` : ""}
     ${t.files?.length ? `<table class="files"><thead><tr><th>file</th><th>side</th><th>act</th><th>note</th></tr></thead><tbody>${t.files.map((f: any) => `<tr><td><code>${esc(f.path)}</code></td><td>${chip(f.side, sideClass[f.side] ?? "")}</td><td>${esc(f.action)}</td><td>${esc(f.note ?? "")}</td></tr>`).join("")}</tbody></table>` : ""}
     ${t.signatures?.length ? `<div class="sig"><b>Fixed contract signatures</b><ul>${t.signatures.map((s: string) => `<li><code>${esc(s)}</code></li>`).join("")}</ul></div>` : ""}

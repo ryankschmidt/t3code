@@ -2896,7 +2896,7 @@ const OUTLINE: Task[] = [
       expect:
         "rehearsal: zero conflicts, verify counts equal, rollback leaves the tower rehearsal database row-for-row identical to before the merge (compared by table digests); real batches: the migrated conversation accepts the new message on the tower with its full prior history in order, rewind to its first turn works on the tower (K06), the ledger count equals the staging count, the source record is fenced and refuses a direct write with the visible refusal",
     },
-    depends_on: ["T4.01", "T4.03", "T3.03"],
+    depends_on: ["T4.01", "T4.03", "T3.03", "T4.06"],
     executor: {
       role: "implementer",
       model_preference: "gpt-6.1-sol",
@@ -2940,7 +2940,7 @@ const OUTLINE: Task[] = [
       "The tower record is kept alive and watched from the always-on Raspberry Pi before the Mac path retires",
     serves: ["NG-016", "NG-008", "NG-128", "NG-131"],
     detail_state: "detailed",
-    what: "Keep-alive: the existing absurd-pg.service user unit already carries Restart=always with a 3-second interval; it is retained, not replaced, and proven on the rehearsal cluster. Off-host detection: a user unit and 60-second timer under the rpi account on the Raspberry Pi (Linger=yes, always on, independent of the Mac and of the tower) runs a credential-free liveness probe against 100.96.34.116:5432 (TCP connect plus Postgres startup handshake with TLS, the pg_isready shape; no role, no password) and writes a durable status row to /home/rpi/.local/state/absurd-record-watch/status.json plus an append-only loss log. Operator notification: when a loss persists for two consecutive cycles outside a declared maintenance window, the observer asks the Raspberry Pi's own admin-capability-broker (broker-capability.service, account broker-service, a system unit on the Raspberry Pi that holds credentials under root-owned custody and serves typed capabilities over a Unix socket to the rpi group) to push one line to the existing ntfy.sh phone topic Ryan already receives alerts on; recovery pushes one line. That route depends on nothing on the tower and nothing on the Mac: measured 2026-10-09 from the rpi account, ntfy.sh resolves to a public address and is reached through the LAN default gateway 192.168.0.1 on eth0 with no Tailscale exit node, not through the tailnet. A forwarder to the tower broker (broker-tower-tunnel.service) is explicitly not the route, because it dies with the tower. The push capability does not exist in the broker's registry yet; it is a required prerequisite with a named owner and first action (open_dependencies below), so until it is installed the notification cell reads DEPENDENCY-OPEN and is never reported as accepted. The Mac habitat supervisor is a second observer kept only as a transition mechanism; the Health Hub adapter it reports to is retired by SHAPE-2026-09-03 line 28 and counts for nothing in acceptance; it is not the laptop-closed witness. Final visibility is the ThroughLine durability view that T12.01 builds (which shows the Raspberry Pi observer's heartbeat row and its age) plus the Raspberry Pi notification path when the tower or its record is down. Independence from the admission path: the observer writes its loss row to the Raspberry Pi's own disk, calls the Raspberry Pi broker over a local Unix socket, and the broker publishes to ntfy.sh over the LAN; no ThroughLine turn, Absurd task, event or admitted command is involved anywhere in that chain, so the report reaches Ryan while the tower record is the thing that is down. No seat reports the tower record healthy from the tower's own say-so: a health claim cites the Raspberry Pi status row or the durability view's rendering of it. Restart/timer values are read from effective installed configuration; a fast restart alone does not promise a sampled loss. T4.04 and T4.05 receipts are required before cutover; notification is never conditional PASS. Runtime loss testing uses a sustained controlled rehearsal fault through the real consumer, not a shared live-database kill.",
+    what: "Keep-alive: the existing absurd-pg.service user unit already carries Restart=always with a 3-second interval; it is retained, not replaced, and proven on the rehearsal cluster. Off-host detection: a user unit and 60-second timer under the rpi account on the Raspberry Pi (Linger=yes, always on, independent of the Mac and of the tower) runs a credential-free liveness probe against 100.96.34.116:5432 (TCP connect plus Postgres startup handshake with TLS, the pg_isready shape; no role, no password) and writes a durable status row to /home/rpi/.local/state/absurd-record-watch/status.json plus an append-only loss log. Operator notification: when a loss persists for two consecutive cycles outside a declared maintenance window, the observer asks the Raspberry Pi's own admin-capability-broker (broker-capability.service, account broker-service, a system unit on the Raspberry Pi that holds credentials under root-owned custody and serves typed capabilities over a Unix socket to the rpi group) to push one line to the existing ntfy.sh phone topic Ryan already receives alerts on; recovery pushes one line. That route depends on nothing on the tower and nothing on the Mac: measured 2026-10-09 from the rpi account, ntfy.sh resolves to a public address and is reached through the LAN default gateway 192.168.0.1 on eth0 with no Tailscale exit node, not through the tailnet. A forwarder to the tower broker (broker-tower-tunnel.service) is explicitly not the route, because it dies with the tower. The push capability does not exist in the broker's registry yet; it is a required prerequisite with a named owner and first action (open_dependencies below), so until it is installed the notification cell reads DEPENDENCY-OPEN and is never reported as accepted. The Mac habitat supervisor is a second observer kept only as a transition mechanism; the Health Hub adapter it reports to is retired by SHAPE-2026-09-03 line 28 and counts for nothing in acceptance; it is not the laptop-closed witness. Final visibility is the ThroughLine durability view that T12.01 builds (which shows the Raspberry Pi observer's heartbeat row and its age) plus the Raspberry Pi notification path when the tower or its record is down. Independence from the admission path: the observer writes its loss row to the Raspberry Pi's own disk, calls the Raspberry Pi broker over a local Unix socket, and the broker publishes to ntfy.sh over the LAN; no ThroughLine turn, Absurd task, event or admitted command is involved anywhere in that chain, so the report reaches Ryan while the tower record is the thing that is down. No seat reports the tower record healthy from the tower's own say-so: a health claim cites the Raspberry Pi status row or the durability view's rendering of it. Restart/timer values are read from effective installed configuration; a fast restart alone does not promise a sampled loss. T4.04 and T4.05 receipts are required before cutover; notification is never conditional PASS. Runtime loss testing uses a sustained controlled rehearsal fault through the real consumer, not a shared live-database kill. On a confirmed loss the watcher opens an incident in /home/rpi/.local/state/absurd-record-watch/incidents/<id>.json; T12.08 consumes it (tier 0 before notification; informational line at open and close; a page only by T12.08's tier-2 rule).",
     files: [
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/habitat-up.ts",
@@ -3056,7 +3056,7 @@ const OUTLINE: Task[] = [
       command:
         "Non-builder, disposable rehearsal only: (1) as twr record systemctl --user show absurd-pg-rehearsal.service -p ActiveState -p NRestarts -p Result and the effective Restart/RestartUSec; systemctl --user kill -s SIGKILL absurd-pg-rehearsal.service; wait/poll for the installed restart interval plus a declared margin, then read ActiveState/NRestarts and journalctl --user -u absurd-pg-rehearsal.service for the signal and restart. (2) Through the shipped observer’s real probe consumer, inject a controlled connection-refused/TLS-handshake failure against the disposable rehearsal endpoint for longer than two installed timer cycles, with laptop closed and tower server/record unavailable in a safe rehearsal window; read the Raspberry Pi status/log and local broker receipt, and witness the phone push. Clear the injected fault and witness reachable plus recovery push. (3) Through the owning shipped module’s maintenance interface record a window; as twr systemctl --user stop absurd-pg-rehearsal.service; wait an installed observer cycle, read the stopped-intentionally row/log and unit Result/NRestarts; explicitly start the rehearsal unit for cleanup. Live absurd-pg.service is never stopped, killed or modified by a fault probe.",
       expect:
-        "Three non-builder receipts: injected crash returns automatically with NRestarts increased and signal/restart journal evidence; sustained controlled loss is durably visible off-host and actually delivered to the phone while Mac and tower are unavailable; maintenance stop stays down, is reported as intentional with Result=success/NRestarts unchanged, and is restored explicitly. A fast restart alone does not promise a sampled loss row. Any missing observer delivery/notify.push grant receipt leaves cutover unaccepted, never a conditional PASS.",
+        "Three non-builder receipts: injected crash returns automatically with NRestarts increased and signal/restart journal evidence; sustained controlled loss is durably visible off-host and actually delivered to the phone while Mac and tower are unavailable; maintenance stop stays down, is reported as intentional with Result=success/NRestarts unchanged, and is restored explicitly. A fast restart alone does not promise a sampled loss row. Any missing observer delivery/notify.push grant receipt leaves cutover unaccepted, never a conditional PASS. the loss in step (2) opens an incident and the ledger shows tier 0 attempted before the informational line is sent",
     },
     governing_shapes: [
       "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-31-ryan-tier-1-only-edit-surface-ship-to-all-runtimes.yaml",
@@ -3382,7 +3382,7 @@ const OUTLINE: Task[] = [
       "The root-owned ThroughLine supervisor on each Linux execution host (tower and Raspberry Pi), installed once per host by Ryan",
     serves: ["NG-070", "NG-197", "NG-072"],
     detail_state: "detailed",
-    what: "Two root-owned system unit files: the supervisor service (starts and stops agent units on the admission service's instruction) and the agent template unit with DynamicUser=yes, PrivateNetwork=yes, ProtectHome=yes, StateDirectory per instance, and the two sockets (broker, messaging) bind-mounted in; this wires the two lines in systemd-execution.ts (93 and 94) that declare a dynamic Linux user per agent and are unwired today. Agents keep no sudo. The existing throughline-server.service user unit under twr keeps running through this task; moving the server itself under the supervisor is a later step with its own receipt, not part of this task. Ryan performs the single install act after the nonprivileged preflight passes. The same two unit files install on the Raspberry Pi under its own host configuration (agent account rpi, arm64 launcher build, the Raspberry Pi broker socket path from the broker's installed contract). Privilege authority is host-specific: tower installs are Ryan's sudo act; Raspberry Pi installs are Ryan's act through the admin account. On both hosts the agent prepares the identical nonprivileged preflight (systemd-analyze verify as the agent account; a user-manager rehearsal of the template without DynamicUser; payload sha256 pinned in the request file) and root runs only the root-owned, hash-checked copy. Each host yields its own installed-supervisor receipt; neither stands for the other.",
+    what: "Two root-owned system unit files: the supervisor service (starts and stops agent units on the admission service's instruction) and the agent template unit with DynamicUser=yes, PrivateNetwork=yes, ProtectHome=yes, StateDirectory per instance, and the two sockets (broker, messaging) bind-mounted in; this wires the two lines in systemd-execution.ts (93 and 94) that declare a dynamic Linux user per agent and are unwired today. Agents keep no sudo. The existing throughline-server.service user unit under twr keeps running through this task; moving the server itself under the supervisor is a later step with its own receipt, not part of this task. Ryan performs the single install act after the nonprivileged preflight passes. The same two unit files install on the Raspberry Pi under its own host configuration (agent account rpi, arm64 launcher build, the Raspberry Pi broker socket path from the broker's installed contract). Privilege authority is host-specific: tower installs are Ryan's sudo act; Raspberry Pi installs are Ryan's act through the admin account. On both hosts the agent prepares the identical nonprivileged preflight (systemd-analyze verify as the agent account; a user-manager rehearsal of the template without DynamicUser; payload sha256 pinned in the request file) and root runs only the root-owned, hash-checked copy. Each host yields its own installed-supervisor receipt; neither stands for the other. The supervisor control socket's peer allowlist is the throughline-server account from T4.06, not twr.",
     files: [
       {
         path: "/etc/systemd/system/throughline-supervisor.service and throughline-agent@.service",
@@ -3444,7 +3444,7 @@ const OUTLINE: Task[] = [
       expect:
         "the supervisor is active, FragmentPath under /etc/systemd/system, root-owned; the template shows DynamicUser=yes, PrivateNetwork=yes, ProtectHome=yes; inside the probe agent id -u is not 1002 (twr) and not 0, ls /home/twr fails, the broker socket exists and is connectable; the same expectations hold on the Raspberry Pi with id -u not 1007 (rpi) and not 0, ls /home/rpi failing inside the probe agent, and the Raspberry Pi broker socket connectable; two receipts, one per host",
     },
-    depends_on: ["T4.01", "T5.02"],
+    depends_on: ["T4.01", "T5.02", "T4.06"],
     executor: {
       role: "implementer",
       model_preference: "gpt-6.1-sol",
@@ -3485,6 +3485,8 @@ const OUTLINE: Task[] = [
       model_preference: "gpt-6.1-sol",
       effort: "high",
     },
+
+    batched_with: "T4.06 (same Ryan sudo act; scheduling note, not a reverse dependency)",
   },
   {
     id: "T6.02",
@@ -5724,7 +5726,7 @@ const OUTLINE: Task[] = [
     action: "amend",
     title: "Every ThroughLine service comes back after a reboot on every host",
     serves: ["NG-128", "NG-072", "NG-142"],
-    what: "Units with run-at-load and keep-alive on the Mac, the tower and the headless Raspberry Pi server, proven by a bootout-and-bootstrap or a real reboot receipt per unit, fired by a seat that did not configure the unit. The watcher layer moves to T12.04 and the recovery route to T12.05. Under S6 each unit also has a Tier 1 home, ships through Ship Warden or an equivalent lane, and is git-backed.",
+    what: "Units with run-at-load and keep-alive on the Mac, the tower and the headless Raspberry Pi server, proven by a bootout-and-bootstrap or a real reboot receipt per unit, fired by a seat that did not configure the unit. The watcher layer moves to T12.04 and the recovery route to T12.05. Under S6 each unit also has a Tier 1 home, ships through Ship Warden or an equivalent lane, and is git-backed. On the tower, the reboot-survival proof for every unit is bootout-and-bootstrap only; a real reboot is never a test step. The tower boots to an encrypted-disk password prompt that only Ryan at the KVM can answer, so any planned reboot waits for Ryan's explicit yes in the current conversation, is announced to the Raspberry Pi watcher as a reboot marker before it starts, and a tower that does not return is reported as waiting for Ryan's unlock, never as broken.",
     files: [
       {
         path: "apps/desktop/linux/install-linux.sh",
@@ -5748,7 +5750,8 @@ const OUTLINE: Task[] = [
     done_when: {
       command:
         "one reboot or bootout-and-bootstrap receipt per unit per host, in a safe window, never a casual kill of a shared database",
-      expect: "every unit back without a human",
+      expect:
+        "every unit back without a human the tower receipts show bootout-and-bootstrap commands only; no receipt shows a reboot command on the tower",
       judge: "non-builder seat",
     },
     depends_on: ["T6.01"],
@@ -7428,7 +7431,7 @@ const OUTLINE: Task[] = [
     title:
       "Every service is watched by something that is itself watched, including from another device",
     serves: ["NG-128"],
-    what: "The accepted surfaces are the ThroughLine durability view in the app and an independent off-host notification path for record or host loss (the retired Health Hub adapter and x-registry never count, S6). The view shows every ThroughLine service's alive state from its watcher. The off-host path consumes the host proposal's T4.03 Raspberry Pi observer: with the laptop closed and the tower or its record unavailable, the Raspberry Pi still detects the loss and notifies, and neither the notification nor its grant service needs the failed tower record to admit the outage report. Something on the tower watches the Mac's keep-alive layer and the Mac watches the tower. Existing Mac supervision may keep running as a transition mechanism until this view proves itself on a real loss, then it is one watched service among the rest, never a witness. The broker observer's freshness is one watched signal, never a gate (delta IA-05 on T12.01). The delta's IA-05 and IA-06 text naming the Health Hub is superseded by S6 (A57).",
+    what: "The accepted surfaces are the ThroughLine durability view in the app and an independent off-host notification path for record or host loss (the retired Health Hub adapter and x-registry never count, S6). The view shows every ThroughLine service's alive state from its watcher. The off-host path consumes the host proposal's T4.03 Raspberry Pi observer: with the laptop closed and the tower or its record unavailable, the Raspberry Pi still detects the loss and notifies, and neither the notification nor its grant service needs the failed tower record to admit the outage report. Something on the tower watches the Mac's keep-alive layer and the Mac watches the tower. Existing Mac supervision may keep running as a transition mechanism until this view proves itself on a real loss, then it is one watched service among the rest, never a witness. The broker observer's freshness is one watched signal, never a gate (delta IA-05 on T12.01). The delta's IA-05 and IA-06 text naming the Health Hub is superseded by S6 (A57). The off-host path is not only detection and notification: it launches the responder of T12.08 first, and Ryan is paged only by T12.08's tier-2 rule; the durability view shows open incidents and the responder thread. The durability view shows the two unreachable states (planned, waiting for unlock; unplanned) distinctly from a record loss and from a service loss, with the reboot marker's time when present.",
     delta_carried: ["IA-05 append on T12.01"],
     files: [
       {
@@ -7452,7 +7455,7 @@ const OUTLINE: Task[] = [
         "the Raspberry Pi detects and notifies without the tower record; the durability view shows the loss and the return; the Mac's keep-alive layer is seen coming back",
       judge: "a visible ThroughLine seat that did not build T12.04, medium effort or lower",
     },
-    depends_on: ["T12.01", "T4.03"],
+    depends_on: ["T12.01", "T4.03", "T12.08"],
     executor: {
       role: "implementer",
       model_preference: "gpt-6.1-sol",
@@ -7511,7 +7514,7 @@ const OUTLINE: Task[] = [
     title:
       "The health-recovery route restarts a stalled service without waiting on operator presence",
     serves: ["NG-128"],
-    what: "Delta IA-09 as written: one ship-tool internal step, recover-service, taking host and unit, restarts a stalled service without the presence step, preserves drafts, writes a recovery receipt and reuses the restart-courtesy step; the routine install route keeps its presence step; neither route has a skip flag. No public command is added.",
+    what: "Delta IA-09 as written: one ship-tool internal step, recover-service, taking host and unit, restarts a stalled service without the presence step, preserves drafts, writes a recovery receipt and reuses the restart-courtesy step; the routine install route keeps its presence step; neither route has a skip flag. No public command is added. recover-service is also the tier-0 ladder the Raspberry Pi watcher and the responder call over the rpi-to-tower ssh identity as twr; after T4.06 the server and record are system units, so recover-service acts on them through a polkit grant scoped to exactly throughline-server.service and throughline-record.service start, stop and restart for the ssh identity's account, installed in the same Phase 4 batch; no public command and no new flag; its recovery receipt is copied into the incident ledger.",
     delta_carried: ["IA-09 append on T12.01"],
     files: [
       {
@@ -8713,7 +8716,7 @@ const OUTLINE: Task[] = [
     title: "Deliver independent notify.push in the existing Raspberry Pi broker",
     serves: ["NG-128", "NG-131"],
     detail_state: "detailed",
-    what: "Add the notify.push named adapter/registry entry and broker-held grant through the existing admin-capability-broker lane. The topic/value stays in broker custody; observer receives only a typed receipt. Read current floor/grant/install metadata, never values, and derive any reserved act from current cited authority rather than the old uncited Raspberry Pi operator assignment. Local broker receipt and LAN delivery must require neither the Mac, tower proxy nor tower admission. Until the non-builder phone delivery receipt exists this prerequisite is unaccepted.",
+    what: "Add the notify.push named adapter/registry entry and broker-held grant through the existing admin-capability-broker lane. The topic/value stays in broker custody; observer receives only a typed receipt. Read current floor/grant/install metadata, never values, and derive any reserved act from current cited authority rather than the old uncited Raspberry Pi operator assignment. Local broker receipt and LAN delivery must require neither the Mac, tower proxy nor tower admission. Until the non-builder phone delivery receipt exists this prerequisite is unaccepted. notify.push carries a priority field (informational or page) and a fixed template per tier; informational lines never contain an act for Ryan; a page contains exactly one act.",
     files: [
       {
         path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/admin-capability-broker/",
@@ -9149,6 +9152,613 @@ export const TASKS: Task[] = [
   })),
   ...OUTLINE,
 ];
+
+export const WATCHER_SERVER_REBOOT_DELTA = {
+  source_documents: [
+    {
+      path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot.json",
+      sha256: "a9221f23945007ed9b9f3b64e3a78703d179306de80b03cf4fcd0e9a20d7f785",
+    },
+    {
+      path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R2.json",
+      sha256: "d28eca4e76662693fde41e8be7ea152a0428a595561da259537395dca7a622ec",
+    },
+  ],
+  source_precedence:
+    "R2 overrides R1 only for its named corrections; R1 remaining decisions and evidence clauses stay bound.",
+  new_task_ids: ["T4.06", "T4.07", "T12.08", "T12.09"],
+  operator_rulings_verbatim: {
+    time: "Oct 10, 2026, about 4:00 AM PDT",
+    watcher_and_responder:
+      "Yes, I want the server to have its own locked account. Yes, I want Raspberry Pi as the watcher but I do not wanna be the responsible party for acting on the notification. I don't want the whole system waiting on me to notice that Raspberry Pi sent me a message or notification and do something about it. I just wanna be a spectator, in the loop, but that's it. Sure, whatever the first option is of launching an agent to fix it, I can be, I guess, option two if the agent can't be reached. I want a first class solution, so I think fable should be tasked with designing for this.",
+    reboot:
+      "tower currently has a password protected, encrypted hard drive. We have a KVM switch connected to it, but when it reboots, it first requires a password. Right now, I have to type it in manually ... Don't do a reboot, do not reboot tower unless you've gotten hold of me and I've responded and said yes, I'm available, you can do the reboot now. Otherwise it's gonna reboot And be stuck needing a password. If agents don't know this and don't see it coming back online, they'll think something's wrong.",
+  },
+  scope_note:
+    "The Raspberry Pi stays paused for execution and device acceptance (Oct 9 ruling); Ryan's Oct 10 words put exactly two things on it: the watcher (T4.03, T4.04, T4.05 as already in 0.4.16) and the responder this delta adds. Nothing else on the Raspberry Pi is in scope.",
+  proof_limits: [
+    "the rpi-to-tower ssh identity as twr is inferred from broker-tower-tunnel's description; the T12.08 receipt confirms it by running one read-only command through it",
+    "the Raspberry Pi ThroughLine server's wake route is the broker's throughline-wake capability, live-proven earlier for the tower; its Raspberry Pi instance is confirmed in the T12.08 receipt",
+    "whether the tower has a TPM is unmeasured; U1's feasibility is conditional",
+    "after T4.06 the server and record run under system units, so the T12.05 recover-service ladder must act on system units through a path the responder is allowed (the supervisor account or a polkit grant scoped to those two units for the responder's ssh identity); the writer carries that as T12.05's amendment, and until it lands the responder's tier-0 reach is the user units only",
+    "the canary credential proves the LoadCredential path and root-only openability, not the real credential's correctness; correctness is proven by the Mac message completing",
+    "the recovery island's non-merge rule is a design statement; its enforcement is the island admitting only the responder thread kind, tested in T12.08's expect",
+  ],
+  projection_notes: [
+    "Host add/edit intents are retained in intended_install_action; action read denotes their explicit verification-only surface.",
+    "The R2 single three-state interval replaces the original interval; the obsolete retained-twr-unit sentence is removed per R2 k05_interval_settled.also_delete.",
+  ],
+};
+
+TASKS.push(
+  ...([
+    {
+      id: "T4.06",
+      slice: "slice-4",
+      title:
+        "The server and the record move to their own locked service accounts in Phase 4's single sudo batch",
+      serves: ["NG-016", "NG-070", "NG-072"],
+      detail_state: "detailed",
+      what: "as item 2 of the superseded file: two sysusers.d accounts (throughline-server, throughline-record), two system units, re-owned state and data in place, the record credential as a root-owned file loaded by systemd into the server unit's credentials directory beside a fixed-value canary credential, the supervisor control-socket allowlist updated to the server account, the twr user units disabled and kept on disk as rollback; one rehearsal on a copy; one Ryan sudo act shared with T6.01 (batched_with T6.01, a scheduling note, not an edge)",
+      files: [
+        {
+          path: "packages/throughline-launcher/systemd/throughline-server.service, throughline-record.service, throughline-server.conf and throughline-record.conf",
+          side: "fork-namespace",
+          action: "add",
+          exists_now: false,
+          surface: "authoring",
+        },
+        {
+          path: "/etc/systemd/system/throughline-server.service",
+          side: "host-filesystem",
+          action: "read",
+          note: "tower, root-owned, Ryan's sudo act; owning source: packages/throughline-launcher/systemd/ (fork-namespace), delivered by the Phase 4 sudo batch; read-only non-builder verification; deployment remains the owning install act",
+          exists_now: false,
+          surface: "verification",
+          intended_install_action: "add",
+          host: "twr",
+          owner: "root",
+          owning_source:
+            "packages/throughline-launcher/systemd/ (fork-namespace), delivered by the Phase 4 sudo batch",
+        },
+        {
+          path: "/etc/systemd/system/throughline-record.service",
+          side: "host-filesystem",
+          action: "read",
+          note: "tower, root-owned, Ryan's sudo act; owning source: packages/throughline-launcher/systemd/ (fork-namespace), delivered by the Phase 4 sudo batch; read-only non-builder verification; deployment remains the owning install act",
+          exists_now: false,
+          surface: "verification",
+          intended_install_action: "add",
+          host: "twr",
+          owner: "root",
+          owning_source:
+            "packages/throughline-launcher/systemd/ (fork-namespace), delivered by the Phase 4 sudo batch",
+        },
+        {
+          path: "/etc/throughline/credentials/record-role and record-role-canary",
+          side: "host-filesystem",
+          action: "read",
+          note: "tower, root:root 0600; loaded by systemd; never read by a test; owning source: created by the batch script in packages/throughline-launcher/install/ (fork-namespace); the real value is placed by the batch from the twr private file, never by an agent test; read-only non-builder verification; deployment remains the owning install act",
+          exists_now: false,
+          surface: "verification",
+          intended_install_action: "add",
+          host: "twr",
+          owner: "root",
+          owning_source:
+            "created by the batch script in packages/throughline-launcher/install/ (fork-namespace); the real value is placed by the batch from the twr private file, never by an agent test",
+        },
+        {
+          path: "/opt/absurd-pg/",
+          side: "host-filesystem",
+          action: "read",
+          note: "tower, root-owned copy of the cluster binaries; owning source: copied by the batch script from /home/twr/absurd-pg/bin; owning source is the batch script; read-only non-builder verification; deployment remains the owning install act",
+          exists_now: false,
+          surface: "verification",
+          intended_install_action: "add",
+          host: "twr",
+          owner: "root",
+          owning_source:
+            "copied by the batch script from /home/twr/absurd-pg/bin; owning source is the batch script",
+        },
+        {
+          path: "/srv/agents-runtime-state/absurd-pg/data",
+          side: "host-filesystem",
+          action: "read",
+          note: "tower, moved on the same filesystem and re-owned to throughline-record; owning source: moved by the batch script; owning source is the batch script; data owner throughline-record; read-only non-builder verification; deployment remains the owning install act",
+          exists_now: false,
+          surface: "verification",
+          intended_install_action: "edit",
+          host: "twr",
+          owner: "throughline-record",
+          owning_source:
+            "moved by the batch script; owning source is the batch script; data owner throughline-record",
+        },
+        {
+          path: "/home/twr/.config/systemd/user/throughline-server.service and absurd-pg.service",
+          side: "host-filesystem",
+          action: "read",
+          note: "tower, disabled by twr before the batch, kept as rollback; owning source: exists_now true; disabled by twr before the batch; owning source none (legacy, kept as rollback); read-only non-builder verification; deployment remains the owning install act",
+          exists_now: true,
+          surface: "verification",
+          intended_install_action: "edit",
+          host: "twr",
+          owner: "twr",
+          owning_source:
+            "exists_now true; disabled by twr before the batch; owning source none (legacy, kept as rollback)",
+        },
+      ],
+      depends_on: ["T4.01"],
+      batched_with: "T6.01 (same Ryan sudo act; T6.01 depends on this task)",
+      executor: {
+        role: "implementer",
+        model_preference: "gpt-6.1-sol",
+        effort: "high",
+      },
+      done_when: {
+        host: "twr after the batch; non-builder as twr; zero credential output on every polarity",
+        command:
+          "systemctl show throughline-server.service throughline-record.service -p ActiveState -p User -p FragmentPath; ps -u twr -o comm= | grep -cE 'postgres|node'; ls -ldn /srv/agents-runtime-state/throughline /srv/agents-runtime-state/absurd-pg/data; sudo -n -l -U throughline-server 2>&1 | tail -1; test -r /etc/throughline/credentials/record-role; echo READABLE_BY_TWR=$?; ls -ln /etc/throughline/credentials/ (names, owner and mode only); then the canary: root's install also loads a second credential record-role-canary whose value is the fixed non-secret string throughline-canary-v1 through the identical LoadCredential= line; inside the server unit (the server's own diagnostics action) compute sha256 of $CREDENTIALS_DIRECTORY/record-role-canary and report equal or not-equal to the known canary hash, and report that $CREDENTIALS_DIRECTORY/record-role exists and is non-empty by size only; then from the Mac app send one message and watch it complete; then as twr: /opt/absurd-pg/bin/psql -h /tmp -d absurd -c 'select 1'",
+        expect:
+          "both units active with their own User and a FragmentPath under /etc/systemd/system; zero postgres or node processes owned by twr; the state tree owned by throughline-server and the data directory by throughline-record; sudo not allowed; READABLE_BY_TWR=1; the credentials directory listing shows two root-owned 0600 files; the server's diagnostics report canary=equal and record-role present with a non-zero size, and prints no value; the Mac message completes (the real credential worked, proven by consumption, not by reading it); the twr psql attempt is refused",
+        never:
+          "cat, strings, grep or hexdump of any credential file; sha256 of the real credential (a hash of a low-entropy secret is itself exposure); any Environment= line carrying a value",
+      },
+      failing_check_first:
+        "before the batch, `systemctl show throughline-server.service -p LoadState` on the tower returns not-found and `ps -u twr -o comm=` lists postgres and node (measured state 2026-10-09); that is the red",
+      rollback:
+        "the rehearsed rollback script from item 2 of the superseded file: disable the system units, move the data directory back under /home/twr/absurd-pg/data and chown twr, chown the state tree back to twr, re-enable the twr user units, remove the root credential files",
+      signatures: ["one non-builder receipt per polarity, with the rehearsal receipt first"],
+      counterexample_must_fail:
+        "after the batch a twr process stops the record unit, opens the record role credential file, or opens the server's state.sqlite; or either unit shows User=root or User=twr; or any test prints a credential value or its hash",
+      failing_checks: ["PH2-C01"],
+      governing_shapes: [
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-10-04-ryan-performs-tower-sudo-installs-for-now.yaml",
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-08-19-ryan-admin-holds-secrets-and-serves-capabilities-without-agent-credential-access.yaml",
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-08-06-ryan-prove-it-in-the-environment-of-record-before-claiming-it-works.yaml",
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-27-ryan-slice-close-by-judge-not-self.yaml",
+      ],
+      risk: [
+        "No credential values, hashes of real credentials, or process arguments are read by any test; openability and canary checks only",
+        "No tower reboot by any agent; bootout-and-bootstrap only",
+        "No new public command; recover-service and the broker's existing capabilities are reused",
+      ],
+      planned_checks: [
+        {
+          id: "T4.06-red",
+          kind: "first-act-red",
+          command:
+            "before the batch, `systemctl show throughline-server.service -p LoadState` on the tower returns not-found and `ps -u twr -o comm=` lists postgres and node (measured state 2026-10-09); that is the red",
+        },
+      ],
+      proof_limits: [
+        "the canary credential proves the LoadCredential path and root-only openability, not the real credential's correctness; correctness is proven by the Mac message completing",
+        "the recovery island's non-merge rule is a design statement; its enforcement is the island admitting only the responder thread kind, tested in T12.08's expect",
+      ],
+      delta_sources: [
+        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot.json",
+        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R2.json",
+      ],
+      design_details: {
+        decision:
+          "Two locked service accounts on the tower, both created in Phase 4's single sudo batch: throughline-server runs the ThroughLine server as a system unit, and throughline-record owns and runs the Absurd Postgres cluster as a system unit. Both are nologin, no password, no sudo, in the same family as access-broker and service-broker; root owns the unit files and the application bundle and does nothing at runtime. The twr user units for both are stopped and disabled by twr before the batch and their state is re-owned, not copied, so no data moves between filesystems. This supersedes the 0.4.16 K05 sentence that retains the twr-owned absurd-pg.service user unit, by Ryan's Oct 10 ruling that privileged or authoritative things run out of service accounts; it also ends the record half of the declared state sole-not-isolated earlier than T6.02, because twr seats can no longer stop or edit the record unit or read its credential once the record is a system unit under its own account; the seat half (seats still run as twr until T6.02) stays declared.",
+        alternative_rejected:
+          "Give the server its own account but leave the record as the twr user unit (the 0.4.16 text). Rejected because the record is the single execution authority and Ryan's ruling places authority outside the agent account; a twr-owned cluster lets any twr seat stop the authority without privilege. The cost of the record account is one sysusers.d line, one chown of a directory tree that stays where it is, and one unit file, all inside the batch that already exists.",
+        accounts_and_units: {
+          "throughline-server": {
+            unit: "/etc/systemd/system/throughline-server.service, User=throughline-server, Group=throughline-server, Restart=on-failure, RestartSec=5, WantedBy=multi-user.target, StateDirectory=throughline-server, ProtectHome=yes, NoNewPrivileges=yes, LoadCredential=record-role:/etc/throughline/credentials/record-role (root-owned 0600, presented inside the unit's credentials directory only)",
+            replaces:
+              "/home/twr/.config/systemd/user/throughline-server.service (stopped, disabled, left on disk as rollback for the Phase 6 window)",
+          },
+          "throughline-record": {
+            unit: "/etc/systemd/system/throughline-record.service, User=throughline-record, ExecStart=/opt/absurd-pg/bin/postgres -D /srv/agents-runtime-state/absurd-pg/data, Restart=always, RestartSec=3, WantedBy=multi-user.target, ProtectHome=yes, NoNewPrivileges=yes",
+            replaces:
+              "/home/twr/.config/systemd/user/absurd-pg.service (stopped, disabled, left on disk as rollback); binaries copied from /home/twr/absurd-pg/bin to /opt/absurd-pg (root-owned, read-only) and the data directory moved on the same filesystem (mv, not copy) to /srv/agents-runtime-state/absurd-pg/data and re-owned to throughline-record; listen_addresses and pg_hba from T4.01 unchanged",
+          },
+        },
+        data_folder_ownership: [
+          "/srv/throughline/app: root:root, read-only to everyone (the shipped AppImage payload; outside Tier 1)",
+          "/srv/agents-runtime-state/throughline/ (userdata/state.sqlite, logs/, attachments/): throughline-server:throughline-server, mode 0750; re-owned in the batch; twr loses read access, which is intended",
+          "/srv/agents-runtime-state/absurd-pg/data: throughline-record:throughline-record, mode 0700",
+          "/var/lib/throughline-server (StateDirectory): the server's private state including the TLS client CA copy for the record",
+          "/run/throughline/admission/: throughline-server 0755 (replaces the twr placeholder of the earlier delta); /run/throughline/supervisor/control.sock peer allowlist becomes the throughline-server uid",
+          "/etc/throughline/credentials/record-role: root:root 0600, read only by systemd into the server unit's credentials directory; never readable by twr, by seats or by the server account directly on disk",
+        ],
+        every_path_the_server_reads: [
+          "/srv/throughline/app (code)",
+          "/srv/agents-runtime-state/throughline/ (its state and logs)",
+          "/var/lib/throughline-server (StateDirectory)",
+          "$CREDENTIALS_DIRECTORY/record-role (the record role credential, loaded by systemd)",
+          "the record over TLS at 100.96.34.116:5432 as role throughline_tower (T4.01)",
+          "the access broker providers unit at 127.0.0.1:19443 (the broker's allowlist admits the throughline-server account; the tunnel and provider logins stay under access-broker)",
+          "/run/throughline/supervisor/control.sock (writes start, stop, relaunch; delta-2 item A)",
+          "/run/throughline/registry/ (reads generation entries)",
+          "the listening socket on the tailnet address port 3773 and the Tailscale Serve hop on 443/8443 handled by tailscaled",
+          "nothing under /home",
+        ],
+        sudo_batch_steps_phase_4: [
+          "before the batch, as twr (no sudo): systemctl --user disable --now throughline-server.service absurd-pg.service; record their states; this is the fence for the batch, and the Mac shows twr offline for its duration (an intentional stop under a declared maintenance window so the Raspberry Pi watcher records and does not respond)",
+          "sysusers.d: throughline-server and throughline-record (and the supervisor account from delta-2 item A)",
+          "install /opt/absurd-pg (copy of the binaries, root-owned) and the three system units plus the supervisor's units, polkit rule and tmpfiles.d from delta-2",
+          "mv /home/twr/absurd-pg/data /srv/agents-runtime-state/absurd-pg/data; chown -R throughline-record; chown -R throughline-server /srv/agents-runtime-state/throughline",
+          "install /etc/throughline/credentials/record-role (the role credential moved from the twr user unit's private file; root-owned 0600; the twr copy removed)",
+          "systemctl daemon-reload; enable --now throughline-record.service; enable --now throughline-server.service; enable --now throughline-supervisor.service",
+          "verify: the non-builder done_when below; then twr's user unit files stay on disk disabled as rollback",
+        ],
+        rollback:
+          "disable the three system units; mv the data directory back under /home/twr/absurd-pg/data and chown twr; chown the state tree back to twr; re-enable the two twr user units; the credential returns to the twr private file; all inside one rehearsed script carried with the batch; rehearsed first on the rehearsal cluster and a copy of the state tree",
+        counterexample_must_fail:
+          "After the batch, a process running as twr stops the record unit, reads the record role credential, or reads the server's state.sqlite; or the server unit shows User=root or User=twr; or the credential appears in the unit's Environment= or in any file readable by the server account outside its credentials directory. Any of these means the design has failed.",
+      },
+    },
+    {
+      id: "T4.07",
+      slice: "slice-4",
+      title:
+        "The Raspberry Pi provider route for the responder: its own provider broker login under broker-service custody",
+      serves: ["NG-128", "NG-131"],
+      detail_state: "detailed",
+      what: "Enable the Raspberry Pi's installed broker-provider.service with its own provider login held by broker-service (the Aug 19 shape: the broker holds the credential, the responder never sees it), admitted for the responder thread only; the tower tunnel is never on the responder's path. Agents prepare the enable and the login entry mode (the broker's existing root-only enter-key mode); Ryan performs the act on the Raspberry Pi (sudo is his there too). Until this lands, T12.08's responder launches but has no model when the tower is down, and the receipt states DEPENDENCY-OPEN for tier 1.",
+      files: [
+        {
+          path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/admin-capability-broker/",
+          side: "outside-tool",
+          action: "edit",
+          note: "enable broker-provider on the Raspberry Pi through its Linux lane; no new adapter",
+          exists_now: false,
+          surface: "authoring",
+        },
+        {
+          path: "/etc/systemd/system/broker-provider.service",
+          side: "host-filesystem",
+          action: "read",
+          note: "Raspberry Pi, root-owned; enabled by Ryan's act; owning source: exists_now true (installed, inactive); owning source /Users/Admin/core-root/vault/01_Projects/workbench/infra/admin-capability-broker/linux/ through its Linux lane; enabled by Ryan's act; read-only non-builder verification; deployment remains the owning install act",
+          exists_now: true,
+          surface: "verification",
+          intended_install_action: "edit",
+          host: "rpi",
+          owner: "root",
+          owning_source:
+            "exists_now true (installed, inactive); owning source /Users/Admin/core-root/vault/01_Projects/workbench/infra/admin-capability-broker/linux/ through its Linux lane; enabled by Ryan's act",
+        },
+      ],
+      depends_on: ["T4.04"],
+      executor: {
+        role: "implementer",
+        model_preference: "gpt-6.1-sol",
+        effort: "high",
+      },
+      done_when: {
+        host: "rpi, non-builder, with the tower's rehearsal server stopped so the tunnel is dead",
+        command:
+          "from a responder thread on the Raspberry Pi server, one model-backed turn; then as rpi: ss -tnp 2>/dev/null | grep -E \"$(pgrep -d'|' -f throughline-responder)\" | awk '{print $5}' (destination addresses only); systemctl --user show throughline-server.service -p Environment | cut -d= -f1,2 | tr ' ' '\\n' | cut -d= -f1 (environment variable names only); find /home/rpi -maxdepth 3 \\( -iname '*credential*' -o -iname '*token*' -o -iname '*.key' \\) -newer /home/rpi/.config/systemd/user/throughline-server.service -print (names only); then read the Raspberry Pi broker's receipt ledger row count for the incident window (the broker exposes counts, never bodies)",
+        expect:
+          "the turn completes with the tower unreachable; every destination the responder connected to is the local broker socket or loopback 19443 of broker-provider.service, none is the tower address; the environment variable names contain no name ending in KEY, TOKEN, SECRET or PASSWORD; the find prints no new file; the broker ledger shows one request row for the turn",
+        never:
+          "grep -r for credential-shaped values, printing environment values, reading any broker file",
+      },
+      failing_check_first:
+        "before the work, `systemctl show broker-provider.service -p ActiveState` on the Raspberry Pi returns inactive (measured 2026-10-09) and a responder turn with the tower unreachable fails for lack of a provider route; that is the red",
+      rollback:
+        "disable broker-provider.service on the Raspberry Pi; the login stays in broker custody or is removed by the broker's own mode",
+      signatures: [
+        "one non-builder receipt with the destination-address list and the broker ledger count",
+      ],
+      failing_checks: ["PH2-C01"],
+      governing_shapes: [
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-08-19-ryan-admin-holds-secrets-and-serves-capabilities-without-agent-credential-access.yaml",
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-31-ryan-tier-1-only-edit-surface-ship-to-all-runtimes.yaml",
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-27-ryan-slice-close-by-judge-not-self.yaml",
+      ],
+      risk: [
+        "No credential values, hashes of real credentials, or process arguments are read by any test; openability and canary checks only",
+        "No tower reboot by any agent; bootout-and-bootstrap only",
+        "No new public command; recover-service and the broker's existing capabilities are reused",
+      ],
+      planned_checks: [
+        {
+          id: "T4.07-red",
+          kind: "first-act-red",
+          command:
+            "before the work, `systemctl show broker-provider.service -p ActiveState` on the Raspberry Pi returns inactive (measured 2026-10-09) and a responder turn with the tower unreachable fails for lack of a provider route; that is the red",
+        },
+      ],
+      proof_limits: [
+        "the canary credential proves the LoadCredential path and root-only openability, not the real credential's correctness; correctness is proven by the Mac message completing",
+        "the recovery island's non-merge rule is a design statement; its enforcement is the island admitting only the responder thread kind, tested in T12.08's expect",
+      ],
+      delta_sources: [
+        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot.json",
+        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R2.json",
+      ],
+      design_details: {
+        where_the_responder_runs:
+          "On the Raspberry Pi, as a thread on the Raspberry Pi's ThroughLine server, started through the local broker's throughline-wake capability; never on the Mac (lid may be closed) and never as a tower seat (a tower seat needs the record for admission, which is the thing that is down; K05 forbids durable execution without it). Model access on the Raspberry Pi must not go through the tower: the Raspberry Pi's inactive broker-provider.service is enabled with its own provider login under broker-service custody (new task T4.07, a Ryan act on the Raspberry Pi), and the responder's requests use it; the tower tunnel is never on the responder's path. Until T4.07 lands, the responder is launchable but has no model when the tower is down, and the receipt says so.",
+        scope_note:
+          "The Raspberry Pi stays paused for execution and device acceptance (Oct 9 ruling); Ryan's Oct 10 words put exactly two things on it: the watcher (T4.03, T4.04, T4.05 as already in 0.4.16) and the responder this delta adds. Nothing else on the Raspberry Pi is in scope.",
+      },
+    },
+    {
+      id: "T12.08",
+      slice: "slice-12",
+      title:
+        "The Raspberry Pi first responder: tier-0 ladder, responder thread on the recovery island, incident ledger, tier-2 page",
+      serves: ["NG-128", "NG-131"],
+      detail_state: "detailed",
+      what: "The watcher's loss handler: opens the incident, runs recover-service over the rpi-to-tower ssh identity as twr (tier 0), on failure asks the Raspberry Pi broker's throughline-wake capability to start a responder thread on the Raspberry Pi ThroughLine server bound to the responder order file (tier 1), enforces one incident per target, responder heartbeat and lease, one successor responder, flap reopen, and the tier-2 page with exactly one act; the responder's allowed and forbidden acts are the authority list in this delta; all steps are in the incident ledger and are appended to the record as events after recovery. the responder thread is admitted only on the recovery island defined by the K05 exception this task owns; the handler refuses to start a responder when no incident is open; after recovery it appends the incident's steps to the tower record as events under the responder identity and marks the incident reconciled On host-unreachable the handler skips tier 0 and tier 1, reads the reboot marker, classifies the state, and sends the item-3 page; it never starts a responder for an unreachable host.",
+      files: [
+        {
+          path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/record-watch.ts",
+          side: "outside-tool",
+          action: "edit",
+          note: "incident handling, tier 0, the wake call, reconciliation",
+          exists_now: false,
+          surface: "authoring",
+        },
+        {
+          path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/linux/responder-order.md",
+          side: "outside-tool",
+          action: "add",
+          note: "the order file the responder thread is bound to",
+          exists_now: false,
+          surface: "authoring",
+        },
+        {
+          path: "/home/rpi/.local/state/absurd-record-watch/incidents/",
+          side: "host-filesystem",
+          action: "read",
+          note: "Raspberry Pi, rpi-owned; owning source: created by the shipped record-watch payload from /Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/record-watch.ts through the T4.05 lane; read-only non-builder verification; deployment remains the owning install act",
+          exists_now: false,
+          surface: "verification",
+          intended_install_action: "add",
+          host: "rpi",
+          owner: "rpi",
+          owning_source:
+            "created by the shipped record-watch payload from /Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/record-watch.ts through the T4.05 lane",
+        },
+      ],
+      depends_on: ["T4.03", "T4.04", "T4.05", "T12.05"],
+      executor: {
+        role: "implementer",
+        model_preference: "gpt-6.1-sol",
+        effort: "high",
+      },
+      done_when: {
+        host: "rpi and the tower rehearsal cluster; Mac lid closed; non-builder",
+        command:
+          "the cold test in item 1 of the superseded file, both halves, plus: after the repair half, read the tower record for events under the responder identity for the incident id",
+        expect:
+          "the repair half and the page half as written there; the tower record carries the incident's steps as events with the incident id after recovery; the island admitted no thread while no incident was open (its thread list for the window shows only the responder)",
+      },
+      failing_check_first:
+        "before the work, a confirmed loss on the rehearsal cluster produces a notification and nothing else: no incident file exists under incidents/ (directory absent, measured) and no responder; that is the red",
+      rollback: "remove the incident handler; the watcher returns to notification-only",
+      signatures: ["two non-builder receipts (repair half, page half) and the reconciliation read"],
+      failing_checks: ["PH2-C01"],
+      governing_shapes: [
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-09-03-ryan-durability-is-a-running-watched-layer-not-answers-in-a-readme.yaml",
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-08-06-ryan-prove-it-in-the-environment-of-record-before-claiming-it-works.yaml",
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-27-ryan-slice-close-by-judge-not-self.yaml",
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-31-ryan-tier-1-only-edit-surface-ship-to-all-runtimes.yaml",
+      ],
+      risk: [
+        "No credential values, hashes of real credentials, or process arguments are read by any test; openability and canary checks only",
+        "No tower reboot by any agent; bootout-and-bootstrap only",
+        "No new public command; recover-service and the broker's existing capabilities are reused",
+      ],
+      planned_checks: [
+        {
+          id: "T12.08-red",
+          kind: "first-act-red",
+          command:
+            "before the work, a confirmed loss on the rehearsal cluster produces a notification and nothing else: no incident file exists under incidents/ (directory absent, measured) and no responder; that is the red",
+        },
+      ],
+      proof_limits: [
+        "the canary credential proves the LoadCredential path and root-only openability, not the real credential's correctness; correctness is proven by the Mac message completing",
+        "the recovery island's non-merge rule is a design statement; its enforcement is the island admitting only the responder thread kind, tested in T12.08's expect",
+      ],
+      delta_sources: [
+        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot.json",
+        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R2.json",
+      ],
+      design_details: {
+        decision:
+          "Three tiers, each recorded in one incident ledger on the Raspberry Pi, and Ryan hears about every tier only as information except the last. Tier 0 is deterministic and needs no model: when the T4.03 watcher confirms a loss (two cycles outside a maintenance window) it opens an incident and runs the existing T12.05 recover-service ladder over the rpi-to-tower ssh identity that broker-tower-tunnel already uses (as twr, no sudo): classify reachability, then start or restart the record unit and the server unit, re-probe, and stop at the first success. Tier 1 is the responder agent: if the ladder fails and the tower host is reachable, the watcher asks the Raspberry Pi broker's throughline-wake capability to start a responder thread on the Raspberry Pi's own ThroughLine server (always on, independent of the tower and the Mac, visible in the Mac and iPhone apps as the rpi environment), bound to a responder order file that names the incident, the allowed acts and the forbidden acts; the responder diagnoses over the same ssh identity as twr, repairs within its authority, records every step to the incident ledger, and on success closes the incident. Tier 2 is Ryan, paged only when the responder cannot be launched (the wake is refused, the Raspberry Pi provider route is down, or the responder lease expires twice), when the responder exhausts its authority, or when the tower host is unreachable (item 3 decides the wording); the page states the exact act. Every incident open and close sends Ryan one low-priority informational line through notify.push (T4.04); he acts on nothing unless a tier-2 page names an act.",
+        alternative_rejected:
+          "Run the responder as a Codex CLI process on the Raspberry Pi directly from the watcher (systemd-run --user), without the Raspberry Pi ThroughLine server. Rejected because it is headless by Ryan's definition: not visible in his apps, not a thread, not rewindable, and the Aug 6 shape rejects headless real work; the CLI run is kept only as the degraded fallback when the Raspberry Pi server itself is down, with its full transcript written to the incident ledger and mirrored into the record on recovery.",
+        where_the_responder_runs:
+          "On the Raspberry Pi, as a thread on the Raspberry Pi's ThroughLine server, started through the local broker's throughline-wake capability; never on the Mac (lid may be closed) and never as a tower seat (a tower seat needs the record for admission, which is the thing that is down; K05 forbids durable execution without it). Model access on the Raspberry Pi must not go through the tower: the Raspberry Pi's inactive broker-provider.service is enabled with its own provider login under broker-service custody (new task T4.07, a Ryan act on the Raspberry Pi), and the responder's requests use it; the tower tunnel is never on the responder's path. Until T4.07 lands, the responder is launchable but has no model when the tower is down, and the receipt says so.",
+        authority: {
+          may: [
+            "read tower logs and unit states over ssh as twr",
+            "start, restart, unmask twr user units named in the allowlist (absurd-pg.service, throughline-server.service, and after T4.06 request the same for the system units through recover-service)",
+            "run the T12.05 recover-service step for a named unit",
+            "free space under an allowlist of twr-owned temporary paths (cutover dump folders older than the retention, rehearsal clusters, log rotation), never the record data directory",
+            "re-run the record probe and the ThroughLine health read",
+            "write to the incident ledger and, once the record is back, append the incident's steps to the record as events under a responder identity",
+          ],
+          may_not: [
+            "reboot the tower or any host, ever, without Ryan's yes in the current conversation (item 3)",
+            "use sudo, request root, or touch anything root-owned",
+            "stop the live record except as the first half of a restart",
+            "drop, move, chown or edit the record's data directory, roles or credentials",
+            "change any credential, floor row or broker policy",
+            "start a second responder or any other seat",
+            "declare the tower healthy from its own say-so: closure requires the watcher's own probe to read reachable for two cycles",
+          ],
+        },
+        second_alert_during_an_active_repair:
+          "The incident ledger allows one open incident per watched target. A further loss signal while an incident is open is appended as an observation to that incident (count and time) and starts nothing. The responder writes a heartbeat to the ledger at least every 60 s; if the heartbeat stops for 5 minutes the watcher marks the responder lost and may start exactly one successor responder bound to the same incident; a second lost responder escalates to tier 2. A loss within 10 minutes after an incident closes reopens the same incident (flap), with the reopen count in the page if it reaches tier 2. A declared maintenance window suppresses tiers 0 to 2 and records observations only.",
+        what_ryan_receives: {
+          informational:
+            "one line at incident open ('tower record lost 03:12 PDT; tier 0 running; no action needed'), one line at close ('restored 03:13 PDT by recover-service restart of absurd-pg; no action needed'), low priority, never a request",
+          page: "only at tier 2, high priority, exactly one act in plain words, e.g. 'Tower record down since 03:12 PDT; the responder could not be launched (Raspberry Pi provider route down). Act: at the Mac, open a ThroughLine thread on twr and send: run recover-service absurd-pg' or the item-3 unlock wording; the page is repeated once after 30 minutes if the incident is still open and then stops",
+        },
+        cold_test:
+          "Non-builder, Mac lid closed, watcher pointed at the tower rehearsal cluster. As twr: systemctl --user mask absurd-pg-rehearsal.service; systemctl --user stop absurd-pg-rehearsal.service (an intentional stop with no maintenance window, so it counts as a loss; masking makes the tier-0 restart fail). Expect within three watcher cycles: an incident opened on the Raspberry Pi ledger; tier 0 recorded as failed with the masked-unit error; a responder thread visible on the Raspberry Pi environment in the iPhone app; the responder's ledger steps showing the diagnosis 'unit masked', the unmask and start as twr; the rehearsal unit active; the incident closed after two reachable cycles; Ryan's phone shows exactly two low-priority lines and no page. Then the page test: as rpi, mask the Raspberry Pi ThroughLine server's user unit so the wake is refused, repeat the loss; expect a tier-2 page within two cycles naming the one act, and no responder. Both receipts carry the non-builder's id.",
+        counterexample_must_fail:
+          "If the tier-2 page is sent while a responder is launchable, or two responders run for one incident, or the responder reboots the tower, uses sudo, or touches the record data directory, or an incident closes on the responder's own report without the watcher's two reachable cycles, or Ryan receives a message that asks him to act when the responder succeeded, the design has failed.",
+        recovery_island: {
+          problem:
+            "K05 says no new durable execution anywhere when the tower record is unreachable and exactly one record after cutover; the responder thread runs on the Raspberry Pi's ThroughLine server, which admits that thread against the Raspberry Pi's own local record while the tower record is down",
+          decision:
+            "A named, bounded exception, owned by T12.08, called the recovery island. The Raspberry Pi ThroughLine server and its local record are not an execution authority for ThroughLine work: they admit nothing for the one record, no user thread, target, message or effect on the tower record is admitted or executed there, and the island's record is never merged into the tower record. The island admits exactly one thread kind, the responder thread, exactly while an incident is open on the Raspberry Pi watcher's ledger, with effects limited to the responder's authority list (restart and unmask of named tower units through recover-service, allowlisted temporary-path cleanup, reads, ledger writes), and its every step is appended to the tower record as events under the responder identity when the record returns, so the authoritative history is complete after recovery. Outside an open incident the Raspberry Pi server admits no thread of any kind under this upgrade (its other uses are paused by the Oct 9 ruling). The island is a watcher-side mechanism, like the Raspberry Pi's own status row and loss log, not a second authority.",
+          alternative_rejected:
+            "Run the responder with no durable admission at all (a CLI process the watcher spawns, no thread, no record anywhere). Rejected because it is headless real work (the Aug 6 shape), invisible to Ryan who asked to be a spectator in the loop, and because a responder with no durable record of its own steps cannot be reconciled into the tower record afterwards.",
+          K05_append_sentence:
+            "One bounded exception exists and is owned by T12.08: while an incident is open on the Raspberry Pi watcher's ledger, the Raspberry Pi's own ThroughLine server and its local record form the recovery island, which admits exactly one thread kind, the responder, whose effects are limited to the responder authority list and whose every step is appended to the tower record as events when the record returns; the island admits nothing for the one record, is never merged into it, admits nothing outside an open incident, and is not an execution authority for ThroughLine work; a responder step that needs the tower record is recorded unknown and surfaced, never executed on the island.",
+        },
+      },
+    },
+    {
+      id: "T12.09",
+      slice: "slice-12",
+      title:
+        "The reboot marker, the two unreachable-tower states, and the recorded unlock proposal",
+      serves: ["NG-072", "NG-128"],
+      detail_state: "detailed",
+      what: "the reboot marker file on the Raspberry Pi written by whoever receives Ryan's yes (time, thread, expected return window); the watcher's classification of host-unreachable into the two states; the two page templates; and the scored unlock proposal below stored beside the spec as a design record, not an install item",
+      files: [
+        {
+          path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/record-watch.ts",
+          side: "outside-tool",
+          action: "edit",
+          note: "reboot marker read and the two state classifications",
+          exists_now: false,
+          surface: "authoring",
+        },
+        {
+          path: "/home/rpi/.local/state/absurd-record-watch/reboot-marker.json",
+          side: "host-filesystem",
+          action: "read",
+          note: "Raspberry Pi, rpi-owned; written by the seat that received Ryan's yes; owning source: created by the shipped record-watch payload from /Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/record-watch.ts through the T4.05 lane; read-only non-builder verification; deployment remains the owning install act",
+          exists_now: false,
+          surface: "verification",
+          intended_install_action: "add",
+          host: "rpi",
+          owner: "rpi",
+          owning_source:
+            "created by the shipped record-watch payload from /Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/record-watch.ts through the T4.05 lane",
+        },
+        {
+          path: "/Users/Admin/throughline/docs/throughline/next-gen-spec/Unlock-Proposal.json",
+          side: "fork-namespace",
+          action: "add",
+          note: "the scored options from the superseded file, a design record, not an install item",
+          exists_now: false,
+          surface: "authoring",
+        },
+      ],
+      depends_on: ["T12.08", "T12.01"],
+      executor: {
+        role: "implementer",
+        model_preference: "gpt-6.1-sol",
+        effort: "medium",
+      },
+      done_when: {
+        host: "rpi and a rehearsal only; non-builder",
+        command:
+          "write a reboot marker, then point the watcher at an unroutable tailnet address for one cycle window; then remove the marker and repeat",
+        expect:
+          "first run: state planned-reboot-waiting-for-unlock, no responder, one page with the KVM act naming the marker's time; second run: state unreachable-unplanned, no responder, one page with the check-power-and-KVM act; the durability view (when present) shows the state names",
+      },
+      failing_check_first:
+        "before the work, pointing the watcher at an unroutable address produces a plain loss (and under T12.08 a responder attempt); no state name and no marker read exist; that is the red",
+      rollback:
+        "remove the marker read and the two states; host-unreachable falls back to the plain loss handling of T12.08; the proposal file is deleted",
+      signatures: ["one non-builder receipt covering both runs"],
+      failing_checks: ["PH2-C01"],
+      governing_shapes: [
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-09-03-ryan-durability-is-a-running-watched-layer-not-answers-in-a-readme.yaml",
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-10-04-ryan-performs-tower-sudo-installs-for-now.yaml",
+        "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-07-27-ryan-slice-close-by-judge-not-self.yaml",
+      ],
+      risk: [
+        "No credential values, hashes of real credentials, or process arguments are read by any test; openability and canary checks only",
+        "No tower reboot by any agent; bootout-and-bootstrap only",
+        "No new public command; recover-service and the broker's existing capabilities are reused",
+      ],
+      planned_checks: [
+        {
+          id: "T12.09-red",
+          kind: "first-act-red",
+          command:
+            "before the work, pointing the watcher at an unroutable address produces a plain loss (and under T12.08 a responder attempt); no state name and no marker read exist; that is the red",
+        },
+      ],
+      proof_limits: [
+        "the canary credential proves the LoadCredential path and root-only openability, not the real credential's correctness; correctness is proven by the Mac message completing",
+        "the recovery island's non-merge rule is a design statement; its enforcement is the island admitting only the responder thread kind, tested in T12.08's expect",
+      ],
+      delta_sources: [
+        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot.json",
+        "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R2.json",
+      ],
+      design_details: {
+        decision:
+          "No agent reboots the tower. Every reboot-survival proof on the tower is a bootout-and-bootstrap of the unit (systemctl disable then enable, stop then start, for system units; the user-manager equivalent for user units) fired by a non-builder; a real tower reboot is never part of a test and happens only when Ryan has said, in the current conversation, that he is available, and he is the one at the KVM for the disk password. The watcher, the responder and every health surface classify a tower that is unreachable on the tailnet into two states, both of which stop all repair attempts: planned-reboot-waiting-for-unlock when a reboot marker exists (written on the Raspberry Pi by the seat that received Ryan's yes, with the time and the thread), and unreachable-unplanned otherwise. Neither state is 'broken': the record is on an encrypted disk that is intact and waiting. The tier-2 page for the first state reads 'Tower is waiting for the disk password after the planned reboot at <time>; act: at the KVM, type the disk password'; for the second: 'Tower is unreachable since <time>; no reboot was planned; act: check power and the KVM screen; if it shows the disk password prompt, type it; otherwise reply here'. The responder is not launched for either state. When the tower returns, the watcher closes the incident on two reachable cycles and sends the informational close line.",
+        alternative_rejected:
+          "Have the responder attempt a remote power cycle or wake-on-LAN when the tower is unreachable. Rejected because a power cycle of an encrypted-disk host produces exactly the stuck state Ryan described, and because it is a reboot without his yes.",
+        unlock_proposal_not_for_this_install: {
+          intent:
+            "Ryan said agents handling the disk unlock was always intended; this records the options with scores (1 to 10, higher is better) so a later task can pick one; nothing here ships in this upgrade",
+          options: [
+            {
+              id: "U1",
+              name: "TPM-sealed auto-unlock (systemd-cryptenroll with the tower's TPM, bound to boot-measurement registers, optional PIN)",
+              feasibility: "8 if the tower has a TPM 2.0 (unmeasured), 0 otherwise",
+              security_fit:
+                "6: the disk unlocks for anyone who boots the intact machine; a stolen whole tower boots; mitigated by PCR binding and a PIN, but a PIN brings Ryan back",
+              custody_fit_with_the_Aug_19_shape: "7: no passphrase is held by any agent or broker",
+              effort: "3 (low)",
+              when_it_fails:
+                "a firmware update changes the measurements and the prompt returns; the watcher's planned-reboot state covers it",
+            },
+            {
+              id: "U2",
+              name: "Network-bound unlock (clevis and tang) with the Raspberry Pi as the tang server on the LAN",
+              feasibility:
+                "8: initramfs networking on the tower, tang under a locked account on the always-on Raspberry Pi",
+              security_fit:
+                "8: the tower alone cannot unlock; it needs the Raspberry Pi reachable on the LAN, so a stolen tower stays locked; the Raspberry Pi holds a key, not the passphrase",
+              custody_fit_with_the_Aug_19_shape:
+                "8: the key lives under a locked service account on the admin side, served to the tower as a capability",
+              effort: "5",
+              when_it_fails:
+                "the Raspberry Pi is down at the same time; the prompt returns and the planned-reboot state covers it; keep the passphrase as the manual fallback",
+            },
+            {
+              id: "U3",
+              name: "SSH unlock in the initramfs (dropbear) driven by the Raspberry Pi watcher, passphrase served by the Raspberry Pi broker",
+              feasibility: "7",
+              security_fit:
+                "5: the passphrase itself is handled by software on the Raspberry Pi and typed over the LAN",
+              custody_fit_with_the_Aug_19_shape:
+                "6: broker custody, but the broker then holds the whole-disk secret",
+              effort: "6",
+              when_it_fails:
+                "the initramfs network is up but the Raspberry Pi route is down; manual fallback",
+            },
+            {
+              id: "U4",
+              name: "Keep manual unlock (status quo)",
+              feasibility: "10",
+              security_fit: "9",
+              custody_fit_with_the_Aug_19_shape: "10",
+              effort: "0",
+              when_it_fails:
+                "every unplanned reboot waits for Ryan; the planned-reboot state and page make the wait visible, not mysterious",
+            },
+          ],
+          recommendation:
+            "U2 first, with U1 as the alternative if the tower has a TPM and Ryan accepts the stolen-machine trade-off; both leave the manual passphrase as fallback; decided by Ryan in a later task, not here",
+        },
+      },
+      counterexample_must_fail:
+        "a responder is started for an unreachable host; a page says the tower is broken or down without the state name; any test receipt on the tower contains a reboot command; a planned reboot proceeds without Ryan's yes recorded in the marker",
+    },
+  ] as Task[]),
+);
 
 // ---------- cross-cutting decisions (quotes copied byte-true from the ledger by item id) ----------
 export const DECISIONS: Decision[] = [

@@ -904,6 +904,145 @@ check(
   },
 );
 
+check(
+  "X21",
+  "watcher/server/reboot delta keeps its pinned source, corrected ownership, recovery exception and zero-output proof clauses",
+  () => {
+    const f: Fail[] = [],
+      binding = spec.watcher_server_reboot_delta;
+    const root = spec.repository.spec_home_until_then + "/execution/phase-04/";
+    const paths = [
+      "Fable-Delta-Watcher-Server-Reboot.json",
+      "Fable-Delta-Watcher-Server-Reboot-R2.json",
+    ].map((name) => root + name);
+    if (
+      !binding ||
+      !Array.isArray(binding.source_documents) ||
+      binding.source_documents.length !== 2
+    )
+      return ["watcher delta source binding absent"];
+    for (const path of paths) {
+      const source = binding.source_documents.find((s: any) => s.path === path);
+      if (
+        !source ||
+        !existsSync(path) ||
+        createHash("sha256").update(readFileSync(path)).digest("hex") !== source.sha256
+      )
+        f.push(`watcher delta source hash mismatch: ${path}`);
+    }
+    if (f.length) return f;
+    const [r1, r2] = paths.map((path) => JSON.parse(readFileSync(path, "utf8")));
+    const remap = (text: string) =>
+      text.replace(
+        /T6\.04|T4\.06|T12\.06/g,
+        (id) => ({ "T6.04": "T4.06", "T4.06": "T12.08", "T12.06": "T12.09" })[id]!,
+      );
+    const remapValue = (value: any): any =>
+      typeof value === "string"
+        ? remap(value)
+        : Array.isArray(value)
+          ? value.map(remapValue)
+          : value && typeof value === "object"
+            ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, remapValue(v)]))
+            : value;
+    const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+    const task = (id: string) => spec.tasks.find((t: any) => t.id === id);
+    const common = r2.row_packing_rule_for_the_writer.fields_common_to_all_four_new_tasks;
+    for (const row of r2.new_tasks_corrected) {
+      const t = task(row.id);
+      if (!t) {
+        f.push(`watcher delta task absent: ${row.id}`);
+        continue;
+      }
+      for (const key of [
+        "slice",
+        "serves",
+        "detail_state",
+        "depends_on",
+        "executor",
+        "signatures",
+        "rollback",
+      ])
+        if (!same(t[key], row[key])) f.push(`${row.id}: authored ${key} changed`);
+      if (
+        !same(t.failing_checks, common.failing_checks) ||
+        !same(t.risk, common.risk) ||
+        !same(t.governing_shapes, common[`governing_shapes_${row.id}`])
+      )
+        f.push(`${row.id}: authorized inherited fields changed`);
+      if (t.files?.length !== row.files.length) f.push(`${row.id}: source file row count changed`);
+      for (const sourceFile of row.files) {
+        const file = t.files?.find((x: any) => x.path === sourceFile.path);
+        if (!file || file.side !== sourceFile.side) {
+          f.push(`${row.id}: file binding missing ${sourceFile.path}`);
+          continue;
+        }
+        if (file.side === "host-filesystem") {
+          if (
+            file.action !== "read" ||
+            file.surface !== "verification" ||
+            file.intended_install_action !== sourceFile.action ||
+            !file.owning_source
+          )
+            f.push(`${row.id}: deployed verification lost its source/action boundary`);
+        } else if (file.action !== sourceFile.action || file.surface !== "authoring")
+          f.push(`${row.id}: authoring file changed`);
+      }
+    }
+    for (const id of ["T4.06", "T4.07"])
+      if (!same(task(id)?.done_when, r2.verification_clause_fixes[`${id}_done_when_replacement`]))
+        f.push(`${id}: zero-output credential verification clause changed`);
+    for (const edit of r2.edge_edits_corrected) {
+      const t = task(edit.task);
+      if (
+        edit.field === "depends_on" &&
+        !edit.append.every((id: string) => t?.depends_on.includes(id))
+      )
+        f.push(`${edit.task}: corrected dependency missing`);
+      if (
+        edit.field === "what" &&
+        !edit.append.startsWith("unchanged from") &&
+        !t?.what.includes(edit.append)
+      )
+        f.push(`${edit.task}: corrected text missing`);
+    }
+    const responder = task("T12.08"),
+      reboot = task("T12.09");
+    if (!same(responder?.design_details?.authority, remapValue(r1.items[0].authority)))
+      f.push("responder authority list changed");
+    if (!same(responder?.design_details?.recovery_island, r2.k05_recovery_exception))
+      f.push("bounded recovery island design changed");
+    if (
+      !same(
+        reboot?.design_details?.unlock_proposal_not_for_this_install,
+        r1.items[2].unlock_proposal_not_for_this_install,
+      )
+    )
+      f.push("future-only unlock proposal changed");
+    const towerRule = remap(r1.items[2].spec_edits["T12.01"].what.replace(/^append: /, ""));
+    if (!task("T12.01")?.what.includes(towerRule))
+      f.push("tower unit-only reboot-survival constraint missing");
+    const k4 = spec.contracts.find((c: any) => c.id === "K04")?.statement ?? "";
+    const k5 = spec.contracts.find((c: any) => c.id === "K05")?.statement ?? "";
+    if (!k4.includes(remap(r1.items[1].spec_edits.K04.append_sentence)))
+      f.push("locked account ownership contract missing");
+    for (const sentence of [
+      r2.k05_interval_settled.replace_sentence.to,
+      r2.k05_recovery_exception.K05_append_sentence,
+      remap(r1.items[0].spec_edits.K05.append_sentence),
+      remap(r1.items[2].spec_edits.K05.append_sentence),
+    ])
+      if (!k5.includes(sentence))
+        f.push("corrected K05 ownership/recovery/reboot sentence missing");
+    if (
+      k5.includes(r2.k05_interval_settled.replace_sentence.from) ||
+      k5.includes(r1.items[1].spec_edits.K05.replace_sentence.from)
+    )
+      f.push("superseded twr-owned interval or unit statement remains");
+    return f;
+  },
+);
+
 let green = 0;
 for (const r of results) {
   if (r.fails.length === 0) {

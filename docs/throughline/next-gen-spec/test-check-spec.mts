@@ -442,6 +442,90 @@ const cases: Case[] = [
   },
 ];
 
+cases.push(
+  {
+    name: "watcher delta source hash mismatch",
+    expect: "FAIL",
+    checks: ["X21"],
+    mutate: (s) => {
+      s.watcher_server_reboot_delta.source_documents[1].sha256 = "0".repeat(64);
+    },
+  },
+  {
+    name: "watcher delta medium executor altered",
+    expect: "FAIL",
+    checks: ["X21"],
+    mutate: (s) => {
+      s.tasks.find((t: any) => t.id === "T12.09").executor.effort = "high";
+    },
+  },
+  {
+    name: "watcher delta real credential read cannot replace the canary proof",
+    expect: "FAIL",
+    checks: ["X21"],
+    mutate: (s) => {
+      s.tasks.find((t: any) => t.id === "T4.06").done_when.command =
+        "cat /etc/throughline/credentials/record-role";
+    },
+  },
+  {
+    name: "watcher delta recovery exception cannot disappear",
+    expect: "FAIL",
+    checks: ["X21"],
+    mutate: (s) => {
+      const c = s.contracts.find((c: any) => c.id === "K05");
+      c.statement = c.statement.slice(0, c.statement.indexOf("One bounded exception exists"));
+    },
+  },
+  {
+    name: "watcher delta three-state interval cannot disappear",
+    expect: "FAIL",
+    checks: ["X21"],
+    mutate: (s) => {
+      s.contracts.find((c: any) => c.id === "K05").statement = s.contracts
+        .find((c: any) => c.id === "K05")
+        .statement.replace("record-isolated-seats-shared", "unclassified");
+    },
+  },
+  {
+    name: "watcher delta responder forbidden acts cannot disappear",
+    expect: "FAIL",
+    checks: ["X21"],
+    mutate: (s) => {
+      s.tasks.find((t: any) => t.id === "T12.08").design_details.authority.may_not = [];
+    },
+  },
+  {
+    name: "watcher delta host verification cannot lose its intended deployment act",
+    expect: "FAIL",
+    checks: ["X21"],
+    mutate: (s) => {
+      delete s.tasks
+        .find((t: any) => t.id === "T4.06")
+        .files.find((f: any) => f.side === "host-filesystem").intended_install_action;
+    },
+  },
+  {
+    name: "watcher delta reboot proposal cannot become this install",
+    expect: "FAIL",
+    checks: ["X21"],
+    mutate: (s) => {
+      s.tasks.find(
+        (t: any) => t.id === "T12.09",
+      ).design_details.unlock_proposal_not_for_this_install.intent = "Install now";
+    },
+  },
+  {
+    name: "watcher delta tower reboot constraint cannot disappear",
+    expect: "FAIL",
+    checks: ["X21"],
+    mutate: (s) => {
+      const t = s.tasks.find((t: any) => t.id === "T12.01");
+      t.what = t.what.slice(0, t.what.indexOf(" On the tower,"));
+    },
+  },
+);
+
 let bad = 0;
 for (const c of cases) {
   const dir = mkdtempSync(join(tmpdir(), "ngspec-check-"));

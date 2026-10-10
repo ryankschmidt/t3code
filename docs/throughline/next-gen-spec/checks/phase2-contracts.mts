@@ -2,10 +2,21 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 const home = join(dirname(fileURLToPath(import.meta.url)), "..");
 const spec = JSON.parse(readFileSync(join(home, "spec.json"), "utf8"));
 const ids = new Set(spec.tasks.map((t: any) => t.id)),
   errors: string[] = [];
+const policy = spawnSync("ryan", ["model", "list", "--json"], { encoding: "utf8", timeout: 30000 });
+let roles: any[] = [];
+if (policy.status !== 0) errors.push("live execution policy unavailable");
+else {
+  try {
+    roles = JSON.parse(policy.stdout).result.policy.task_roles;
+  } catch {
+    errors.push("live execution policy malformed");
+  }
+}
 for (const t of spec.tasks) {
   if (
     t.detail_state !== "detailed" ||
@@ -22,7 +33,14 @@ for (const t of spec.tasks) {
   for (const d of t.depends_on ?? [])
     if (!ids.has(d) && !spec.slices.some((s: any) => s.id === d || s.precondition?.id === d))
       errors.push(t.id + ": unresolved dependency " + d);
-  if (t.executor?.role !== "implementer" || t.executor?.effort !== "high")
+  if (
+    t.executor?.role !== "implementer" ||
+    !roles.some(
+      (r) =>
+        r.model === t.executor?.model_preference &&
+        (r.allowed_efforts ?? [r.effort]).includes(t.executor?.effort),
+    )
+  )
     errors.push(t.id + ": stale execution role");
   if (t.planned_checks?.some((c: any) => !c.command || !c.id))
     errors.push(t.id + ": incomplete planned check");
