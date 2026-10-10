@@ -350,6 +350,66 @@ test("S1-C09 addendum cannot replace an original frozen entry", () => {
   f.run("S1-C09", 1, "already in the frozen witness");
 });
 
+const annotatedPreserved = () => {
+  const f = fixture(),
+    target = join(f.spec.repository.worktrees, "preserved");
+  const worktreeRows = f.worktrees as Array<Record<string, any>>;
+  f.annotation.disposition = "moved-and-preserved";
+  f.ledgerRows.length = 0;
+  f.recordRows.length = 0;
+  f.m.worktrees.push({
+    path: f.source,
+    branch: "preserved",
+    head,
+    clean: true,
+    ignored_entries: [],
+  });
+  worktreeRows.push({
+    schema: "throughline.worktree-move-annotation.v1",
+    kind: "disposition",
+    before: f.source,
+    after: target,
+    frozen_head: head,
+    branch: "preserved",
+    fingerprint: { ...f.fingerprint },
+    disposition: "moved",
+    observed_at: at,
+    evidence: { command: "fixture worktree move", output_path: join(f.d, "freeze-output.txt") },
+  });
+  file(join(target, "payload.bin"), "frozen archive payload\n");
+  return { ...f, worktrees: worktreeRows, target };
+};
+test("S1-C06 annotated preserved target follows its move and proves actual bytes", () => {
+  annotatedPreserved().run("S1-C06", 0);
+});
+test("S1-C06 annotated preserved missing target refuses", () => {
+  const f = annotatedPreserved();
+  unlinkSync(join(f.target, "payload.bin"));
+  rmdirSync(f.target);
+  f.run("S1-C06", 1, "preserved target missing");
+});
+test("S1-C06 annotated preserved changed bytes refuse", () => {
+  const f = annotatedPreserved();
+  file(join(f.target, "payload.bin"), "changed bytes\n");
+  f.run("S1-C06", 1, "fingerprint drift");
+});
+test("S1-C06 annotated preserved target outside the worktree collection refuses", () => {
+  const f = annotatedPreserved(),
+    outside = join(f.d, "outside-collection");
+  file(join(outside, "payload.bin"), "frozen archive payload\n");
+  f.worktrees.at(-1)!.after = outside;
+  f.run("S1-C06", 1, "preserved target missing");
+});
+for (const key of ["sha256", "file_count", "symlink_count", "entry_count", "bytes"] as const)
+  test(`S1-C06 annotated preserved proof checks the actual ${key}`, () => {
+    const f = annotatedPreserved();
+    const wrong = key === "sha256" ? "b".repeat(64) : f.fingerprint[key] + 1;
+    f.m.fingerprints[0][key] = wrong;
+    f.annotation.fingerprint = { ...f.fingerprint, [key]: wrong };
+    f.worktrees.at(-1)!.fingerprint = { ...f.fingerprint, [key]: wrong };
+    f.run("S1-C06", 1, "fingerprint drift");
+  });
+
 let bad = 0;
 try {
   for (const [name, fn] of cases) {

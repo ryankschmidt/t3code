@@ -1239,6 +1239,7 @@ const T1: Task[] = [
         },
       },
       rules: [
+        "A moved-and-preserved annotation changes which evidence is followed; it never eliminates preservation proof. Resolve the actual target through its bound worktree move, require existence and worktree-collection containment, and compare sha256, file_count, symlink_count, entry_count and bytes against the frozen fingerprint.",
         "each frozen witness entry that has an annotation row is matched by path and by all five fingerprint fields",
         "a container row (is_container true, archived-and-removed) has a passing Archive-Ledger.jsonl row: source = archive_ledger_source, archive equal, ARCHIVED_AND_REMOVED, verify PASS, rsync checksum verified, the same five fingerprint fields",
         "a covered child row (is_container false) points at a container row that is its ancestor; the child path is gone with the container",

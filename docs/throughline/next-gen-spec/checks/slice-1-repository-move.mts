@@ -229,6 +229,15 @@ const preservedTarget = (m: any, fp: any, rows: any[]): string | null => {
     .sort((a, b) => b.before.length - a.before.length)[0];
   return moved ? join(moved.after, relative(moved.before, path)) : (fp.target ?? null);
 };
+const preservedFindings = (m: any, fp: any): Fail[] => {
+  const target = preservedTarget(m, fp, worktreeAnnotations());
+  if (!target || !existsSync(target) || !under(target, WORKTREES))
+    return [`preserved target missing: ${fp.path}`];
+  const got = manifestOf(target);
+  return FP_KEYS.every((k) => got[k as keyof typeof got] === fp[k])
+    ? []
+    : [`preserved tree fingerprint drift: ${target}`];
+};
 // The frozen witness stays read-only; subsequent dispositions and new-container freezes are separate files.
 const ANNOTATIONS = join(dirname(MOVE_RECORD), "Archive-Annotations.jsonl");
 const ADDENDUM = join(dirname(MOVE_RECORD), "Archive-Fingerprint-Addendum.jsonl");
@@ -326,6 +335,8 @@ const archiveFindings = (m: any, rows: any[]): { fails: Fail[]; archivedContaine
         if (present(path)) f.push(`archived entry still present: ${path}`);
         if (a.is_container && !ledgerPasses(a, fp))
           f.push(`container has no passing archive ledger row: ${path}`);
+      } else if (a.disposition === "moved-and-preserved") {
+        f.push(...preservedFindings(m, fp));
       }
     } else if (fp.disposition === "archived-and-removed") {
       legacyArchived.push(path);
@@ -338,14 +349,7 @@ const archiveFindings = (m: any, rows: any[]): { fails: Fail[]; archivedContaine
       )
         f.push(`removed tree lacks exact verified archive identity: ${path}`);
     } else if (fp.disposition === "moved-and-preserved") {
-      const target = preservedTarget(m, fp, worktreeAnnotations());
-      if (!target || !existsSync(target) || !under(target, WORKTREES))
-        f.push(`preserved target missing: ${path}`);
-      else {
-        const got = manifestOf(target);
-        if (!FP_KEYS.every((k) => got[k as keyof typeof got] === fp[k]))
-          f.push(`preserved tree fingerprint drift: ${target}`);
-      }
+      f.push(...preservedFindings(m, fp));
     } else f.push(`frozen entry has no annotation row and no preserved disposition: ${path}`);
   }
   for (const a of ann)
