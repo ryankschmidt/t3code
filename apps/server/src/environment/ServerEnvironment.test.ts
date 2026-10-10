@@ -8,6 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
+import { vi } from "vite-plus/test";
 
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
@@ -79,6 +80,24 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
 });
 
 it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
+  it.effect.each([
+    { name: "compiled", commit: "0123456789abcdef0123456789abcdef01234567" },
+    { name: "absent", commit: undefined },
+  ])("reports the $name build commit explicitly", ({ commit }) =>
+    Effect.gen(function* () {
+      vi.stubGlobal("__T3CODE_APP_COMMIT__", commit);
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-server-commit-test-",
+      });
+      const descriptor = yield* Effect.gen(function* () {
+        const environment = yield* ServerEnvironment.ServerEnvironment;
+        return yield* environment.getDescriptor;
+      }).pipe(Effect.provide(makeServerEnvironmentLayer(baseDir)));
+      expect(descriptor.serverCommit).toBe(commit ?? null);
+    }).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllGlobals()))),
+  );
+
   it.effect.each([
     { name: "missing", content: undefined },
     { name: "empty", content: "" },

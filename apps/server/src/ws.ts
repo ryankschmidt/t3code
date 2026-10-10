@@ -2671,7 +2671,13 @@ const makeWsRpcLayer = (
             WS_METHODS.throughlineHello,
             serverEnvironment.getDescriptor.pipe(
               Effect.map((environment) =>
-                negotiateHello(input, existingTransportPolicy(environment.serverVersion)),
+                negotiateHello(
+                  input,
+                  existingTransportPolicy(
+                    environment.serverVersion,
+                    environment.serverCommit ?? null,
+                  ),
+                ),
               ),
             ),
             { "rpc.aggregate": "server" },
