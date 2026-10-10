@@ -983,11 +983,12 @@ check(
     const paths = [
       "Fable-Delta-Watcher-Server-Reboot.json",
       "Fable-Delta-Watcher-Server-Reboot-R2.json",
+      "Fable-Delta-Watcher-Server-Reboot-R3.json",
     ].map((name) => root + name);
     if (
       !binding ||
       !Array.isArray(binding.source_documents) ||
-      binding.source_documents.length !== 2
+      binding.source_documents.length !== 3
     )
       return ["watcher delta source binding absent"];
     for (const path of paths) {
@@ -1000,7 +1001,13 @@ check(
         f.push(`watcher delta source hash mismatch: ${path}`);
     }
     if (f.length) return f;
-    const [r1, r2] = paths.map((path) => JSON.parse(readFileSync(path, "utf8")));
+    const [r1, r2, r3doc] = paths.map((path) => JSON.parse(readFileSync(path, "utf8")));
+    const r3 = r3doc.amendments,
+      F1 = r3?.F1_env_names_helper,
+      F2 = r3?.F2_split_provider_route_proof_from_responder,
+      F3 = r3?.F3_tls_material_relocation;
+    if (JSON.stringify(r2.r2_amendment_2026_10_10_review_F1_F2_F3) !== JSON.stringify(r3))
+      return ["R3 differs from the identical review-amendment block in R2"];
     const remap = (text: string) =>
       text.replace(
         /T6\.04|T4\.06|T12\.06/g,
@@ -1017,12 +1024,17 @@ check(
     const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
     const task = (id: string) => spec.tasks.find((t: any) => t.id === id);
     const common = r2.row_packing_rule_for_the_writer.fields_common_to_all_four_new_tasks;
+    // R3 F2 edges: "T4.07 -> T4.04, T4.05; ..." replaces the R2 row's depends_on for T4.07 only.
+    const r3Edges = /^T4\.07 -> ([^;]+);/.exec(F2?.edges ?? "")?.[1].split(", ") ?? [];
     for (const row of r2.new_tasks_corrected) {
       const t = task(row.id);
       if (!t) {
         f.push(`watcher delta task absent: ${row.id}`);
         continue;
       }
+      const authored = row.id === "T4.07" ? { ...row, depends_on: r3Edges } : row;
+      if (row.id === "T4.07" && !row.depends_on.every((id: string) => r3Edges.includes(id)))
+        f.push("T4.07: R3 edges drop an R2 dependency");
       for (const key of [
         "slice",
         "serves",
@@ -1032,14 +1044,17 @@ check(
         "signatures",
         "rollback",
       ])
-        if (!same(t[key], row[key])) f.push(`${row.id}: authored ${key} changed`);
+        if (!same(t[key], authored[key])) f.push(`${row.id}: authored ${key} changed`);
       if (
         !same(t.failing_checks, common.failing_checks) ||
         !same(t.risk, common.risk) ||
         !same(t.governing_shapes, common[`governing_shapes_${row.id}`])
       )
         f.push(`${row.id}: authorized inherited fields changed`);
-      if (t.files?.length !== row.files.length + (row.id === "T4.06" ? 4 : 0))
+      if (
+        t.files?.length !==
+        row.files.length + (row.id === "T4.06" ? 4 + F3["T4.06_files_append"].length : 0)
+      )
         f.push(`${row.id}: source file row count changed`);
       for (const sourceFile of row.files) {
         const file = t.files?.find((x: any) => x.path === sourceFile.path);
@@ -1059,9 +1074,135 @@ check(
           f.push(`${row.id}: authoring file changed`);
       }
     }
+    // T4.06: R2's clause plus R3 F3's appended rehearsal runs, real-unit TLS proof and expect.
+    // T4.07: R3 F2's complete final clause, which supersedes every partial T4.07 replacement.
+    const base406 = r2.verification_clause_fixes["T4.06_done_when_replacement"];
+    const tlsRehearsal = F3.startup_and_tls_rehearsal_no_secret_reads;
+    const runs = tlsRehearsal.slice(tlsRehearsal.indexOf("the non-builder proves (a)"));
+    const expectedDoneWhen: Record<string, any> = {
+      "T4.06": {
+        ...base406,
+        command: base406.command + "; " + runs + "; " + F3.real_unit_proof_after_the_batch,
+        expect:
+          base406.expect +
+          "; " +
+          F3["T4.06_done_when_append"].slice(
+            F3["T4.06_done_when_append"].indexOf("append to expect: ") +
+              "append to expect: ".length,
+          ),
+      },
+      "T4.07": F2["T4.07_done_when_final"],
+    };
     for (const id of ["T4.06", "T4.07"])
-      if (!same(task(id)?.done_when, r2.verification_clause_fixes[`${id}_done_when_replacement`]))
+      if (!expectedDoneWhen[id] || !same(task(id)?.done_when, expectedDoneWhen[id]))
         f.push(`${id}: zero-output credential verification clause changed`);
+    const t401 = task("T4.01"),
+      t406 = task("T4.06"),
+      t407 = task("T4.07");
+    // F1: one names-only helper, authored by T4.05, bound byte-equal to R3; no text filter on Environment.
+    if (
+      !same(t407?.design_details?.env_names_helper, {
+        decision: F1.decision,
+        helper_contract: F1.helper_contract,
+      })
+    )
+      f.push("T4.07: names-only environment helper contract differs from R3");
+    const helper = task("T4.05")?.files?.find(
+      (x: any) =>
+        x.path ===
+        "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/env-names.ts",
+    );
+    if (
+      !helper ||
+      helper.side !== "outside-tool" ||
+      helper.action !== "add" ||
+      helper.surface !== "authoring" ||
+      !F2.successor_writer_answers_2026_10_10.env_names_author_and_edge.includes(
+        "note: " + helper.note + "}",
+      )
+    )
+      f.push("T4.05: names-only environment helper has no authoring row");
+    const cmd407 = t407?.done_when?.command ?? "";
+    if (
+      /-p Environment/.test(cmd407) ||
+      !cmd407.includes("env-names.mjs --unit throughline-server.service --user") ||
+      !cmd407.includes("env-names.mjs --pid")
+    )
+      f.push("T4.07: environment names are not read through the names-only helper");
+    // F2: Phase 4 proves the provider route with a route-probe thread; the responder stays T12.08's.
+    if (
+      !same(t407?.design_details?.provider_route_proof, {
+        decision: F2.decision,
+        recovery_island_note: F2.recovery_island_note,
+        edges: F2.edges,
+      })
+    )
+      f.push("T4.07: route-probe proof design differs from R3");
+    const red =
+      F2.successor_writer_answers_2026_10_10.failing_check_first_replacement.split(
+        "planned check read: ",
+      )[1];
+    if (
+      !red ||
+      t407?.failing_check_first !== red ||
+      t407?.planned_checks?.find((c: any) => c.id === "T4.07-red")?.command !== red
+    )
+      f.push("T4.07: red check still needs a responder");
+    for (const [from, to] of [
+      [F2["T4.07_what_replace"].from, F2["T4.07_what_replace"].to],
+      [remap(F2["T4.07_what_replace_2"].from), F2["T4.07_what_replace_2"].to],
+    ])
+      if (!t407?.what.includes(to) || t407?.what.includes(from))
+        f.push("T4.07: provider route still bound to the responder thread");
+    if (/responder thread on the Raspberry Pi server/.test(cmd407 + (t407?.done_when?.host ?? "")))
+      f.push("T4.07: Phase 4 acceptance requires a responder thread");
+    if (!task("T12.08")?.what.includes(F2["T12.08_what_append"]))
+      f.push("T12.08: responder integration does not cite the route-probe receipt");
+    // F3: record TLS material leaves /home in the same batch that moves the record to its account.
+    if (
+      !t401?.what.includes(F3["T4.01_what_replace"].to) ||
+      t401?.what.includes(F3["T4.01_what_replace"].from)
+    )
+      f.push("T4.01: record TLS material stays bound to the old home after the account move");
+    if (
+      !t401?.files
+        ?.find((x: any) => x.path === "/home/twr/absurd-pg/data/postgresql.conf")
+        ?.note?.includes(F3["T4.01_files_note_append_2"])
+    )
+      f.push("T4.01: ssl_cert_file and ssl_key_file rewrite missing");
+    const recordUnit = t406?.design_details?.accounts_and_units?.["throughline-record"]?.unit ?? "";
+    if (
+      /ProtectHome=yes/.test(recordUnit) &&
+      (!t406?.what.includes(F3["T4.06_what_append"]) ||
+        !/\/etc\/throughline\/record-tls\//.test(t406?.what ?? ""))
+    )
+      f.push("T4.06: ProtectHome=yes record unit keeps its TLS material under /home");
+    if (!t406?.counterexample_must_fail?.includes(F3["T4.06_counterexample_append_2"]))
+      f.push("T4.06: TLS path or key-byte counterexample missing");
+    if (
+      !same(t406?.design_details?.tls_material_relocation, {
+        decision: F3.decision,
+        rollback_in_the_same_batch: F3.rollback_in_the_same_batch,
+        startup_and_tls_rehearsal_no_secret_reads: F3.startup_and_tls_rehearsal_no_secret_reads,
+        real_unit_proof_after_the_batch: F3.real_unit_proof_after_the_batch,
+      })
+    )
+      f.push("T4.06: TLS relocation design differs from R3");
+    for (const row of F3["T4.06_files_append"]) {
+      const x = t406?.files?.find((y: any) => y.path === row.path);
+      if (
+        !x ||
+        x.side !== "host-filesystem" ||
+        x.action !== "read" ||
+        x.surface !== "verification" ||
+        x.intended_install_action !== row.action ||
+        x.host !== "twr" ||
+        x.owner !== "root" ||
+        !x.owning_source ||
+        !x.note?.startsWith(row.note)
+      )
+        f.push(`T4.06: TLS verification row missing: ${row.path}`);
+    }
     for (const edit of r2.edge_edits_corrected) {
       const t = task(edit.task);
       if (

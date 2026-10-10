@@ -552,6 +552,148 @@ cases.push({
       " twr holds a polkit grant scoped to exactly throughline-server.service and throughline-record.service start, stop and restart";
   },
 });
+// R3 (review F1-F3 of 0.4.20): the names-only helper, the route-probe proof and the record TLS move.
+const task = (s: any, id: string) => s.tasks.find((t: any) => t.id === id);
+const helperOf = (s: any) => task(s, "T4.07").design_details.env_names_helper.helper_contract;
+for (const [name, mutate] of [
+  [
+    "watcher delta R3 source hash mismatch",
+    (s: any) => {
+      s.watcher_server_reboot_delta.source_documents[2].sha256 = "0".repeat(64);
+    },
+  ],
+  [
+    "F1 environment names cannot return to the name-hiding Environment pipeline",
+    (s: any) => {
+      const d = task(s, "T4.07").done_when;
+      d.command = d.command.replace(
+        "node /home/rpi/.local/share/absurd-sandbox/dist/env-names.mjs --unit throughline-server.service --user",
+        "systemctl --user show throughline-server.service -p Environment | cut -d= -f1,2 | tr ' ' '\\n' | cut -d= -f1",
+      );
+    },
+  ],
+  [
+    "F1 helper forbidden-name list cannot be narrowed",
+    (s: any) => {
+      const h = helperOf(s);
+      h.forbidden_name_rule = h.forbidden_name_rule.replace("PASSWD, ", "");
+    },
+  ],
+  [
+    "F1 helper value-leak fixture cannot be dropped",
+    (s: any) => {
+      const h = helperOf(s);
+      h.fixtures_in_tier_1_tests = h.fixtures_in_tier_1_tests.filter(
+        (x: any) => x.name !== "value-leak-guard",
+      );
+    },
+  ],
+  [
+    "F1 helper forbidden word inside a value cannot be reported as a name",
+    (s: any) => {
+      const x = helperOf(s).fixtures_in_tier_1_tests.find(
+        (x: any) => x.name === "negative-value-looks-like-name",
+      );
+      x.expect_names = ["API_TOKEN", "FINE", "OK"];
+      x.expect_exit = 2;
+    },
+  ],
+  [
+    "F1 helper must have an authoring task",
+    (s: any) => {
+      const t = task(s, "T4.05");
+      t.files = t.files.filter((f: any) => !f.path.endsWith("/src/env-names.ts"));
+    },
+  ],
+  [
+    "F2 Phase 4 route proof cannot require a responder thread",
+    (s: any) => {
+      const d = task(s, "T4.07").done_when;
+      d.command =
+        "from a responder thread on the Raspberry Pi server, one model-backed turn; " + d.command;
+    },
+  ],
+  [
+    "F2 route proof cannot drop its edge to the helper delivery task",
+    (s: any) => {
+      task(s, "T4.07").depends_on = ["T4.04"];
+    },
+  ],
+  [
+    "F2 empty destination list cannot pass",
+    (s: any) => {
+      const d = task(s, "T4.07").done_when;
+      d.expect = d.expect.replace("is a FAILED check, never a vacuous pass", "is acceptable");
+    },
+  ],
+  [
+    "F2 red check cannot require a responder",
+    (s: any) => {
+      task(s, "T4.07").failing_check_first =
+        "before the work, `systemctl show broker-provider.service -p ActiveState` on the Raspberry Pi returns inactive (measured 2026-10-09) and a responder turn with the tower unreachable fails for lack of a provider route; that is the red";
+    },
+  ],
+  [
+    "F3 old-home TLS dependency under ProtectHome=yes is rejected",
+    (s: any) => {
+      const t = task(s, "T4.06");
+      t.what = t.what.slice(0, t.what.indexOf(" The batch relocates the TLS certificate"));
+    },
+  ],
+  [
+    "F3 T4.01 cannot keep the twr-only TLS clause after the account move",
+    (s: any) => {
+      const t = task(s, "T4.01");
+      t.what = t.what.replace(
+        /ssl=on with a server certificate and key under [^;]*; T4\.06 relocates both[^;]*;[^;]*; key 0640 root-owned with group read\) and rewrites the two ssl_\*_file lines in the same batch/,
+        "ssl=on with a server certificate under /home/twr/absurd-pg/tls (mode 0600, owner twr)",
+      );
+    },
+  ],
+  [
+    "F3 TLS relocation verification rows cannot be dropped",
+    (s: any) => {
+      const t = task(s, "T4.06");
+      t.files = t.files.filter((f: any) => !f.path.startsWith("/etc/throughline/record-tls"));
+    },
+  ],
+  [
+    "F3 old-home negative rehearsal cannot be dropped",
+    (s: any) => {
+      const d = task(s, "T4.06").done_when;
+      d.command = d.command.replace("(b) the negative fixture", "(b) skipped");
+    },
+  ],
+  [
+    "F3 record TLS key cannot become world-readable",
+    (s: any) => {
+      const r = task(s, "T4.06").design_details.tls_material_relocation;
+      r.decision = r.decision.replace(
+        "server.key root:throughline-record 0640",
+        "server.key root:throughline-record 0644",
+      );
+    },
+  ],
+  [
+    "F3 key-byte counterexample cannot be dropped",
+    (s: any) => {
+      const t = task(s, "T4.06");
+      t.counterexample_must_fail = t.counterexample_must_fail.replace(
+        ", or any receipt contains key bytes",
+        "",
+      );
+    },
+  ],
+] as Array<[string, (s: any) => void]>)
+  cases.push({ name, expect: "FAIL", checks: ["X21"], mutate });
+cases.push({
+  name: "F2 waiting on the T12.08 responder recreates the reviewed cycle",
+  expect: "FAIL",
+  checks: ["X03", "X14"],
+  mutate: (s) => {
+    task(s, "T4.07").depends_on.push("T12.08");
+  },
+});
 for (const [name, checkId, mutate] of [
   [
     "instruction words cannot be paraphrased",

@@ -5,9 +5,9 @@
     <title>ThroughLine next-generation implementation spec — map</title>
     <meta
       name="spec-sha256"
-      content="5d8ab573b99ed4a48209353784ffec2f21b2d21e7629602de010626b9321c196"
+      content="7504b94df3e48c758dbd0c0c51b878884b927caf2ea3a301efe249661b517483"
     />
-    <meta name="spec-version" content="0.4.20" />
+    <meta name="spec-version" content="0.4.21" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
@@ -483,11 +483,11 @@
         installed in 24 hours.”
       </p>
       <p class="sub">
-        Machine-readable task graph <code>spec.json</code> version 0.4.20. Original design
+        Machine-readable task graph <code>spec.json</code> version 0.4.21. Original design
         authorship: fable-throughline-design (ThroughLine thread
-        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 6:58 AM PDT by
-        codex session 01a124c9-641b-79f2-9460-63aa9ccfa238. Bound to ledger sha256 0b260e00b391 (199
-        items). Every task names the ledger ids it serves. The technical execution lead,
+        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 9:27 AM PDT by
+        claude session c444cd86-00b3-4271-8234-db778fe7438b. Bound to ledger sha256 0b260e00b391
+        (199 items). Every task names the ledger ids it serves. The technical execution lead,
         lead-execlead-1ad87c0b, works from the JSON; this page is rendered from it.
       </p>
       <div class="kpis">
@@ -5605,20 +5605,23 @@
                   The existing user-owned cluster (absurd-pg.service under twr, binaries and data at
                   /home/twr/absurd-pg) stays in place and is rebound: listen_addresses adds the
                   tailnet address 100.96.34.116 beside loopback; ssl=on with a server certificate
-                  under /home/twr/absurd-pg/tls (mode 0600, owner twr); pg_hba.conf admits only
-                  hostssl rows: one role per connecting host (the tower server role over loopback,
-                  the Mac app role from the Mac's tailnet address) with scram-sha-256; no trust
-                  rows, no 0.0.0.0. Role credentials: the tower server role's credential lives in
-                  the ThroughLine server unit's private state (readable by the server account only);
-                  the Mac app role's credential lives in the app-only keychain entry (D04) proven by
-                  the K05 read-refusal test; the Raspberry Pi observer of T4.03 uses no role
-                  (credential-free liveness probe). AbsurdRuntimeInProcess.ts takes host identity
-                  from the record, not from environment variables. T4.01 rebinds the cluster in
-                  place under its current owner twr (state shared-account); T4.06, batched with
-                  T6.01 in the Phase 4 sudo act, moves the same binaries and data to the
-                  throughline-record account as the system unit throughline-record.service (state
-                  record-isolated-seats-shared), and the postgresql.conf and pg_hba.conf edited here
-                  travel with the data directory unchanged; seat isolation (state
+                  and key under /home/twr/absurd-pg/tls (mode 0600, owner twr) in state
+                  shared-account; T4.06 relocates both to /etc/throughline/record-tls/
+                  (root:throughline-record 0750; certificate 0644; key 0640 root-owned with group
+                  read) and rewrites the two ssl_*_file lines in the same batch; pg_hba.conf admits
+                  only hostssl rows: one role per connecting host (the tower server role over
+                  loopback, the Mac app role from the Mac's tailnet address) with scram-sha-256; no
+                  trust rows, no 0.0.0.0. Role credentials: the tower server role's credential lives
+                  in the ThroughLine server unit's private state (readable by the server account
+                  only); the Mac app role's credential lives in the app-only keychain entry (D04)
+                  proven by the K05 read-refusal test; the Raspberry Pi observer of T4.03 uses no
+                  role (credential-free liveness probe). AbsurdRuntimeInProcess.ts takes host
+                  identity from the record, not from environment variables. T4.01 rebinds the
+                  cluster in place under its current owner twr (state shared-account); T4.06,
+                  batched with T6.01 in the Phase 4 sudo act, moves the same binaries and data to
+                  the throughline-record account as the system unit throughline-record.service
+                  (state record-isolated-seats-shared), and the postgresql.conf and pg_hba.conf
+                  edited here travel with the data directory unchanged; seat isolation (state
                   authority-isolated) is delivered by T6.02, where the K04 reach test runs. Measured
                   Oct 9, 2026, structure only (G6 B07): the twr-owned unit file is mode 0664 and
                   carries the database environment assignment; the same twr account owns the server
@@ -5766,7 +5769,9 @@
                         before edit; the two configuration files are edited at
                         /home/twr/absurd-pg/data/ before T4.06 and live at
                         /srv/agents-runtime-state/absurd-pg/data/ after it; the done_when reads
-                        whichever path the current state names
+                        whichever path the current state names; ssl_cert_file and ssl_key_file are
+                        the two configuration lines that do not travel unchanged: T4.06 rewrites
+                        them to /etc/throughline/record-tls/
                       </td>
                     </tr>
                     <tr>
@@ -7098,6 +7103,19 @@
                       <td>add</td>
                       <td></td>
                     </tr>
+                    <tr>
+                      <td>
+                        <code
+                          >/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/env-names.ts</code
+                        >
+                      </td>
+                      <td><span class="chip tool">outside-tool</span></td>
+                      <td>add</td>
+                      <td>
+                        names-only environment helper per the F1 contract, shipped in the same
+                        payload as record-watch
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
                 <div class="sig">
@@ -7182,7 +7200,14 @@
                   throughline-record-rehearsal.service for the two probes and reads the live
                   throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p
                   NRestarts, never probing it; the rehearsal grant is on a unit holding no record
-                  and does not weaken the three-state sentence
+                  and does not weaken the three-state sentence The batch relocates the TLS
+                  certificate and key to /etc/throughline/record-tls/ with root:throughline-record
+                  ownership (certificate 0644, key 0640), rewrites ssl_cert_file and ssl_key_file in
+                  the relocated postgresql.conf, generates a separate rehearsal key and certificate
+                  for throughline-record-rehearsal.service, proves startup and TLS on the rehearsal
+                  unit and the rejection of an old-home key path under ProtectHome=yes before the
+                  real units start, and removes the old /home/twr/absurd-pg/tls only after that
+                  proof; the rollback script restores both paths and lines.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -7539,6 +7564,69 @@
                         credentials directory. Any of these means the design has failed.
                       </p>
                     </dd>
+                    <dt><b>tls material relocation</b></dt>
+                    <dd>
+                      <dl>
+                        <dt><b>decision</b></dt>
+                        <dd>
+                          <p>
+                            TLS material has a state-scoped home. Before T4.06 (state
+                            shared-account) it lives where T4.01 put it. The T4.06 batch relocates
+                            it in the same sudo act: /etc/throughline/record-tls/ owned
+                            root:throughline-record mode 0750; server.crt root:root 0644; server.key
+                            root:throughline-record 0640 (Postgres accepts a root-owned key with
+                            group read, so the record account reads it and no other account can);
+                            the batch script rewrites exactly two lines in the relocated data
+                            directory's postgresql.conf, ssl_cert_file and ssl_key_file, to the new
+                            paths, and removes the old /home/twr/absurd-pg/tls directory only after
+                            the rehearsal below passes. No agent reads the key at any point; the
+                            batch script's copy is a root file operation inside Ryan's act, not a
+                            read into any output.
+                          </p>
+                        </dd>
+                        <dt><b>rollback in the same batch</b></dt>
+                        <dd>
+                          <p>
+                            the rollback script restores the two configuration lines, moves the TLS
+                            files back to /home/twr/absurd-pg/tls with chown twr and mode 0600, and
+                            re-enables the twr user unit; rehearsed on the rehearsal cluster before
+                            the real batch
+                          </p>
+                        </dd>
+                        <dt><b>startup and tls rehearsal no secret reads</b></dt>
+                        <dd>
+                          <p>
+                            the Phase 4 batch also installs throughline-record-rehearsal.service
+                            (already in this delta) with a freshly generated rehearsal key and
+                            certificate (openssl req -x509 -newkey, run by the batch script as root
+                            into /etc/throughline/record-tls-rehearsal/ with the identical ownership
+                            and modes); the non-builder proves (a) the rehearsal unit starts and
+                            `openssl s_client -starttls postgres -connect 127.0.0.1:&lt;rehearsal
+                            port&gt; &lt;/dev/null 2&gt;/dev/null | grep -E '^(subject=|issuer=)'`
+                            shows the rehearsal certificate subject, and (b) the negative fixture:
+                            the batch script's dry-run mode starts the rehearsal unit once with
+                            ssl_key_file pointed at a path under /home/twr and the unit must fail to
+                            start with the journal showing the file-not-found or permission error
+                            under ProtectHome=yes; that failure is the proof that the old-home
+                            dependency is rejected; then the real batch runs
+                          </p>
+                        </dd>
+                        <dt><b>real unit proof after the batch</b></dt>
+                        <dd>
+                          <p>
+                            from the Mac: openssl s_client -starttls postgres -connect
+                            100.96.34.116:5432 -servername twr &lt;/dev/null 2&gt;/dev/null | grep
+                            -E '^(subject=|issuer=)' shows the pinned real certificate subject
+                            (public material only) and one Mac message completes; systemctl show
+                            throughline-record.service -p ActiveState reads active; ls -ln
+                            /etc/throughline/record-tls/ shows root:throughline-record 0750,
+                            server.crt 0644, server.key 0640 owned by root with group
+                            throughline-record; test -r /etc/throughline/record-tls/server.key as
+                            twr prints only its exit status, expected 1
+                          </p>
+                        </dd>
+                      </dl>
+                    </dd>
                   </dl>
                 </details>
                 <p>
@@ -7688,6 +7776,30 @@
                         unrelated rules unchanged.
                       </td>
                     </tr>
+                    <tr>
+                      <td><code>/etc/throughline/record-tls/server.crt and server.key</code></td>
+                      <td><span class="chip host">host-filesystem</span></td>
+                      <td>read</td>
+                      <td>
+                        tower; root-owned; key 0640 group throughline-record; created by the batch
+                        script from the T4.01 files; never read by any test; surface verification;
+                        owning source: packages/throughline-launcher/install/ (fork-namespace), the
+                        Phase 4 sudo batch script; read-only non-builder verification; deployment
+                        remains the owning install act
+                      </td>
+                    </tr>
+                    <tr>
+                      <td><code>/etc/throughline/record-tls-rehearsal/</code></td>
+                      <td><span class="chip host">host-filesystem</span></td>
+                      <td>read</td>
+                      <td>
+                        tower; freshly generated rehearsal material for
+                        throughline-record-rehearsal.service; same ownership shape; owning source:
+                        packages/throughline-launcher/install/ (fork-namespace), the Phase 4 sudo
+                        batch script; read-only non-builder verification; deployment remains the
+                        owning install act
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
                 <div class="sig">
@@ -7718,8 +7830,23 @@
                     $CREDENTIALS_DIRECTORY/record-role-canary and report equal or not-equal to the
                     known canary hash, and report that $CREDENTIALS_DIRECTORY/record-role exists and
                     is non-empty by size only; then from the Mac app send one message and watch it
-                    complete; then as twr: /opt/absurd-pg/bin/psql -h /tmp -d absurd -c 'select
-                    1'</code
+                    complete; then as twr: /opt/absurd-pg/bin/psql -h /tmp -d absurd -c 'select 1';
+                    the non-builder proves (a) the rehearsal unit starts and `openssl s_client
+                    -starttls postgres -connect 127.0.0.1:&lt;rehearsal port&gt; &lt;/dev/null
+                    2&gt;/dev/null | grep -E '^(subject=|issuer=)'` shows the rehearsal certificate
+                    subject, and (b) the negative fixture: the batch script's dry-run mode starts
+                    the rehearsal unit once with ssl_key_file pointed at a path under /home/twr and
+                    the unit must fail to start with the journal showing the file-not-found or
+                    permission error under ProtectHome=yes; that failure is the proof that the
+                    old-home dependency is rejected; then the real batch runs; from the Mac: openssl
+                    s_client -starttls postgres -connect 100.96.34.116:5432 -servername twr
+                    &lt;/dev/null 2&gt;/dev/null | grep -E '^(subject=|issuer=)' shows the pinned
+                    real certificate subject (public material only) and one Mac message completes;
+                    systemctl show throughline-record.service -p ActiveState reads active; ls -ln
+                    /etc/throughline/record-tls/ shows root:throughline-record 0750, server.crt
+                    0644, server.key 0640 owned by root with group throughline-record; test -r
+                    /etc/throughline/record-tls/server.key as twr prints only its exit status,
+                    expected 1</code
                   >
                   <span class="expect"
                     >→ both units active with their own User and a FragmentPath under
@@ -7729,7 +7856,10 @@
                     root-owned 0600 files; the server's diagnostics report canary=equal and
                     record-role present with a non-zero size, and prints no value; the Mac message
                     completes (the real credential worked, proven by consumption, not by reading
-                    it); the twr psql attempt is refused</span
+                    it); the twr psql attempt is refused; the rehearsal unit serves TLS with the
+                    rehearsal subject, the old-home-path dry run fails to start with the ProtectHome
+                    or file error in its journal, the real unit serves the pinned subject, the key
+                    is unreadable by twr by exit status, and no command printed key bytes</span
                   >
                 </p>
                 <p class="risk">
@@ -7771,12 +7901,14 @@
                 <p class="what">
                   Enable the Raspberry Pi's installed broker-provider.service with its own provider
                   login held by broker-service (the Aug 19 shape: the broker holds the credential,
-                  the responder never sees it), admitted for the responder thread only; the tower
-                  tunnel is never on the responder's path. Agents prepare the enable and the login
-                  entry mode (the broker's existing root-only enter-key mode); Ryan performs the act
-                  on the Raspberry Pi (sudo is his there too). Until this lands, T12.08's responder
-                  launches but has no model when the tower is down, and the receipt states
-                  DEPENDENCY-OPEN for tier 1.
+                  the responder never sees it), admitted for threads on the Raspberry Pi ThroughLine
+                  server (the responder of T12.08 once it lands; the route-probe thread of this
+                  task's proof before that); the broker's allowlist names the Raspberry Pi server's
+                  account, not a thread kind; the tower tunnel is never on the responder's path.
+                  Agents prepare the enable and the login entry mode (the broker's existing
+                  root-only enter-key mode); Ryan performs the act on the Raspberry Pi (sudo is his
+                  there too). Until this lands, T12.08's responder would have no model when the
+                  tower is down; T12.08 depends on this task's receipt.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -7819,6 +7951,310 @@
                         adds. Nothing else on the Raspberry Pi is in scope.
                       </p>
                     </dd>
+                    <dt><b>env names helper</b></dt>
+                    <dd>
+                      <dl>
+                        <dt><b>decision</b></dt>
+                        <dd>
+                          <p>
+                            A source-owned, non-model helper replaces the pipeline: the
+                            absurd-sandbox record-watch payload gains a subcommand env-names that
+                            reads either `systemctl [--user] show -p Environment &lt;unit&gt;`
+                            output or /proc/&lt;pid&gt;/environ, parses every assignment, and emits
+                            variable names only, one per line, never a value, never a partial value,
+                            never the raw line. Exit 0 when no name is forbidden; exit 2 when any
+                            name is forbidden, printing the forbidden names only. Nothing else in
+                            any task may inspect an environment.
+                          </p>
+                        </dd>
+                        <dt><b>helper contract</b></dt>
+                        <dd>
+                          <dl>
+                            <dt><b>owner</b></dt>
+                            <dd>
+                              <p>
+                                /Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/env-names.ts
+                                (Tier 1), shipped inside the record-watch payload through the T4.05
+                                lane; plain TypeScript, node 22, no shell
+                              </p>
+                            </dd>
+                            <dt><b>inputs</b></dt>
+                            <dd>
+                              <ul>
+                                <li>
+                                  <p>
+                                    --unit &lt;name&gt; [--user]: runs systemctl show -p Environment
+                                    and parses the single Environment= line
+                                  </p>
+                                </li>
+                                <li>
+                                  <p>
+                                    --pid &lt;n&gt;: reads /proc/&lt;pid&gt;/environ as
+                                    NUL-separated assignments (the helper reads bytes to find the
+                                    first = in each entry and discards everything after it before
+                                    any output is formed)
+                                  </p>
+                                </li>
+                                <li>
+                                  <p>
+                                    --fixture &lt;file&gt;: parses a file in systemctl Environment=
+                                    format, for tests only
+                                  </p>
+                                </li>
+                              </ul>
+                            </dd>
+                            <dt><b>parse rules</b></dt>
+                            <dd>
+                              <ul>
+                                <li>
+                                  <p>
+                                    the line is Environment= followed by assignments separated by
+                                    unquoted whitespace
+                                  </p>
+                                </li>
+                                <li>
+                                  <p>
+                                    an assignment may be wrapped in double quotes or single quotes
+                                    as a whole (&quot;NAME=value with spaces&quot;) or carry
+                                    backslash-escaped whitespace (NAME=a\ b); quotes and escapes are
+                                    honored so a value containing spaces, quotes, equals signs or
+                                    newline escapes never splits into a false name
+                                  </p>
+                                </li>
+                                <li>
+                                  <p>
+                                    a name is the text before the first unescaped = in the
+                                    assignment and must match [A-Za-z_][A-Za-z0-9_]*; an assignment
+                                    with no = or an invalid name is reported as MALFORMED_ASSIGNMENT
+                                    with its position, never its text
+                                  </p>
+                                </li>
+                                <li>
+                                  <p>
+                                    values are never buffered into any output structure; the parser
+                                    drops value bytes as it passes them
+                                  </p>
+                                </li>
+                              </ul>
+                            </dd>
+                            <dt><b>forbidden name rule</b></dt>
+                            <dd>
+                              <p>
+                                a name is forbidden when its uppercase form contains any of KEY,
+                                TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL, PRIVATE, or ends in
+                                _PW; the list is a constant in the source; X21 binds this list, the
+                                parse rules, the output rule, the seven fixtures and the test rule
+                                byte-equal to this contract on every spec version; the T4.07
+                                non-builder receipt takes the forbidden list from the shipped
+                                constant and must show it equal to the bound list
+                              </p>
+                            </dd>
+                            <dt><b>output</b></dt>
+                            <dd>
+                              <p>
+                                names only, one per line, sorted; then a final line SUMMARY
+                                names=&lt;n&gt; forbidden=&lt;k&gt; exit=&lt;0|2&gt;; the helper
+                                refuses with exit 3 and prints nothing if asked to print values by
+                                any flag
+                              </p>
+                            </dd>
+                            <dt><b>fixtures in tier 1 tests</b></dt>
+                            <dd>
+                              <ul>
+                                <li>
+                                  <dl>
+                                    <dt><b>name</b></dt>
+                                    <dd><p>positive-plain</p></dd>
+                                    <dt><b>input</b></dt>
+                                    <dd>
+                                      <p>Environment=SAFE_FLAG=1 PATH=/usr/bin SECOND_FLAG=2</p>
+                                    </dd>
+                                    <dt><b>expect names</b></dt>
+                                    <dd>
+                                      <ul>
+                                        <li><p>PATH</p></li>
+                                        <li><p>SAFE_FLAG</p></li>
+                                        <li><p>SECOND_FLAG</p></li>
+                                      </ul>
+                                    </dd>
+                                    <dt><b>expect exit</b></dt>
+                                    <dd><p>0</p></dd>
+                                  </dl>
+                                </li>
+                                <li>
+                                  <dl>
+                                    <dt><b>name</b></dt>
+                                    <dd><p>positive-quoted-and-escaped</p></dd>
+                                    <dt><b>input</b></dt>
+                                    <dd>
+                                      <p>
+                                        Environment=&quot;QUOTED=a b = c&quot; ESC=x\ y 'SINGLE=p q'
+                                        PLAIN=z
+                                      </p>
+                                    </dd>
+                                    <dt><b>expect names</b></dt>
+                                    <dd>
+                                      <ul>
+                                        <li><p>ESC</p></li>
+                                        <li><p>PLAIN</p></li>
+                                        <li><p>QUOTED</p></li>
+                                        <li><p>SINGLE</p></li>
+                                      </ul>
+                                    </dd>
+                                    <dt><b>expect exit</b></dt>
+                                    <dd><p>0</p></dd>
+                                  </dl>
+                                </li>
+                                <li>
+                                  <dl>
+                                    <dt><b>name</b></dt>
+                                    <dd><p>negative-forbidden-middle</p></dd>
+                                    <dt><b>input</b></dt>
+                                    <dd>
+                                      <p>Environment=SAFE_FLAG=1 API_TOKEN=abc SECOND_FLAG=2</p>
+                                    </dd>
+                                    <dt><b>expect names</b></dt>
+                                    <dd>
+                                      <ul>
+                                        <li><p>API_TOKEN</p></li>
+                                        <li><p>SAFE_FLAG</p></li>
+                                        <li><p>SECOND_FLAG</p></li>
+                                      </ul>
+                                    </dd>
+                                    <dt><b>expect forbidden</b></dt>
+                                    <dd>
+                                      <ul>
+                                        <li><p>API_TOKEN</p></li>
+                                      </ul>
+                                    </dd>
+                                    <dt><b>expect exit</b></dt>
+                                    <dd><p>2</p></dd>
+                                  </dl>
+                                </li>
+                                <li>
+                                  <dl>
+                                    <dt><b>name</b></dt>
+                                    <dd><p>negative-forbidden-quoted</p></dd>
+                                    <dt><b>input</b></dt>
+                                    <dd>
+                                      <p>Environment=&quot;DB_PASSWORD=has spaces&quot; OK=1</p>
+                                    </dd>
+                                    <dt><b>expect forbidden</b></dt>
+                                    <dd>
+                                      <ul>
+                                        <li><p>DB_PASSWORD</p></li>
+                                      </ul>
+                                    </dd>
+                                    <dt><b>expect exit</b></dt>
+                                    <dd><p>2</p></dd>
+                                  </dl>
+                                </li>
+                                <li>
+                                  <dl>
+                                    <dt><b>name</b></dt>
+                                    <dd><p>negative-value-looks-like-name</p></dd>
+                                    <dt><b>input</b></dt>
+                                    <dd>
+                                      <p>Environment=OK=&quot;API_TOKEN=notaname&quot; FINE=1</p>
+                                    </dd>
+                                    <dt><b>expect names</b></dt>
+                                    <dd>
+                                      <ul>
+                                        <li><p>FINE</p></li>
+                                        <li><p>OK</p></li>
+                                      </ul>
+                                    </dd>
+                                    <dt><b>expect exit</b></dt>
+                                    <dd><p>0</p></dd>
+                                    <dt><b>note</b></dt>
+                                    <dd>
+                                      <p>
+                                        a forbidden word inside a value is not a name and must not
+                                        be reported
+                                      </p>
+                                    </dd>
+                                  </dl>
+                                </li>
+                                <li>
+                                  <dl>
+                                    <dt><b>name</b></dt>
+                                    <dd><p>empty</p></dd>
+                                    <dt><b>input</b></dt>
+                                    <dd><p>Environment=</p></dd>
+                                    <dt><b>expect names</b></dt>
+                                    <dd><ul></ul></dd>
+                                    <dt><b>expect exit</b></dt>
+                                    <dd><p>0</p></dd>
+                                  </dl>
+                                </li>
+                                <li>
+                                  <dl>
+                                    <dt><b>name</b></dt>
+                                    <dd><p>value-leak-guard</p></dd>
+                                    <dt><b>input</b></dt>
+                                    <dd><p>Environment=SECRET_KEY=leakme</p></dd>
+                                    <dt><b>expect stdout must not contain</b></dt>
+                                    <dd><p>leakme</p></dd>
+                                    <dt><b>expect exit</b></dt>
+                                    <dd><p>2</p></dd>
+                                  </dl>
+                                </li>
+                              </ul>
+                            </dd>
+                            <dt><b>test rule</b></dt>
+                            <dd>
+                              <p>
+                                every fixture is a Tier 1 unit test that asserts the exact stdout
+                                bytes; the value-leak-guard fixture asserts the value string is
+                                absent from stdout and stderr; X21 asserts the contract text only
+                                and reads no payload and no environment; the T4.07 non-builder
+                                receipt runs the shipped helper against all seven fixtures and
+                                pastes the SUMMARY lines
+                              </p>
+                            </dd>
+                          </dl>
+                        </dd>
+                      </dl>
+                    </dd>
+                    <dt><b>provider route proof</b></dt>
+                    <dd>
+                      <dl>
+                        <dt><b>decision</b></dt>
+                        <dd>
+                          <p>
+                            T4.07 proves the provider route with a route-probe thread, not a
+                            responder. The route probe is a plain thread on the Raspberry Pi
+                            ThroughLine server, started by the non-builder through the Raspberry Pi
+                            broker's existing throughline-wake capability with the fixed order
+                            'reply with the single word pong', carrying no responder order, no
+                            recovery authority, no ssh identity and no access to the incident
+                            ledger; it exists only for the duration of the proof. T12.08 owns the
+                            responder thread and proves, in Phase 12, that the responder uses the
+                            same route; T12.08's receipt cites T4.07's receipt as the route proof
+                            and adds the responder integration. No bootstrap of the responder
+                            happens in Phase 4.
+                          </p>
+                        </dd>
+                        <dt><b>recovery island note</b></dt>
+                        <dd>
+                          <p>
+                            the island rule (the Raspberry Pi server admits nothing outside an open
+                            incident) is T12.08's and takes effect when T12.08 lands; in Phase 4 the
+                            Raspberry Pi server is the paused island running as today, and the route
+                            probe is the one bounded thread the T4.07 proof starts on it; the T4.07
+                            receipt records the probe thread id and that it was settled at the end
+                            of the proof
+                          </p>
+                        </dd>
+                        <dt><b>edges</b></dt>
+                        <dd>
+                          <p>
+                            T4.07 -&gt; T4.04, T4.05; T12.08 -&gt; T4.03, T4.04, T4.05, T12.05;
+                            acyclic
+                          </p>
+                        </dd>
+                      </dl>
+                    </dd>
                   </dl>
                 </details>
                 <p>
@@ -7829,7 +8265,9 @@
                     >/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R2.json</code
                   >
                 </p>
-                <p class="deps"><b>After</b> <a href="#T4.04">T4.04</a></p>
+                <p class="deps">
+                  <b>After</b> <a href="#T4.04">T4.04</a> <a href="#T4.05">T4.05</a>
+                </p>
                 <table class="files">
                   <thead>
                     <tr>
@@ -7882,22 +8320,41 @@
                 <p>
                   <b>Done when</b>
                   <code class="cmd"
-                    >from a responder thread on the Raspberry Pi server, one model-backed turn; then
-                    as rpi: ss -tnp 2&gt;/dev/null | grep -E &quot;$(pgrep -d'|' -f
-                    throughline-responder)&quot; | awk '{print $5}' (destination addresses only);
-                    systemctl --user show throughline-server.service -p Environment | cut -d= -f1,2
-                    | tr ' ' '\n' | cut -d= -f1 (environment variable names only); find /home/rpi
-                    -maxdepth 3 \( -iname '*credential*' -o -iname '*token*' -o -iname '*.key' \)
-                    -newer /home/rpi/.config/systemd/user/throughline-server.service -print (names
-                    only); then read the Raspberry Pi broker's receipt ledger row count for the
-                    incident window (the broker exposes counts, never bodies)</code
+                    >STEP 1 (start): request the route-probe thread through the broker's
+                    throughline-wake capability with the fixed order 'count slowly to twenty then
+                    reply with the single word pong'; record the thread id. STEP 2 (while the turn
+                    runs; poll the thread's turn state every second and act only while it reads
+                    running): CG=$(systemctl --user show throughline-server.service -p ControlGroup
+                    --value); for i in 1 2 3; do PIDS=$(tr '\n' '|' &lt;
+                    /sys/fs/cgroup${CG}/cgroup.procs | sed 's/|$//'); [ -n &quot;$PIDS&quot; ] || {
+                    echo NO_PIDS; exit 1; }; ss -tnpH | grep -E &quot;pid=(${PIDS}),&quot; | awk
+                    '{print $5}'; sleep 1; done | sort -u &gt;
+                    /home/rpi/.local/state/absurd-record-watch/t407-destinations.txt; cat
+                    /home/rpi/.local/state/absurd-record-watch/t407-destinations.txt; for P in $(ss
+                    -tnpH | grep -E &quot;pid=(${PIDS}),&quot; | grep '127.0.0.1:19443' | grep -oE
+                    'pid=[0-9]+' | cut -d= -f2 | sort -u); do node
+                    /home/rpi/.local/share/absurd-sandbox/dist/env-names.mjs --pid $P; done. STEP 3
+                    (after the turn completes): node
+                    /home/rpi/.local/share/absurd-sandbox/dist/env-names.mjs --unit
+                    throughline-server.service --user; find /home/rpi -maxdepth 3 \( -iname
+                    '*credential*' -o -iname '*token*' -o -iname '*.key' \) -newer
+                    /home/rpi/.config/systemd/user/throughline-server.service -print; read the
+                    Raspberry Pi broker's receipt ledger row count for the proof window through the
+                    broker's count endpoint (counts only, never bodies). STEP 4 (last): settle the
+                    probe thread and record that it is settled.</code
                   >
                   <span class="expect"
-                    >→ the turn completes with the tower unreachable; every destination the
-                    responder connected to is the local broker socket or loopback 19443 of
-                    broker-provider.service, none is the tower address; the environment variable
-                    names contain no name ending in KEY, TOKEN, SECRET or PASSWORD; the find prints
-                    no new file; the broker ledger shows one request row for the turn</span
+                    >→ STEP 1: a thread id is recorded. STEP 2: the destinations file is non-empty,
+                    contains 127.0.0.1:19443, and contains no address beginning 100. and no other
+                    tailnet or public address; NO_PIDS, an empty destinations file, or no pid
+                    holding a connection to 127.0.0.1:19443 during the window is a FAILED check,
+                    never a vacuous pass; every env-names --pid run exits 0 with a SUMMARY line
+                    showing forbidden=0. STEP 3: the probe turn has completed with the reply pong
+                    while the tower was unreachable; env-names --unit exits 0 with forbidden=0; the
+                    find prints no file; the broker ledger shows exactly one request row for the
+                    window. STEP 4: the thread is settled. The receipt pastes the destinations file,
+                    every env-names name list and SUMMARY line, the find output (expected empty),
+                    the ledger count and the thread id; nothing else.</span
                   >
                 </p>
                 <p class="risk">
@@ -14150,6 +14607,9 @@
                   the responder identity and marks the incident reconciled On host-unreachable the
                   handler skips tier 0 and tier 1, reads the reboot marker, classifies the state,
                   and sends the item-3 page; it never starts a responder for an unreachable host.
+                  The responder's model route is the one T4.07 proved with a route-probe thread;
+                  T12.08's receipt cites that receipt and adds the responder-thread integration
+                  proof; no responder exists before T12.08.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -22423,6 +22883,7 @@
           ["T4.01", "T4.05"],
           ["T4.01", "T4.06"],
           ["T4.04", "T4.07"],
+          ["T4.05", "T4.07"],
           ["T4.03", "T12.08"],
           ["T4.04", "T12.08"],
           ["T4.05", "T12.08"],

@@ -2721,7 +2721,7 @@ const OUTLINE: Task[] = [
       "The existing tower Postgres bound to the tailnet interface with TLS and one role per host",
     serves: ["NG-016", "NG-066"],
     detail_state: "detailed",
-    what: "The existing user-owned cluster (absurd-pg.service under twr, binaries and data at /home/twr/absurd-pg) stays in place and is rebound: listen_addresses adds the tailnet address 100.96.34.116 beside loopback; ssl=on with a server certificate under /home/twr/absurd-pg/tls (mode 0600, owner twr); pg_hba.conf admits only hostssl rows: one role per connecting host (the tower server role over loopback, the Mac app role from the Mac's tailnet address) with scram-sha-256; no trust rows, no 0.0.0.0. Role credentials: the tower server role's credential lives in the ThroughLine server unit's private state (readable by the server account only); the Mac app role's credential lives in the app-only keychain entry (D04) proven by the K05 read-refusal test; the Raspberry Pi observer of T4.03 uses no role (credential-free liveness probe). AbsurdRuntimeInProcess.ts takes host identity from the record, not from environment variables. T4.01 rebinds the cluster in place under its current owner twr (state shared-account); T4.06, batched with T6.01 in the Phase 4 sudo act, moves the same binaries and data to the throughline-record account as the system unit throughline-record.service (state record-isolated-seats-shared), and the postgresql.conf and pg_hba.conf edited here travel with the data directory unchanged; seat isolation (state authority-isolated) is delivered by T6.02, where the K04 reach test runs. Measured Oct 9, 2026, structure only (G6 B07): the twr-owned unit file is mode 0664 and carries the database environment assignment; the same twr account owns the server and the database, so 0600 state under that account does not isolate twr agents; the Mac development environment source is mode 0644; the app-only keychain identity and its access list are not yet established. This measured intake is shared-account; record isolation and tower credential custody become claimable only from T4.06, and agent binding and seat isolation only from T6.02 and its K04 reach test. This task names the owning app and keychain identity, proves the access list with the installed boolean diagnostic plus a non-secret canary, removes credential inheritance from the harness environment, and retires the readable development source only in the guarded cutover.",
+    what: "The existing user-owned cluster (absurd-pg.service under twr, binaries and data at /home/twr/absurd-pg) stays in place and is rebound: listen_addresses adds the tailnet address 100.96.34.116 beside loopback; ssl=on with a server certificate and key under /home/twr/absurd-pg/tls (mode 0600, owner twr) in state shared-account; T4.06 relocates both to /etc/throughline/record-tls/ (root:throughline-record 0750; certificate 0644; key 0640 root-owned with group read) and rewrites the two ssl_*_file lines in the same batch; pg_hba.conf admits only hostssl rows: one role per connecting host (the tower server role over loopback, the Mac app role from the Mac's tailnet address) with scram-sha-256; no trust rows, no 0.0.0.0. Role credentials: the tower server role's credential lives in the ThroughLine server unit's private state (readable by the server account only); the Mac app role's credential lives in the app-only keychain entry (D04) proven by the K05 read-refusal test; the Raspberry Pi observer of T4.03 uses no role (credential-free liveness probe). AbsurdRuntimeInProcess.ts takes host identity from the record, not from environment variables. T4.01 rebinds the cluster in place under its current owner twr (state shared-account); T4.06, batched with T6.01 in the Phase 4 sudo act, moves the same binaries and data to the throughline-record account as the system unit throughline-record.service (state record-isolated-seats-shared), and the postgresql.conf and pg_hba.conf edited here travel with the data directory unchanged; seat isolation (state authority-isolated) is delivered by T6.02, where the K04 reach test runs. Measured Oct 9, 2026, structure only (G6 B07): the twr-owned unit file is mode 0664 and carries the database environment assignment; the same twr account owns the server and the database, so 0600 state under that account does not isolate twr agents; the Mac development environment source is mode 0644; the app-only keychain identity and its access list are not yet established. This measured intake is shared-account; record isolation and tower credential custody become claimable only from T4.06, and agent binding and seat isolation only from T6.02 and its K04 reach test. This task names the owning app and keychain identity, proves the access list with the installed boolean diagnostic plus a non-secret canary, removes credential inheritance from the harness environment, and retires the readable development source only in the guarded cutover.",
     files: [
       {
         path: "/home/twr/absurd-pg/data/postgresql.conf",
@@ -2729,7 +2729,7 @@ const OUTLINE: Task[] = [
         host: "twr",
         owner: "twr",
         action: "edit",
-        note: "listen_addresses, ssl, ssl_cert_file, ssl_key_file; backup copy beside it before edit; the two configuration files are edited at /home/twr/absurd-pg/data/ before T4.06 and live at /srv/agents-runtime-state/absurd-pg/data/ after it; the done_when reads whichever path the current state names",
+        note: "listen_addresses, ssl, ssl_cert_file, ssl_key_file; backup copy beside it before edit; the two configuration files are edited at /home/twr/absurd-pg/data/ before T4.06 and live at /srv/agents-runtime-state/absurd-pg/data/ after it; the done_when reads whichever path the current state names; ssl_cert_file and ssl_key_file are the two configuration lines that do not travel unchanged: T4.06 rewrites them to /etc/throughline/record-tls/",
       },
       {
         path: "/home/twr/absurd-pg/data/pg_hba.conf",
@@ -10003,6 +10003,14 @@ const OUTLINE: Task[] = [
         action: "add",
         surface: "authoring",
       },
+      {
+        path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/env-names.ts",
+        side: "outside-tool",
+        action: "add",
+        surface: "authoring",
+        exists_now: false,
+        note: "names-only environment helper per the F1 contract, shipped in the same payload as record-watch",
+      },
     ],
     signatures: [
       "Owning component delivery contract; nonprivileged preflight, pinned payload and explicit receipt limits",
@@ -10385,11 +10393,15 @@ export const WATCHER_SERVER_REBOOT_DELTA = {
     },
     {
       path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R2.json",
-      sha256: "23c76d6d4f207f2042d77d5912474d4d40cdd21f001bee5efc05cf25d24f0e03",
+      sha256: "c1ea9783ab443e773c4983356344143aac0b8ad1b93bfa377201801026ebe187",
+    },
+    {
+      path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/phase-04/Fable-Delta-Watcher-Server-Reboot-R3.json",
+      sha256: "c768daefb1c7312472b6a7a8554e0f348d177eb5ce4d46bd6e95829f10958e6d",
     },
   ],
   source_precedence:
-    "R2 overrides R1 only for its named corrections; R1 remaining decisions and evidence clauses stay bound.",
+    "R2 overrides R1 only for its named corrections; R1 remaining decisions and evidence clauses stay bound. R3 is identical in content to R2 key r2_amendment_2026_10_10_review_F1_F2_F3 and amends only F1, F2 and F3 of Review-Spec-0.4.20-8c4bf0d8fd; every other R2 clause stands.",
   new_task_ids: ["T4.06", "T4.07", "T12.08", "T12.09"],
   operator_rulings_verbatim: {
     time: "Oct 10, 2026, about 4:00 AM PDT",
@@ -10424,7 +10436,7 @@ TASKS.push(
         "The server and the record move to their own locked service accounts in Phase 4's single sudo batch",
       serves: ["NG-016", "NG-070", "NG-072"],
       detail_state: "detailed",
-      what: "as item 2 of the superseded file: two sysusers.d accounts (throughline-server, throughline-record), two system units, re-owned state and data in place, the record credential as a root-owned file loaded by systemd into the server unit's credentials directory beside a fixed-value canary credential, the supervisor control-socket allowlist updated to the server account, the twr user units disabled and kept on disk as rollback; one rehearsal on a copy; one Ryan sudo act shared with T6.01 (batched_with T6.01, a scheduling note, not an edge) T4.03 tests the system unit: the Phase 4 sudo batch also installs throughline-record-rehearsal.service, a root-owned system unit with the identical shape (Restart=always, RestartSec=3) running a throwaway cluster under the throughline-record account on a non-5432 port with no real data, plus one polkit rule granting twr kill, stop and start on exactly that rehearsal unit and nothing else; the non-builder as twr runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and systemctl stop throughline-record-rehearsal.service for the two probes and reads the live throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit holding no record and does not weaken the three-state sentence",
+      what: "as item 2 of the superseded file: two sysusers.d accounts (throughline-server, throughline-record), two system units, re-owned state and data in place, the record credential as a root-owned file loaded by systemd into the server unit's credentials directory beside a fixed-value canary credential, the supervisor control-socket allowlist updated to the server account, the twr user units disabled and kept on disk as rollback; one rehearsal on a copy; one Ryan sudo act shared with T6.01 (batched_with T6.01, a scheduling note, not an edge) T4.03 tests the system unit: the Phase 4 sudo batch also installs throughline-record-rehearsal.service, a root-owned system unit with the identical shape (Restart=always, RestartSec=3) running a throwaway cluster under the throughline-record account on a non-5432 port with no real data, plus one polkit rule granting twr kill, stop and start on exactly that rehearsal unit and nothing else; the non-builder as twr runs systemctl kill -s SIGKILL throughline-record-rehearsal.service and systemctl stop throughline-record-rehearsal.service for the two probes and reads the live throughline-record.service policy with systemctl show -p Restart -p RestartUSec -p NRestarts, never probing it; the rehearsal grant is on a unit holding no record and does not weaken the three-state sentence The batch relocates the TLS certificate and key to /etc/throughline/record-tls/ with root:throughline-record ownership (certificate 0644, key 0640), rewrites ssl_cert_file and ssl_key_file in the relocated postgresql.conf, generates a separate rehearsal key and certificate for throughline-record-rehearsal.service, proves startup and TLS on the rehearsal unit and the rejection of an old-home key path under ProtectHome=yes before the real units start, and removes the old /home/twr/absurd-pg/tls only after that proof; the rollback script restores both paths and lines.",
       files: [
         {
           path: "packages/throughline-launcher/systemd/throughline-server.service, throughline-record.service, throughline-server.conf and throughline-record.conf",
@@ -10550,6 +10562,32 @@ TASKS.push(
           owning_source: "packages/throughline-launcher/install/",
           note: "Verify only the owning batch rule: twr kill/stop/start on throughline-record-rehearsal.service and no production unit. Existing unrelated rules unchanged.",
         },
+        {
+          path: "/etc/throughline/record-tls/server.crt and server.key",
+          side: "host-filesystem",
+          action: "read",
+          note: "tower; root-owned; key 0640 group throughline-record; created by the batch script from the T4.01 files; never read by any test; surface verification; owning source: packages/throughline-launcher/install/ (fork-namespace), the Phase 4 sudo batch script; read-only non-builder verification; deployment remains the owning install act",
+          exists_now: false,
+          surface: "verification",
+          intended_install_action: "add",
+          host: "twr",
+          owner: "root",
+          owning_source:
+            "packages/throughline-launcher/install/ (fork-namespace), the Phase 4 sudo batch script",
+        },
+        {
+          path: "/etc/throughline/record-tls-rehearsal/",
+          side: "host-filesystem",
+          action: "read",
+          note: "tower; freshly generated rehearsal material for throughline-record-rehearsal.service; same ownership shape; owning source: packages/throughline-launcher/install/ (fork-namespace), the Phase 4 sudo batch script; read-only non-builder verification; deployment remains the owning install act",
+          exists_now: false,
+          surface: "verification",
+          intended_install_action: "add",
+          host: "twr",
+          owner: "root",
+          owning_source:
+            "packages/throughline-launcher/install/ (fork-namespace), the Phase 4 sudo batch script",
+        },
       ],
       depends_on: ["T4.01"],
       batched_with: "T6.01 (same Ryan sudo act; T6.01 depends on this task)",
@@ -10561,9 +10599,9 @@ TASKS.push(
       done_when: {
         host: "twr after the batch; non-builder as twr; zero credential output on every polarity",
         command:
-          "systemctl show throughline-server.service throughline-record.service -p ActiveState -p User -p FragmentPath; ps -u twr -o comm= | grep -cE 'postgres|node'; ls -ldn /srv/agents-runtime-state/throughline /srv/agents-runtime-state/absurd-pg/data; sudo -n -l -U throughline-server 2>&1 | tail -1; test -r /etc/throughline/credentials/record-role; echo READABLE_BY_TWR=$?; ls -ln /etc/throughline/credentials/ (names, owner and mode only); then the canary: root's install also loads a second credential record-role-canary whose value is the fixed non-secret string throughline-canary-v1 through the identical LoadCredential= line; inside the server unit (the server's own diagnostics action) compute sha256 of $CREDENTIALS_DIRECTORY/record-role-canary and report equal or not-equal to the known canary hash, and report that $CREDENTIALS_DIRECTORY/record-role exists and is non-empty by size only; then from the Mac app send one message and watch it complete; then as twr: /opt/absurd-pg/bin/psql -h /tmp -d absurd -c 'select 1'",
+          "systemctl show throughline-server.service throughline-record.service -p ActiveState -p User -p FragmentPath; ps -u twr -o comm= | grep -cE 'postgres|node'; ls -ldn /srv/agents-runtime-state/throughline /srv/agents-runtime-state/absurd-pg/data; sudo -n -l -U throughline-server 2>&1 | tail -1; test -r /etc/throughline/credentials/record-role; echo READABLE_BY_TWR=$?; ls -ln /etc/throughline/credentials/ (names, owner and mode only); then the canary: root's install also loads a second credential record-role-canary whose value is the fixed non-secret string throughline-canary-v1 through the identical LoadCredential= line; inside the server unit (the server's own diagnostics action) compute sha256 of $CREDENTIALS_DIRECTORY/record-role-canary and report equal or not-equal to the known canary hash, and report that $CREDENTIALS_DIRECTORY/record-role exists and is non-empty by size only; then from the Mac app send one message and watch it complete; then as twr: /opt/absurd-pg/bin/psql -h /tmp -d absurd -c 'select 1'; the non-builder proves (a) the rehearsal unit starts and `openssl s_client -starttls postgres -connect 127.0.0.1:<rehearsal port> </dev/null 2>/dev/null | grep -E '^(subject=|issuer=)'` shows the rehearsal certificate subject, and (b) the negative fixture: the batch script's dry-run mode starts the rehearsal unit once with ssl_key_file pointed at a path under /home/twr and the unit must fail to start with the journal showing the file-not-found or permission error under ProtectHome=yes; that failure is the proof that the old-home dependency is rejected; then the real batch runs; from the Mac: openssl s_client -starttls postgres -connect 100.96.34.116:5432 -servername twr </dev/null 2>/dev/null | grep -E '^(subject=|issuer=)' shows the pinned real certificate subject (public material only) and one Mac message completes; systemctl show throughline-record.service -p ActiveState reads active; ls -ln /etc/throughline/record-tls/ shows root:throughline-record 0750, server.crt 0644, server.key 0640 owned by root with group throughline-record; test -r /etc/throughline/record-tls/server.key as twr prints only its exit status, expected 1",
         expect:
-          "both units active with their own User and a FragmentPath under /etc/systemd/system; zero postgres or node processes owned by twr; the state tree owned by throughline-server and the data directory by throughline-record; sudo not allowed; READABLE_BY_TWR=1; the credentials directory listing shows two root-owned 0600 files; the server's diagnostics report canary=equal and record-role present with a non-zero size, and prints no value; the Mac message completes (the real credential worked, proven by consumption, not by reading it); the twr psql attempt is refused",
+          "both units active with their own User and a FragmentPath under /etc/systemd/system; zero postgres or node processes owned by twr; the state tree owned by throughline-server and the data directory by throughline-record; sudo not allowed; READABLE_BY_TWR=1; the credentials directory listing shows two root-owned 0600 files; the server's diagnostics report canary=equal and record-role present with a non-zero size, and prints no value; the Mac message completes (the real credential worked, proven by consumption, not by reading it); the twr psql attempt is refused; the rehearsal unit serves TLS with the rehearsal subject, the old-home-path dry run fails to start with the ProtectHome or file error in its journal, the real unit serves the pinned subject, the key is unreadable by twr by exit status, and no command printed key bytes",
         never:
           "cat, strings, grep or hexdump of any credential file; sha256 of the real credential (a hash of a low-entropy secret is itself exposure); any Environment= line carrying a value",
       },
@@ -10573,7 +10611,7 @@ TASKS.push(
         "the rehearsed rollback script from item 2 of the superseded file: disable the system units, move the data directory back under /home/twr/absurd-pg/data and chown twr, chown the state tree back to twr, re-enable the twr user units, remove the root credential files",
       signatures: ["one non-builder receipt per polarity, with the rehearsal receipt first"],
       counterexample_must_fail:
-        "after the batch a twr process stops the record unit, opens the record role credential file, or opens the server's state.sqlite; or either unit shows User=root or User=twr; or any test prints a credential value or its hash or a process running as twr causes a healthy record unit to stop or restart through any path, including the supervisor's heal verb while the supervisor's own probe reads the unit healthy.",
+        "after the batch a twr process stops the record unit, opens the record role credential file, or opens the server's state.sqlite; or either unit shows User=root or User=twr; or any test prints a credential value or its hash or a process running as twr causes a healthy record unit to stop or restart through any path, including the supervisor's heal verb while the supervisor's own probe reads the unit healthy. or the real record unit starts with a TLS path under /home, or server.key is readable by any account other than root and the throughline-record group, or any receipt contains key bytes",
       failing_checks: ["PH2-C01"],
       governing_shapes: [
         "/Users/Admin/core-root/vault/00_Core/Architecture/Intent-Layer/foundation/shape-adapter/corpus/SHAPE-2026-10-04-ryan-performs-tower-sudo-installs-for-now.yaml",
@@ -10652,6 +10690,16 @@ TASKS.push(
           "disable the three system units; mv the data directory back under /home/twr/absurd-pg/data and chown twr; chown the state tree back to twr; re-enable the two twr user units; the credential returns to the twr private file; all inside one rehearsed script carried with the batch; rehearsed first on the rehearsal cluster and a copy of the state tree",
         counterexample_must_fail:
           "After the batch, a process running as twr stops the record unit, reads the record role credential, or reads the server's state.sqlite; or the server unit shows User=root or User=twr; or the credential appears in the unit's Environment= or in any file readable by the server account outside its credentials directory. Any of these means the design has failed.",
+        tls_material_relocation: {
+          decision:
+            "TLS material has a state-scoped home. Before T4.06 (state shared-account) it lives where T4.01 put it. The T4.06 batch relocates it in the same sudo act: /etc/throughline/record-tls/ owned root:throughline-record mode 0750; server.crt root:root 0644; server.key root:throughline-record 0640 (Postgres accepts a root-owned key with group read, so the record account reads it and no other account can); the batch script rewrites exactly two lines in the relocated data directory's postgresql.conf, ssl_cert_file and ssl_key_file, to the new paths, and removes the old /home/twr/absurd-pg/tls directory only after the rehearsal below passes. No agent reads the key at any point; the batch script's copy is a root file operation inside Ryan's act, not a read into any output.",
+          rollback_in_the_same_batch:
+            "the rollback script restores the two configuration lines, moves the TLS files back to /home/twr/absurd-pg/tls with chown twr and mode 0600, and re-enables the twr user unit; rehearsed on the rehearsal cluster before the real batch",
+          startup_and_tls_rehearsal_no_secret_reads:
+            "the Phase 4 batch also installs throughline-record-rehearsal.service (already in this delta) with a freshly generated rehearsal key and certificate (openssl req -x509 -newkey, run by the batch script as root into /etc/throughline/record-tls-rehearsal/ with the identical ownership and modes); the non-builder proves (a) the rehearsal unit starts and `openssl s_client -starttls postgres -connect 127.0.0.1:<rehearsal port> </dev/null 2>/dev/null | grep -E '^(subject=|issuer=)'` shows the rehearsal certificate subject, and (b) the negative fixture: the batch script's dry-run mode starts the rehearsal unit once with ssl_key_file pointed at a path under /home/twr and the unit must fail to start with the journal showing the file-not-found or permission error under ProtectHome=yes; that failure is the proof that the old-home dependency is rejected; then the real batch runs",
+          real_unit_proof_after_the_batch:
+            "from the Mac: openssl s_client -starttls postgres -connect 100.96.34.116:5432 -servername twr </dev/null 2>/dev/null | grep -E '^(subject=|issuer=)' shows the pinned real certificate subject (public material only) and one Mac message completes; systemctl show throughline-record.service -p ActiveState reads active; ls -ln /etc/throughline/record-tls/ shows root:throughline-record 0750, server.crt 0644, server.key 0640 owned by root with group throughline-record; test -r /etc/throughline/record-tls/server.key as twr prints only its exit status, expected 1",
+        },
       },
 
       command_grammar: "IC-002",
@@ -10693,7 +10741,7 @@ TASKS.push(
         "The Raspberry Pi provider route for the responder: its own provider broker login under broker-service custody",
       serves: ["NG-128", "NG-131"],
       detail_state: "detailed",
-      what: "Enable the Raspberry Pi's installed broker-provider.service with its own provider login held by broker-service (the Aug 19 shape: the broker holds the credential, the responder never sees it), admitted for the responder thread only; the tower tunnel is never on the responder's path. Agents prepare the enable and the login entry mode (the broker's existing root-only enter-key mode); Ryan performs the act on the Raspberry Pi (sudo is his there too). Until this lands, T12.08's responder launches but has no model when the tower is down, and the receipt states DEPENDENCY-OPEN for tier 1.",
+      what: "Enable the Raspberry Pi's installed broker-provider.service with its own provider login held by broker-service (the Aug 19 shape: the broker holds the credential, the responder never sees it), admitted for threads on the Raspberry Pi ThroughLine server (the responder of T12.08 once it lands; the route-probe thread of this task's proof before that); the broker's allowlist names the Raspberry Pi server's account, not a thread kind; the tower tunnel is never on the responder's path. Agents prepare the enable and the login entry mode (the broker's existing root-only enter-key mode); Ryan performs the act on the Raspberry Pi (sudo is his there too). Until this lands, T12.08's responder would have no model when the tower is down; T12.08 depends on this task's receipt.",
       files: [
         {
           path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/admin-capability-broker/",
@@ -10717,23 +10765,23 @@ TASKS.push(
             "exists_now true (installed, inactive); owning source /Users/Admin/core-root/vault/01_Projects/workbench/infra/admin-capability-broker/linux/ through its Linux lane; enabled by Ryan's act",
         },
       ],
-      depends_on: ["T4.04"],
+      depends_on: ["T4.04", "T4.05"],
       executor: {
         role: "implementer",
         model_preference: "gpt-6.1-sol",
         effort: "high",
       },
       done_when: {
-        host: "rpi, non-builder, with the tower's rehearsal server stopped so the tunnel is dead",
+        host: "rpi, fired by a non-builder as the rpi account; the tower's rehearsal ThroughLine server is stopped for the whole proof so the Raspberry Pi to tower provider tunnel is dead; the probe is a route-probe thread on the Raspberry Pi ThroughLine server started through the Raspberry Pi broker's throughline-wake capability, not a responder; no role, no credential and no value of any kind is read or printed",
         command:
-          "from a responder thread on the Raspberry Pi server, one model-backed turn; then as rpi: ss -tnp 2>/dev/null | grep -E \"$(pgrep -d'|' -f throughline-responder)\" | awk '{print $5}' (destination addresses only); systemctl --user show throughline-server.service -p Environment | cut -d= -f1,2 | tr ' ' '\\n' | cut -d= -f1 (environment variable names only); find /home/rpi -maxdepth 3 \\( -iname '*credential*' -o -iname '*token*' -o -iname '*.key' \\) -newer /home/rpi/.config/systemd/user/throughline-server.service -print (names only); then read the Raspberry Pi broker's receipt ledger row count for the incident window (the broker exposes counts, never bodies)",
+          "STEP 1 (start): request the route-probe thread through the broker's throughline-wake capability with the fixed order 'count slowly to twenty then reply with the single word pong'; record the thread id. STEP 2 (while the turn runs; poll the thread's turn state every second and act only while it reads running): CG=$(systemctl --user show throughline-server.service -p ControlGroup --value); for i in 1 2 3; do PIDS=$(tr '\\n' '|' < /sys/fs/cgroup${CG}/cgroup.procs | sed 's/|$//'); [ -n \"$PIDS\" ] || { echo NO_PIDS; exit 1; }; ss -tnpH | grep -E \"pid=(${PIDS}),\" | awk '{print $5}'; sleep 1; done | sort -u > /home/rpi/.local/state/absurd-record-watch/t407-destinations.txt; cat /home/rpi/.local/state/absurd-record-watch/t407-destinations.txt; for P in $(ss -tnpH | grep -E \"pid=(${PIDS}),\" | grep '127.0.0.1:19443' | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); do node /home/rpi/.local/share/absurd-sandbox/dist/env-names.mjs --pid $P; done. STEP 3 (after the turn completes): node /home/rpi/.local/share/absurd-sandbox/dist/env-names.mjs --unit throughline-server.service --user; find /home/rpi -maxdepth 3 \\( -iname '*credential*' -o -iname '*token*' -o -iname '*.key' \\) -newer /home/rpi/.config/systemd/user/throughline-server.service -print; read the Raspberry Pi broker's receipt ledger row count for the proof window through the broker's count endpoint (counts only, never bodies). STEP 4 (last): settle the probe thread and record that it is settled.",
         expect:
-          "the turn completes with the tower unreachable; every destination the responder connected to is the local broker socket or loopback 19443 of broker-provider.service, none is the tower address; the environment variable names contain no name ending in KEY, TOKEN, SECRET or PASSWORD; the find prints no new file; the broker ledger shows one request row for the turn",
+          "STEP 1: a thread id is recorded. STEP 2: the destinations file is non-empty, contains 127.0.0.1:19443, and contains no address beginning 100. and no other tailnet or public address; NO_PIDS, an empty destinations file, or no pid holding a connection to 127.0.0.1:19443 during the window is a FAILED check, never a vacuous pass; every env-names --pid run exits 0 with a SUMMARY line showing forbidden=0. STEP 3: the probe turn has completed with the reply pong while the tower was unreachable; env-names --unit exits 0 with forbidden=0; the find prints no file; the broker ledger shows exactly one request row for the window. STEP 4: the thread is settled. The receipt pastes the destinations file, every env-names name list and SUMMARY line, the find output (expected empty), the ledger count and the thread id; nothing else.",
         never:
-          "grep -r for credential-shaped values, printing environment values, reading any broker file",
+          "grep -r or any search for credential-shaped values; printing an environment value, a connection string or a broker file; a shell pipeline that filters the Environment line by text (the helper is the only parser); treating an empty socket list as a pass; using a responder order or the incident ledger; reading any file under the broker's state directory",
       },
       failing_check_first:
-        "before the work, `systemctl show broker-provider.service -p ActiveState` on the Raspberry Pi returns inactive (measured 2026-10-09) and a responder turn with the tower unreachable fails for lack of a provider route; that is the red",
+        "before the work, systemctl show broker-provider.service -p ActiveState on the Raspberry Pi returns inactive (measured 2026-10-09), and a route-probe thread's one turn with the tower rehearsal server stopped fails for lack of a provider route; that is the red (no responder exists in Phase 4)",
       rollback:
         "disable broker-provider.service on the Raspberry Pi; the login stays in broker custody or is removed by the broker's own mode",
       signatures: [
@@ -10755,7 +10803,7 @@ TASKS.push(
           id: "T4.07-red",
           kind: "first-act-red",
           command:
-            "before the work, `systemctl show broker-provider.service -p ActiveState` on the Raspberry Pi returns inactive (measured 2026-10-09) and a responder turn with the tower unreachable fails for lack of a provider route; that is the red",
+            "before the work, systemctl show broker-provider.service -p ActiveState on the Raspberry Pi returns inactive (measured 2026-10-09), and a route-probe thread's one turn with the tower rehearsal server stopped fails for lack of a provider route; that is the red (no responder exists in Phase 4)",
         },
       ],
       proof_limits: [
@@ -10771,6 +10819,79 @@ TASKS.push(
           "On the Raspberry Pi, as a thread on the Raspberry Pi's ThroughLine server, started through the local broker's throughline-wake capability; never on the Mac (lid may be closed) and never as a tower seat (a tower seat needs the record for admission, which is the thing that is down; K05 forbids durable execution without it). Model access on the Raspberry Pi must not go through the tower: the Raspberry Pi's inactive broker-provider.service is enabled with its own provider login under broker-service custody (new task T4.07, a Ryan act on the Raspberry Pi), and the responder's requests use it; the tower tunnel is never on the responder's path. Until T4.07 lands, the responder is launchable but has no model when the tower is down, and the receipt says so.",
         scope_note:
           "The Raspberry Pi stays paused for execution and device acceptance (Oct 9 ruling); Ryan's Oct 10 words put exactly two things on it: the watcher (T4.03, T4.04, T4.05 as already in 0.4.16) and the responder this delta adds. Nothing else on the Raspberry Pi is in scope.",
+        env_names_helper: {
+          decision:
+            "A source-owned, non-model helper replaces the pipeline: the absurd-sandbox record-watch payload gains a subcommand env-names that reads either `systemctl [--user] show -p Environment <unit>` output or /proc/<pid>/environ, parses every assignment, and emits variable names only, one per line, never a value, never a partial value, never the raw line. Exit 0 when no name is forbidden; exit 2 when any name is forbidden, printing the forbidden names only. Nothing else in any task may inspect an environment.",
+          helper_contract: {
+            owner:
+              "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/env-names.ts (Tier 1), shipped inside the record-watch payload through the T4.05 lane; plain TypeScript, node 22, no shell",
+            inputs: [
+              "--unit <name> [--user]: runs systemctl show -p Environment and parses the single Environment= line",
+              "--pid <n>: reads /proc/<pid>/environ as NUL-separated assignments (the helper reads bytes to find the first = in each entry and discards everything after it before any output is formed)",
+              "--fixture <file>: parses a file in systemctl Environment= format, for tests only",
+            ],
+            parse_rules: [
+              "the line is Environment= followed by assignments separated by unquoted whitespace",
+              'an assignment may be wrapped in double quotes or single quotes as a whole ("NAME=value with spaces") or carry backslash-escaped whitespace (NAME=a\\ b); quotes and escapes are honored so a value containing spaces, quotes, equals signs or newline escapes never splits into a false name',
+              "a name is the text before the first unescaped = in the assignment and must match [A-Za-z_][A-Za-z0-9_]*; an assignment with no = or an invalid name is reported as MALFORMED_ASSIGNMENT with its position, never its text",
+              "values are never buffered into any output structure; the parser drops value bytes as it passes them",
+            ],
+            forbidden_name_rule:
+              "a name is forbidden when its uppercase form contains any of KEY, TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL, PRIVATE, or ends in _PW; the list is a constant in the source; X21 binds this list, the parse rules, the output rule, the seven fixtures and the test rule byte-equal to this contract on every spec version; the T4.07 non-builder receipt takes the forbidden list from the shipped constant and must show it equal to the bound list",
+            output:
+              "names only, one per line, sorted; then a final line SUMMARY names=<n> forbidden=<k> exit=<0|2>; the helper refuses with exit 3 and prints nothing if asked to print values by any flag",
+            fixtures_in_tier_1_tests: [
+              {
+                name: "positive-plain",
+                input: "Environment=SAFE_FLAG=1 PATH=/usr/bin SECOND_FLAG=2",
+                expect_names: ["PATH", "SAFE_FLAG", "SECOND_FLAG"],
+                expect_exit: 0,
+              },
+              {
+                name: "positive-quoted-and-escaped",
+                input: "Environment=\"QUOTED=a b = c\" ESC=x\\ y 'SINGLE=p q' PLAIN=z",
+                expect_names: ["ESC", "PLAIN", "QUOTED", "SINGLE"],
+                expect_exit: 0,
+              },
+              {
+                name: "negative-forbidden-middle",
+                input: "Environment=SAFE_FLAG=1 API_TOKEN=abc SECOND_FLAG=2",
+                expect_names: ["API_TOKEN", "SAFE_FLAG", "SECOND_FLAG"],
+                expect_forbidden: ["API_TOKEN"],
+                expect_exit: 2,
+              },
+              {
+                name: "negative-forbidden-quoted",
+                input: 'Environment="DB_PASSWORD=has spaces" OK=1',
+                expect_forbidden: ["DB_PASSWORD"],
+                expect_exit: 2,
+              },
+              {
+                name: "negative-value-looks-like-name",
+                input: 'Environment=OK="API_TOKEN=notaname" FINE=1',
+                expect_names: ["FINE", "OK"],
+                expect_exit: 0,
+                note: "a forbidden word inside a value is not a name and must not be reported",
+              },
+              { name: "empty", input: "Environment=", expect_names: [], expect_exit: 0 },
+              {
+                name: "value-leak-guard",
+                input: "Environment=SECRET_KEY=leakme",
+                expect_stdout_must_not_contain: "leakme",
+                expect_exit: 2,
+              },
+            ],
+            test_rule:
+              "every fixture is a Tier 1 unit test that asserts the exact stdout bytes; the value-leak-guard fixture asserts the value string is absent from stdout and stderr; X21 asserts the contract text only and reads no payload and no environment; the T4.07 non-builder receipt runs the shipped helper against all seven fixtures and pastes the SUMMARY lines",
+          },
+        },
+        provider_route_proof: {
+          decision:
+            "T4.07 proves the provider route with a route-probe thread, not a responder. The route probe is a plain thread on the Raspberry Pi ThroughLine server, started by the non-builder through the Raspberry Pi broker's existing throughline-wake capability with the fixed order 'reply with the single word pong', carrying no responder order, no recovery authority, no ssh identity and no access to the incident ledger; it exists only for the duration of the proof. T12.08 owns the responder thread and proves, in Phase 12, that the responder uses the same route; T12.08's receipt cites T4.07's receipt as the route proof and adds the responder integration. No bootstrap of the responder happens in Phase 4.",
+          recovery_island_note:
+            "the island rule (the Raspberry Pi server admits nothing outside an open incident) is T12.08's and takes effect when T12.08 lands; in Phase 4 the Raspberry Pi server is the paused island running as today, and the route probe is the one bounded thread the T4.07 proof starts on it; the T4.07 receipt records the probe thread id and that it was settled at the end of the proof",
+          edges: "T4.07 -> T4.04, T4.05; T12.08 -> T4.03, T4.04, T4.05, T12.05; acyclic",
+        },
       },
 
       command_grammar: "IC-002",
@@ -10782,7 +10903,7 @@ TASKS.push(
         "The Raspberry Pi first responder: tier-0 ladder, responder thread on the recovery island, incident ledger, tier-2 page",
       serves: ["NG-128", "NG-131"],
       detail_state: "detailed",
-      what: "The watcher's loss handler: opens the incident, runs recover-service over the rpi-to-tower ssh identity as twr (tier 0), on failure asks the Raspberry Pi broker's throughline-wake capability to start a responder thread on the Raspberry Pi ThroughLine server bound to the responder order file (tier 1), enforces one incident per target, responder heartbeat and lease, one successor responder, flap reopen, and the tier-2 page with exactly one act; the responder's allowed and forbidden acts are the authority list in this delta; all steps are in the incident ledger and are appended to the record as events after recovery. the responder thread is admitted only on the recovery island defined by the K05 exception this task owns; the handler refuses to start a responder when no incident is open; after recovery it appends the incident's steps to the tower record as events under the responder identity and marks the incident reconciled On host-unreachable the handler skips tier 0 and tier 1, reads the reboot marker, classifies the state, and sends the item-3 page; it never starts a responder for an unreachable host.",
+      what: "The watcher's loss handler: opens the incident, runs recover-service over the rpi-to-tower ssh identity as twr (tier 0), on failure asks the Raspberry Pi broker's throughline-wake capability to start a responder thread on the Raspberry Pi ThroughLine server bound to the responder order file (tier 1), enforces one incident per target, responder heartbeat and lease, one successor responder, flap reopen, and the tier-2 page with exactly one act; the responder's allowed and forbidden acts are the authority list in this delta; all steps are in the incident ledger and are appended to the record as events after recovery. the responder thread is admitted only on the recovery island defined by the K05 exception this task owns; the handler refuses to start a responder when no incident is open; after recovery it appends the incident's steps to the tower record as events under the responder identity and marks the incident reconciled On host-unreachable the handler skips tier 0 and tier 1, reads the reboot marker, classifies the state, and sends the item-3 page; it never starts a responder for an unreachable host. The responder's model route is the one T4.07 proved with a route-probe thread; T12.08's receipt cites that receipt and adds the responder-thread integration proof; no responder exists before T12.08.",
       files: [
         {
           path: "/Users/Admin/core-root/vault/01_Projects/workbench/tools/absurd-sandbox/src/record-watch.ts",
