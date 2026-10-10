@@ -1,0 +1,919 @@
+// Structural checks on spec.json itself. Run: node check-spec.mts   (exit 1 on any FAIL)
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
+import { posix } from "node:path";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const spec = JSON.parse(readFileSync(join(HERE, "spec.json"), "utf8"));
+const { threadMessages: selectedQuoteMessages } = await import(
+  pathToFileURL(join(dirname(spec.ledger.path), "ledger-source.mts")).href
+);
+const decisionSourceFile = spec.generated_by?.source_files?.find((x: any) =>
+  x.path.endsWith("/contracts-data.mts"),
+)?.path;
+if (!decisionSourceFile) throw Error("missing authored decision-selector source binding");
+const { DECISION_SOURCES: authoredDecisionSources } = await import(
+  pathToFileURL(resolve(HERE, decisionSourceFile)).href
+);
+type Fail = string;
+const results: Array<{ id: string; title: string; fails: Fail[] }> = [];
+const check = (id: string, title: string, fn: () => Fail[]) => {
+  let fails: Fail[];
+  try {
+    fails = fn();
+  } catch (e) {
+    fails = [`threw: ${(e as Error).message}`];
+  }
+  results.push({ id, title, fails });
+};
+
+const taskIds = new Set<string>(spec.tasks.map((t: any) => t.id));
+const sliceIds = new Set<string>(spec.slices.map((s: any) => s.id));
+const preIds = new Set<string>(
+  spec.slices.filter((s: any) => s.precondition).map((s: any) => s.precondition.id),
+);
+const checkIds = new Set<string>(spec.checks.map((c: any) => c.id));
+
+check(
+  "X01",
+  "spec parses, carries the schema, a goal in Ryan's words and a bound ledger hash that matches the ledger on disk",
+  () => {
+    const f: Fail[] = [];
+    if (spec.schema !== "throughline.next-gen-spec.v1") f.push("schema");
+    if (!spec.goal?.quote) f.push("goal quote missing");
+    if (!existsSync(spec.ledger.path)) f.push(`ledger missing: ${spec.ledger.path}`);
+    else {
+      const sha = createHash("sha256").update(readFileSync(spec.ledger.path)).digest("hex");
+      if (sha !== spec.ledger.sha256)
+        f.push(
+          `ledger sha256 drifted: spec ${spec.ledger.sha256.slice(0, 12)} disk ${sha.slice(0, 12)}; rebuild`,
+        );
+    }
+    return f;
+  },
+);
+check(
+  "X02",
+  "every task is complete: id, slice, title, serves, what, done_when, executor, rollback; detailed tasks carry files, signatures and a failing check",
+  () => {
+    const f: Fail[] = [];
+    for (const t of spec.tasks) {
+      for (const k of ["id", "slice", "title", "what", "rollback"])
+        if (!t[k] || String(t[k]).trim() === "") f.push(`${t.id ?? "?"}: ${k} empty`);
+      if (!Array.isArray(t.serves) || t.serves.length === 0) f.push(`${t.id}: serves empty`);
+      if (!sliceIds.has(t.slice)) f.push(`${t.id}: slice ${t.slice} unknown`);
+      if (!t.executor?.model_preference) f.push(`${t.id}: executor`);
+      if (t.detail_state === "detailed") {
+        if (!t.files?.length) f.push(`${t.id}: detailed with no files`);
+        if (!t.signatures?.length) f.push(`${t.id}: detailed with no signatures`);
+        if (!t.failing_checks?.length) f.push(`${t.id}: detailed with no failing check`);
+        if (!t.done_when?.command) f.push(`${t.id}: detailed with no done_when command`);
+        for (const fe of t.files ?? [])
+          if (
+            ![
+              "fork-namespace",
+              "upstream-edit",
+              "config",
+              "vault",
+              "outside-tool",
+              "host-filesystem",
+            ].includes(fe.side)
+          )
+            f.push(`${t.id}: file ${fe.path} side ${fe.side}`);
+      }
+    }
+    return f;
+  },
+);
+// The combined graph: tasks, slices, preconditions and the acceptance node as one node set. A task depends on its slice's
+// prerequisite slices (every task of them) and on its own slice's precondition; a slice depends on its tasks and its prerequisite slices.
+function combinedGraph(): { deps: Map<string, string[]>; fails: Fail[] } {
+  const f: Fail[] = [];
+  const deps = new Map<string, string[]>();
+  const add = (n: string, d: string) => {
+    if (!deps.has(n)) deps.set(n, []);
+    deps.get(n)!.push(d);
+  };
+  for (const p of preIds) deps.set(p, []);
+  for (const s of spec.slices) {
+    deps.set(s.id, []);
+    for (const d of s.depends_on ?? []) {
+      if (sliceIds.has(d)) add(s.id, d);
+      else f.push(`${s.id}: depends on unknown slice ${d}`);
+    }
+    for (const t of s.tasks ?? []) add(s.id, t);
+    if (s.precondition) add(s.id, s.precondition.id);
+  }
+  for (const t of spec.tasks) {
+    if (!deps.has(t.id)) deps.set(t.id, []);
+    for (const d of t.depends_on ?? []) {
+      if (taskIds.has(d) || preIds.has(d) || sliceIds.has(d)) add(t.id, d);
+      else f.push(`${t.id}: depends on unknown ${d}`);
+    }
+    const slice = spec.slices.find((s: any) => s.id === t.slice);
+    for (const d of slice?.depends_on ?? []) add(t.id, d);
+    if (slice?.precondition) add(t.id, slice.precondition.id);
+  }
+  if (spec.acceptance) {
+    deps.set(spec.acceptance.id, []);
+    for (const k of ["tasks", "slices", "preconditions"] as const)
+      for (const d of spec.acceptance.depends_on?.[k] ?? []) add(spec.acceptance.id, d);
+  }
+  return { deps, fails: f };
+}
+function cycles(deps: Map<string, string[]>): Fail[] {
+  const f: Fail[] = [];
+  const state = new Map<string, number>();
+  const visit = (n: string, path: string[]): void => {
+    const st = state.get(n) ?? 0;
+    if (st === 1) {
+      f.push(`cycle: ${[...path, n].join(" > ")}`);
+      return;
+    }
+    if (st === 2) return;
+    state.set(n, 1);
+    for (const d of deps.get(n) ?? []) visit(d, [...path, n]);
+    state.set(n, 2);
+  };
+  for (const id of deps.keys()) visit(id, []);
+  return f;
+}
+check(
+  "X03",
+  "every dependency resolves to a task, a precondition or a slice, and the combined task-slice-precondition graph is acyclic",
+  () => {
+    const g = combinedGraph();
+    return [...g.fails, ...cycles(g.deps)];
+  },
+);
+check("X04", "every ledger id a task, slice or decision serves exists in the ledger", () => {
+  const f: Fail[] = [];
+  const ledger = JSON.parse(readFileSync(spec.ledger.path, "utf8"));
+  const ids = new Set<string>(ledger.items.map((i: any) => i.id));
+  const seen = new Set<string>();
+  for (const x of [...spec.tasks, ...spec.slices, ...spec.decisions])
+    for (const id of x.serves ?? []) {
+      if (!ids.has(id)) f.push(`${x.id}: ${id} not in ledger`);
+      seen.add(id);
+    }
+  return f;
+});
+check(
+  "X05",
+  "every check a task names exists, every check file exists on disk, and every check carries its expected state today",
+  () => {
+    const f: Fail[] = [];
+    for (const t of spec.tasks)
+      for (const c of t.failing_checks ?? [])
+        if (!checkIds.has(c)) f.push(`${t.id}: check ${c} unknown`);
+    for (const c of spec.checks) {
+      if (!existsSync(resolve(HERE, c.file))) f.push(`${c.id}: file missing ${c.file}`);
+      if (!["FAIL", "PASS"].includes(c.expected_today)) f.push(`${c.id}: expected_today`);
+    }
+    return f;
+  },
+);
+check(
+  "X06",
+  "no task file or signature names the old home inside the vault (the spec is portable to the repository)",
+  () => {
+    const f: Fail[] = [];
+    const old = spec.repository.old_home as string;
+    for (const t of spec.tasks) {
+      if (t.detail_state !== "detailed") continue;
+      for (const fe of t.files ?? [])
+        if (fe.path.startsWith(old) && !["move", "read", "run", "remove"].includes(fe.action))
+          f.push(`${t.id}: ${fe.path} edits the old home`);
+    }
+    return f;
+  },
+);
+check(
+  "X07",
+  "every decision carries a Ryan quote copied from the ledger item it names, or an explicit Fable call; quotes match the ledger bytes",
+  () => {
+    const f: Fail[] = [];
+    const ledger = JSON.parse(readFileSync(spec.ledger.path, "utf8"));
+    const byId = new Map(ledger.items.map((i: any) => [i.id, i]));
+    for (const d of spec.decisions) {
+      const expected = authoredDecisionSources[d.id];
+      if (d.source_role !== expected?.role)
+        f.push(`${d.id}: decision role differs from authored source contract`);
+      if (
+        expected?.quote_from_message &&
+        (!d.quote_selection ||
+          d.quote_selection.message_id !== expected.quote_from_message ||
+          d.quote_selection.quote !== expected.quote_text)
+      )
+        f.push(`${d.id}: authored message-specific selection missing or changed`);
+      if (!d.ryan_quote && !d.fable_call) f.push(`${d.id}: neither quote nor Fable call`);
+      if (d.ryan_quote) {
+        const item: any = byId.get(d.ryan_quote.ledger_item);
+        const q = d.ryan_quote;
+        const admitted =
+          item &&
+          (item.sources ?? []).some(
+            (s: any) =>
+              s.speaker === "ryan" &&
+              s.message_id === q.message_id &&
+              s.thread_id === q.thread_id &&
+              (!d.quote_selection || d.quote_selection.message_id === s.message_id),
+          );
+        const m = admitted
+          ? selectedQuoteMessages(q.thread_id).find((m: any) => m.messageId === q.message_id)
+          : undefined;
+        const ok =
+          admitted &&
+          m?.role === "user" &&
+          m.text.includes(q.quote) &&
+          (!d.quote_selection ||
+            (d.quote_selection.speaker === "ryan" && d.quote_selection.quote === q.quote)) &&
+          (d.quote_selection ||
+            (item.sources ?? []).some(
+              (s: any) =>
+                s.speaker === "ryan" && s.message_id === q.message_id && s.quote === q.quote,
+            ));
+        if (!ok)
+          f.push(
+            `${d.id}: quote is not byte-identical to a Ryan source of ${d.ryan_quote.ledger_item}`,
+          );
+      }
+      for (const s of d.later_sources ?? [])
+        if (
+          s.speaker !== "sender-unverified" ||
+          !(byId.get(d.ryan_quote?.ledger_item)?.sources ?? []).some(
+            (x: any) =>
+              x.speaker === s.speaker && x.message_id === s.message_id && x.quote === s.quote,
+          )
+        )
+          f.push(
+            `${d.id}: later source was promoted or does not match the recorded sender-unverified source`,
+          );
+    }
+    return f;
+  },
+);
+check(
+  "X08",
+  "the seam accounting matches the tasks: the upstream-edit count equals the distinct upstream-edit files across tasks",
+  () => {
+    const f: Fail[] = [];
+    const set = new Set<string>();
+    for (const t of spec.tasks)
+      for (const fe of t.files ?? [])
+        if (fe.side === "upstream-edit" && fe.action !== "read") set.add(fe.path);
+    if (set.size !== spec.seam.upstream_edit_count_in_spec)
+      f.push(`computed ${set.size}, spec says ${spec.seam.upstream_edit_count_in_spec}`);
+    return f;
+  },
+);
+check(
+  "X09",
+  "the first slice is detailed and every later slice depends, directly or through others, on it",
+  () => {
+    const f: Fail[] = [];
+    const first = spec.slices.find((s: any) => s.n === 1);
+    if (!first || first.state !== "detailed") f.push("slice 1 is not detailed");
+    const reach = (id: string, seen = new Set<string>()): boolean => {
+      if (id === "slice-1") return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      const s = spec.slices.find((x: any) => x.id === id);
+      return (s?.depends_on ?? []).some((d: string) => reach(d, seen));
+    };
+    for (const s of spec.slices)
+      if (s.n !== 1 && !reach(s.id)) f.push(`${s.id} does not depend on slice-1`);
+    return f;
+  },
+);
+
+check(
+  "X10",
+  "every pending Ryan decision carries its authority: a Ryan quote byte-identical to the ledger, an existing standard with its sentence, or an explicit proposal that requires nothing of Ryan",
+  () => {
+    const f: Fail[] = [];
+    const ledger = JSON.parse(readFileSync(spec.ledger.path, "utf8"));
+    const byId = new Map(ledger.items.map((i: any) => [i.id, i]));
+    for (const r of spec.ryan_decisions_pending ?? []) {
+      const a = r.authority;
+      if (!a) {
+        f.push(`${r.id}: no authority`);
+        continue;
+      }
+      if (a.kind === "ryan-quote") {
+        const item: any = byId.get(a.ledger_item);
+        if (
+          !item ||
+          !(item.sources ?? []).some((s: any) => s.speaker === "ryan" && s.quote === a.quote)
+        )
+          f.push(`${r.id}: quote not byte-identical to a Ryan source of ${a.ledger_item}`);
+      } else if (a.kind === "standard") {
+        if (!a.source || !existsSync(a.source)) f.push(`${r.id}: standard source missing`);
+        else if (!a.quote || !readFileSync(a.source, "utf8").includes(a.quote))
+          f.push(`${r.id}: the quoted sentence is not in the standard`);
+      } else if (a.kind === "proposal") {
+        if (a.ryan_required !== false)
+          f.push(`${r.id}: a proposal must state ryan_required: false`);
+      } else f.push(`${r.id}: unknown authority kind ${a.kind}`);
+    }
+    return f;
+  },
+);
+
+check(
+  "X11",
+  "K16: every ledger item has a disposition from the closed set; an implemented item carries an acceptance obligation; every external capability carries a consumption test",
+  () => {
+    const f: Fail[] = [];
+    const ledger = JSON.parse(readFileSync(spec.ledger.path, "utf8"));
+    const items = new Map<string, any>(
+      (spec.ledger_dispositions?.items ?? []).map((x: any) => [x.id, x]),
+    );
+    const kinds = new Set([
+      "implemented",
+      "inherited-constraint",
+      "external-capability",
+      "deferred-exploration",
+      "superseded",
+    ]);
+    for (const i of ledger.items) {
+      const d = items.get(i.id);
+      if (!d) {
+        f.push(`${i.id}: no disposition`);
+        continue;
+      }
+      if (!kinds.has(d.kind)) f.push(`${i.id}: kind ${d.kind}`);
+      if (d.kind === "implemented" && (!d.by?.length || !d.acceptance))
+        f.push(`${i.id}: implemented with no owner or no acceptance`);
+      if (d.kind === "external-capability" && !d.consumption_test)
+        f.push(`${i.id}: external capability with no consumption test`);
+      if (d.kind === "superseded" && !d.by?.length) f.push(`${i.id}: superseded with no authority`);
+    }
+    return f;
+  },
+);
+check(
+  "X12",
+  "every audit item (F01-F13, A01-A18, J2, the overlapping IA items) has one disposition from the closed set, and every id it names exists",
+  () => {
+    const f: Fail[] = [];
+    const ids = new Set<string>([
+      ...taskIds,
+      ...sliceIds,
+      ...preIds,
+      ...checkIds,
+      ...spec.decisions.map((d: any) => d.id),
+      ...(spec.contracts ?? []).map((k: any) => k.id),
+      ...(spec.ryan_decisions_pending ?? []).map((r: any) => r.id),
+      "ACCEPTANCE",
+      "DEVICE_MATRIX",
+      "P0",
+      "test-check-spec.mts",
+      ...(spec.contracts ? ["X03", "X11", "X12", "X13", "X14", "X15", "X16"] : []),
+    ]);
+    const required = [
+      ...Array.from({ length: 13 }, (_, i) => `F${String(i + 1).padStart(2, "0")}`),
+      ...Array.from({ length: 18 }, (_, i) => `A${String(i + 1).padStart(2, "0")}`),
+      "J2",
+      "IA-02",
+      "IA-03",
+      "IA-04",
+      "IA-05",
+      "IA-06",
+      "IA-09",
+    ];
+    const items = new Map<string, any>(
+      (spec.audit_dispositions?.items ?? []).map((x: any) => [x.id, x]),
+    );
+    const disp = new Set([
+      "already-resolved",
+      "consequential-choice",
+      "bounded-repair",
+      "evidence-needed",
+    ]);
+    for (const id of required) if (!items.has(id)) f.push(`${id}: no disposition`);
+    for (const x of items.values()) {
+      if (!disp.has(x.disposition)) f.push(`${x.id}: disposition ${x.disposition}`);
+      if (!x.current_state) f.push(`${x.id}: no current_state`);
+      if (!x.answered_by?.length) f.push(`${x.id}: answered_by empty`);
+      for (const a of x.answered_by ?? []) if (!ids.has(a)) f.push(`${x.id}: names unknown ${a}`);
+      if (x.disposition === "bounded-repair" && !x.opus_repair)
+        f.push(`${x.id}: bounded-repair with no repair text`);
+      if (x.disposition === "evidence-needed" && !x.evidence_test)
+        f.push(`${x.id}: evidence-needed with no test`);
+    }
+    return f;
+  },
+);
+check(
+  "X13",
+  "closed enums and unique ids: task detail_state, check kind and expected_today, disposition kinds, decision source roles; no id used twice across tasks, slices, checks, decisions, contracts, pending decisions",
+  () => {
+    const f: Fail[] = [];
+    const seen = new Map<string, string>();
+    const uniq = (id: string, where: string) => {
+      if (seen.has(id)) f.push(`id ${id} used by ${seen.get(id)} and ${where}`);
+      else seen.set(id, where);
+    };
+    for (const t of spec.tasks) {
+      uniq(t.id, "tasks");
+      if (!["detailed", "outline"].includes(t.detail_state))
+        f.push(`${t.id}: detail_state ${t.detail_state}`);
+      if (
+        (t.files ?? []).some(
+          (x: any) => !["add", "edit", "move", "remove", "read", "run"].includes(x.action),
+        )
+      )
+        f.push(`${t.id}: file action outside the closed set`);
+    }
+    for (const s of spec.slices) {
+      uniq(s.id, "slices");
+      if (!["detailed", "outline"].includes(s.state)) f.push(`${s.id}: state ${s.state}`);
+    }
+    for (const c of spec.checks) {
+      uniq(c.id, "checks");
+      if (!["real-disk", "unit", "structural", "guard"].includes(c.kind))
+        f.push(`${c.id}: kind ${c.kind}`);
+    }
+    for (const d of spec.decisions) {
+      uniq(d.id, "decisions");
+      if (
+        !["requirement", "adopted-proposal", "approving-context", "fable-mechanism"].includes(
+          d.source_role,
+        )
+      )
+        f.push(`${d.id}: source_role ${d.source_role}`);
+      if (d.source_role === "approving-context" && !d.reselect_quote_from?.length)
+        f.push(`${d.id}: approving-context with no reselect source`);
+    }
+    for (const k of spec.contracts ?? []) {
+      uniq(k.id, "contracts");
+      if (!k.statement || !k.tests?.length || !k.answers?.length)
+        f.push(`${k.id}: incomplete contract`);
+      for (const s of k.binds_slices ?? [])
+        if (!sliceIds.has(s)) f.push(`${k.id}: binds unknown slice ${s}`);
+    }
+    for (const r of spec.ryan_decisions_pending ?? []) uniq(r.id, "pending");
+    if (spec.acceptance) uniq(spec.acceptance.id, "acceptance");
+    return f;
+  },
+);
+check(
+  "X14",
+  "K10: the acceptance node depends on every task, every slice, every precondition and every required device cell, and the combined graph with it is acyclic",
+  () => {
+    const f: Fail[] = [];
+    if (!spec.acceptance) return ["no acceptance node"];
+    const dep = spec.acceptance.depends_on ?? {};
+    for (const t of taskIds)
+      if (!(dep.tasks ?? []).includes(t)) f.push(`acceptance misses task ${t}`);
+    for (const s of sliceIds)
+      if (!(dep.slices ?? []).includes(s)) f.push(`acceptance misses slice ${s}`);
+    for (const p of preIds)
+      if (!(dep.preconditions ?? []).includes(p)) f.push(`acceptance misses precondition ${p}`);
+    const required = (spec.device_matrix?.rows ?? []).flatMap((r: any) =>
+      r.cells
+        .filter((c: any) => c.state === "required")
+        .map((c: any) => `${r.key ?? r.capability.split(":")[0]}@${c.device}`),
+    );
+    for (const c of required)
+      if (!(dep.device_cells ?? []).includes(c)) f.push(`acceptance misses device cell ${c}`);
+    for (const r of spec.device_matrix?.rows ?? [])
+      for (const c of r.cells) {
+        if (c.state === "required" && (!c.owner || !taskIds.has(c.owner) || !c.test))
+          f.push(
+            `matrix ${r.capability.split(":")[0]}@${c.device}: required cell without an existing owner task or a test`,
+          );
+        if (c.state === "not-applicable" && !c.reason)
+          f.push(
+            `matrix ${r.capability.split(":")[0]}@${c.device}: not-applicable without a reason`,
+          );
+      }
+    const g = combinedGraph();
+    f.push(...cycles(g.deps));
+    return f;
+  },
+);
+check(
+  "X15",
+  "the edited-upstream count does not rise against the admitted baseline in Seam-Baseline.json",
+  () => {
+    const p = join(HERE, "Seam-Baseline.json");
+    if (!existsSync(p)) return ["Seam-Baseline.json missing"];
+    const b = JSON.parse(readFileSync(p, "utf8"));
+    const n = spec.seam?.upstream_edit_count_in_spec ?? NaN;
+    return Number.isFinite(n) && n <= b.admitted_upstream_edit_count
+      ? []
+      : [`spec names ${n} upstream files; admitted baseline is ${b.admitted_upstream_edit_count}`];
+  },
+);
+check(
+  "X16",
+  "the rendered map is bound to this generation: Spec-Map.html carries the sha256 of spec.json and build inputs have not changed since the build",
+  () => {
+    const f: Fail[] = [];
+    const html = join(HERE, "Spec-Map.html");
+    if (!existsSync(html)) return ["Spec-Map.html missing"];
+    const want = createHash("sha256")
+      .update(readFileSync(join(HERE, "spec.json")))
+      .digest("hex");
+    const m = /name="spec-sha256"\s+content="([0-9a-f]{64})"/.exec(readFileSync(html, "utf8"));
+    if (!m) f.push("Spec-Map.html carries no spec-sha256 meta");
+    else if (m[1] !== want)
+      f.push(
+        `Spec-Map.html was rendered from ${m[1].slice(0, 12)}, spec.json is ${want.slice(0, 12)}: re-render`,
+      );
+    for (const s of spec.generated_by?.source_files ?? []) {
+      const path = resolve(HERE, s.path);
+      if (!existsSync(path)) {
+        f.push(`source missing ${s.path}`);
+        continue;
+      }
+      const now = createHash("sha256").update(readFileSync(path)).digest("hex");
+      if (now !== s.sha256) f.push(`${s.path.split("/").pop()} changed since the build: rebuild`);
+    }
+    return f;
+  },
+);
+
+check(
+  "X17",
+  "task edit surfaces are authoring sources; own labelled build outputs and runtime verification are distinct",
+  () => {
+    const f: Fail[] = [];
+    const mutates = new Set(["add", "edit", "move", "remove"]);
+    const normalize = (p: string) =>
+      posix.normalize(p.startsWith("~/") ? `${homedir()}/${p.slice(2)}` : p);
+    const inside = (p: string, root: string) => p === root || p.startsWith(`${root}/`);
+    const deployed = (p: string) =>
+      inside(p, "/Users/Admin/core-root/src") ||
+      inside(p, "/Applications") ||
+      /^\/(?:Users|home)\/[^/]+\/\.(?:codex|claude|agents|cowork|t3)(?:\/|$)/.test(p) ||
+      /^\/(?:Users|home)\/[^/]+\/\.local\/share\/(?:throughline|t3code)(?:\/|$)/.test(p) ||
+      /^\/(?:opt|usr\/lib|srv\/agents-runtime-state)\/(?:throughline|t3code)(?:\/|$)/.test(p);
+    for (const t of spec.tasks)
+      for (const fe of t.files ?? []) {
+        const p = normalize(fe.path);
+        if (deployed(p) && mutates.has(fe.action))
+          f.push(`${t.id}: deployed runtime ${fe.path} cannot be an edit target`);
+        if (
+          fe.surface &&
+          !["authoring", "build-output", "verification", "deployment"].includes(fe.surface)
+        )
+          f.push(`${t.id}: unknown surface ${fe.surface}`);
+        if (fe.surface === "verification" && mutates.has(fe.action))
+          f.push(`${t.id}: verification target ${fe.path} is mutated`);
+        if (deployed(p) && fe.surface && fe.surface !== "verification")
+          f.push(
+            `${t.id}: deployed runtime ${fe.path} is labelled ${fe.surface}, not verification`,
+          );
+        if (fe.surface === "build-output") {
+          const owner = fe.owning_component && normalize(fe.owning_component);
+          const authoringOwner =
+            owner &&
+            (inside(owner, "/Users/Admin/core-root/vault/01_Projects/workbench") ||
+              owner === spec.repository.home);
+          const output = p.startsWith("/") ? p : normalize(`${spec.repository.home}/${p}`);
+          if (!authoringOwner || !inside(output, owner))
+            f.push(
+              `${t.id}: build output ${fe.path} is not inside its declared authoring component`,
+            );
+        }
+        if (fe.surface === "deployment" && (!fe.delivery_path || !fe.owning_component))
+          f.push(`${t.id}: deployment ${fe.path} lacks an owning delivery contract`);
+      }
+    return f;
+  },
+);
+check(
+  "X18",
+  "task executors resolve to the live seat roster; T4.03 uses the live Codex workhorse model and effort",
+  () => {
+    const r = spawnSync("ryan", ["model", "list", "--json"], { encoding: "utf8", timeout: 30000 });
+    if (r.status !== 0)
+      return [`live model policy did not resolve: ${r.error?.message ?? r.stderr.trim()}`];
+    const live = JSON.parse(r.stdout).result;
+    if (!live?.models?.length || !live?.policy?.task_roles?.length)
+      return ["live model roster or task-role policy is empty"];
+    const roster = new Map<string, any>(
+      live.models
+        .filter((m: any) => m.status === "current" && m.seat_launch === true)
+        .map((m: any) => [m.id, m]),
+    );
+    const f: Fail[] = [];
+    for (const t of spec.tasks)
+      for (const [label, e] of [
+        ["executor", t.executor],
+        ["reviewer", t.reviewer],
+      ] as const) {
+        if (!e) continue;
+        if (!["manager", "implementer", "implementer-light", "reviewer", "judge"].includes(e.role))
+          f.push(`${t.id}: ${label} role ${e.role} outside roster contract`);
+        const model = roster.get(e.model_preference);
+        if (!model) {
+          f.push(`${t.id}: ${label} model ${e.model_preference} outside live roster`);
+          continue;
+        }
+        const roles = live.policy.task_roles.filter((p: any) => p.model === model.id);
+        if (!roles.some((p: any) => (p.allowed_efforts ?? [p.effort]).includes(e.effort)))
+          f.push(`${t.id}: ${label} effort ${e.effort} not admitted for ${model.id}`);
+      }
+    const workhorse = live.policy.task_roles.find(
+      (p: any) => p.name === live.policy.defaults.codex_workhorse,
+    );
+    const task = spec.tasks.find((t: any) => t.id === "T4.03");
+    if (
+      task &&
+      (!workhorse ||
+        task.executor.role !== "implementer" ||
+        task.executor.model_preference !== workhorse.model ||
+        task.executor.effort !== workhorse.effort)
+    )
+      f.push("T4.03 does not match the live Codex workhorse");
+    return f;
+  },
+);
+
+check(
+  "X19",
+  "watch-before-retirement binds the read-back unit and independent observer; unresolved delivery/grant prerequisites cannot disappear",
+  () => {
+    const f: Fail[] = [];
+    const t = spec.tasks.find((t: any) => t.id === "T4.03");
+    const cutover = spec.tasks.find((t: any) => t.id === "T4.02");
+    if (!t) return ["T4.03 missing"];
+    if (!(cutover?.depends_on ?? []).includes(t.id)) f.push("T4.02 does not require T4.03");
+    if ((t.depends_on ?? []).some((id: string) => /^T(?:6|12)\./.test(id)))
+      f.push("T4.03 cannot depend on a later launcher/fleet slice");
+    const b = t.service_binding;
+    if (
+      !b ||
+      b.host !== "twr" ||
+      b.owner !== "twr" ||
+      b.scope !== "user" ||
+      b.unit !== "absurd-pg.service" ||
+      b.fragment !== "/home/twr/.config/systemd/user/absurd-pg.service"
+    )
+      f.push("T4.03 does not bind the actual twr-owned user unit");
+    if (!b?.readback_source || !existsSync(b.readback_source) || !b.configuration_at_intake)
+      f.push("unit readback source or intake probe missing");
+    if (
+      t.observer?.host !== "rpi" ||
+      t.observer?.owner !== "rpi" ||
+      !t.observer?.availability ||
+      !t.observer?.status_path ||
+      !t.observer?.independent_delivery ||
+      !t.observer?.acceptance
+    )
+      f.push("independent laptop-closed observer contract missing");
+    for (const id of ["rpi-user-unit-delivery", "rpi-independent-notification"]) {
+      const p = (t.acceptance_prerequisites ?? []).find((p: any) => p.id === id);
+      if (!p || p.status !== "required" || !p.owner || !p.first_action || !p.test)
+        f.push(`T4.03 prerequisite ${id} is not a required owned contract`);
+    }
+    if (!(t.governing_shapes ?? []).length) f.push("T4.03 governing shapes missing");
+    for (const p of t.governing_shapes ?? [])
+      if (!existsSync(p)) f.push(`governing shape missing: ${p}`);
+    return f;
+  },
+);
+
+// Bounded design-declaration check only: no release/device/runtime action is executed.
+check(
+  "X20",
+  "T13.04 binds the owned acceptance declaration and immutable required target identities",
+  () => {
+    const f: Fail[] = [],
+      t = spec.tasks.find((x: any) => x.id === "T13.04");
+    if (!t) return ["T13.04 missing"];
+    const command = "ryan throughline ship <release> --retry-step five-device-acceptance --json";
+    if (t.done_when?.command !== command)
+      f.push("original generic row-tests placeholder or wrong owned invocation");
+    const a = t.acceptance_interface;
+    if (!a) return [...f, "owned acceptance interface missing"];
+    const owner = "/Users/Admin/core-root/vault/01_Projects/workbench/tools/throughline-ship";
+    for (const [key, want] of Object.entries({
+      id: "I-07/FiveDeviceReleaseAcceptance",
+      owner: "throughline-ship",
+      adapter: "five-device-acceptance",
+      input_schema: "throughline.five-device-acceptance-input.v1",
+      result_schema: "throughline.five-device-release-acceptance.v1",
+      receipt: "{evidence}/T13.04/five-device-acceptance.attempt-{attempt}.json",
+      runtime_state: "proposed-not-implemented",
+      source_module: owner + "/src/five-device-acceptance.ts",
+      compiled_module:
+        "/Users/Admin/core-root/src/tools/throughline-ship/dist/five-device-acceptance.js",
+    }))
+      if (a[key] !== want) f.push("acceptance declaration mismatch: " + key);
+    if (
+      a.function_signature !==
+      "export async function fiveDeviceAcceptance(context: OwnedAcceptanceContext, input: FiveDeviceAcceptanceInput, probes: FiveDeviceAcceptanceProbes): Promise<FiveDeviceAcceptanceResult>"
+    )
+      f.push("exact typed owning function signature missing");
+    if (
+      JSON.stringify(a.invocation_argv) !==
+      JSON.stringify([
+        "ryan",
+        "throughline",
+        "ship",
+        "<release>",
+        "--retry-step",
+        "five-device-acceptance",
+        "--json",
+      ])
+    )
+      f.push("owning argv mismatch");
+    if (
+      !(t.interfaces?.consumes ?? []).includes("I-07") ||
+      !t.files?.some(
+        (x: any) => x.path === a.source_module && x.action === "add" && x.side === "outside-tool",
+      )
+    )
+      f.push("I-07/source ownership declaration missing");
+    const b = a.required_targets_binding;
+    const sourceRoot = dirname(dirname(dirname(spec.ledger.path)));
+    const expectedSnapshot = join(
+      sourceRoot,
+      "execution",
+      "phase-02",
+      "packets",
+      "Acceptance-Correction-Before-spec.json",
+    );
+    if (!b || b.source_snapshot?.path !== expectedSnapshot || !existsSync(expectedSnapshot))
+      return [...f, "immutable target snapshot binding missing"];
+    const bytes = readFileSync(expectedSnapshot),
+      digest = createHash("sha256").update(bytes).digest("hex");
+    if (b.source_snapshot.sha256 !== digest)
+      return [...f, "immutable target snapshot digest mismatch"];
+    const snapshot = JSON.parse(bytes.toString("utf8")),
+      row = snapshot.device_matrix.rows.find((x: any) => x.key === "version");
+    if (!row) return [...f, "admitted version contract missing"];
+    const rowDigest = createHash("sha256").update(JSON.stringify(row)).digest("hex");
+    if (b.version_row?.sha256 !== rowDigest) f.push("stable version-row digest mismatch");
+    const expected: string[] = row.cells
+      .filter((x: any) => x.state === "required")
+      .map((x: any) => x.device);
+    if (
+      !expected.length ||
+      new Set(expected).size !== expected.length ||
+      expected.some((x) => !Object.keys(snapshot.device_matrix.roles).includes(x))
+    )
+      return [...f, "invalid admitted target identities"];
+    const sameIds = (got: unknown) =>
+      Array.isArray(got) &&
+      got.every((x) => typeof x === "string") &&
+      new Set(got).size === got.length &&
+      JSON.stringify([...got].sort()) === JSON.stringify([...expected].sort());
+    if (!sameIds(a.required_targets) || !sameIds(b.version_row.target_ids))
+      f.push("incomplete/duplicate/mismatched required target coverage");
+    if (
+      !Array.isArray(t.device_cells) ||
+      t.device_cells.some((x: any) => typeof x !== "string" || !x.startsWith("version@")) ||
+      !sameIds(t.device_cells.map((x: string) => x.slice("version@".length)))
+    )
+      f.push("device-cell identities do not equal admitted contract");
+    const currentRow = spec.device_matrix.rows.find((x: any) => x.key === "version");
+    if (
+      !currentRow ||
+      createHash("sha256").update(JSON.stringify(currentRow)).digest("hex") !== rowDigest
+    )
+      f.push("current version contract drift from preserved source");
+    const bindings = a.target_bindings;
+    if (
+      !Array.isArray(bindings) ||
+      !sameIds(bindings.map((x: any) => x.target)) ||
+      bindings.some((x: any) => x.readback_target !== x.target || x.screenshot_target !== x.target)
+    )
+      f.push("mismatched installed-readback/screenshot target declaration");
+    const actor = a.actor_binding,
+      exclusions = ["build", "install", "proof-author", "verified-current-build-ship-caller"];
+    if (
+      !actor ||
+      actor.authority !== "I-07 and identity ownership, not caller labels" ||
+      JSON.stringify([...(actor.excluded_actual_actor_classes ?? [])].sort()) !==
+        JSON.stringify(exclusions.sort()) ||
+      actor.exclude_invocation_alone !== false ||
+      actor.read_only_verifier_allowed_only_if_not_excluded !== true
+    )
+      f.push("actual actor exclusions/current build-ship caller/read-only distinction invalid");
+    const protectedSteps = ["testflight-readback", "tower-cold-turn", "rpi-cold-turn"],
+      p = a.protected_readbacks;
+    if (
+      !p ||
+      JSON.stringify([...(p.step_ids ?? [])].sort()) !== JSON.stringify(protectedSteps.sort()) ||
+      p.require_run_source_install_effects !== true ||
+      p.helper_metadata_alone_proves_installed_commit !== false
+    )
+      f.push("protected legacy readbacks lack effective source/install bindings");
+    const retained = (t.planned_checks ?? []).find((x: any) => x.id === "T13.04-protect");
+    if (!retained || !protectedSteps.every((id) => retained.command?.includes(id)))
+      f.push("protected helper declarations dropped");
+    const outcomes = a.outcome_mapping;
+    if (
+      !outcomes ||
+      outcomes.passed !== "passed" ||
+      outcomes.waiting !== "waiting" ||
+      outcomes.failed !== "failed" ||
+      outcomes.non_pass_behavior !== "existing runner/PIPELINE_STEP_NOT_PASSED" ||
+      outcomes.adds_runner_state !== false
+    )
+      f.push("waiting/failed mapping adds state or permits pass");
+    if (
+      spec.acceptance?.id !== "ACCEPT-ALL" ||
+      !t.what?.includes("ACCEPT-ALL") ||
+      !t.signatures?.some((x: string) => x.includes("slice release never grants ACCEPT-ALL"))
+    )
+      f.push("slice-release/whole-design distinction missing");
+    if (
+      a.android_proof_modes?.full_release !==
+        "requires both obligations; no Android omission or trace-as-screen substitution" ||
+      JSON.stringify(t.proof_limits) !==
+        JSON.stringify(snapshot.tasks.find((x: any) => x.id === "T13.04").proof_limits)
+    )
+      f.push("Android/current proof limits weakened");
+    // 0.4.0: the executable contract itself, so a nonempty but generic declaration cannot pass (finding T13.04-EXECUTABLE-ACCEPTANCE-BINDING)
+    const step = a.pipeline_step;
+    if (
+      !step ||
+      step.id !== "five-device-acceptance" ||
+      step.second_pipeline !== false ||
+      !step.file?.endsWith("/Ship-Pipeline.json") ||
+      !step.k12_fields?.retry_class ||
+      !step.k12_fields?.lease
+    )
+      f.push("acceptance step is not bound into the existing pipeline step contract");
+    if (
+      a.candidate_identity?.source !== "{evidence}/source-commit.json" ||
+      a.candidate_identity?.refuse_before_probing !== "CANDIDATE_IDENTITY_INCONSISTENT"
+    )
+      f.push("expected candidate identity source missing");
+    const reads = a.per_target_readback;
+    if (!Array.isArray(reads) || !sameIds(reads.map((x: any) => x.target)))
+      f.push("per-target readback does not cover exactly the admitted targets");
+    else
+      for (const r of reads) {
+        if (
+          !r.method ||
+          !r.command ||
+          !r.run_on ||
+          !r.readback_receipt?.includes(`readback-${r.target}`)
+        )
+          f.push(`readback method incomplete for ${r.target}`);
+        if (!(r.fields ?? []).includes("release") || !(r.fields ?? []).includes("commit"))
+          f.push(`readback for ${r.target} does not report both release and commit`);
+        if (!r.screenshot?.path?.endsWith(`version-${r.target}.png`) || !r.screenshot?.how)
+          f.push(`screenshot evidence missing for ${r.target}`);
+      }
+    if (reads?.find?.((x: any) => x.target === "android")?.screenshot?.prerequisite === undefined)
+      f.push("Android physical-screen prerequisite dropped");
+    const codes = (a.refusals ?? []).map((x: any) => x.code);
+    for (const need of [
+      "CANDIDATE_IDENTITY_INCONSISTENT",
+      "TARGET_RELEASE_MISMATCH:<target>",
+      "TARGET_COMMIT_MISMATCH:<target>",
+      "TARGET_READBACK_MISSING:<target>",
+      "TARGET_SCREENSHOT_MISSING:<target>",
+      "ANDROID_SCREEN_PROOF_WAITING",
+      "STALE_PROOF:<target>",
+      "PROTECTED_READBACK_NOT_PASSED:<step>",
+    ])
+      if (!codes.includes(need)) f.push(`refusal code missing: ${need}`);
+    if (
+      (a.refusals ?? []).some((x: any) => x.outcome === "passed") ||
+      (a.refusals ?? []).find((x: any) => x.code === "ANDROID_SCREEN_PROOF_WAITING")?.outcome !==
+        "waiting"
+    )
+      f.push(
+        "a refusal maps to pass, or the Android screen wait is not the existing waiting outcome",
+      );
+    if (!/whole 40-character string/.test(a.comparison?.commit ?? ""))
+      f.push("commit comparison is not a whole-string match");
+    for (const id of [
+      "T13.04-neg-commit",
+      "T13.04-neg-missing",
+      "T13.04-neg-android-screen",
+      "T13.04-neg-stale",
+    ])
+      if (!(t.planned_checks ?? []).some((x: any) => x.id === id))
+        f.push(`negative fixture missing: ${id}`);
+    return f;
+  },
+);
+
+let green = 0;
+for (const r of results) {
+  if (r.fails.length === 0) {
+    green++;
+    console.log(`PASS  ${r.id} ${r.title}`);
+  } else {
+    console.log(`FAIL  ${r.id} ${r.title}  (${r.fails.length})`);
+    for (const x of r.fails.slice(0, 12)) console.log(`        - ${x}`);
+    if (r.fails.length > 12) console.log(`        - … ${r.fails.length - 12} more`);
+  }
+}
+console.log(`\n${green} of ${results.length} checks green`);
+process.exit(green === results.length ? 0 : 1);

@@ -1,0 +1,12 @@
+{
+  "schema": "throughline.next-gen-spec.seam-baseline.v1",
+  "admitted_upstream_edit_count": 20,
+  "admitted_at": "2026-10-08T10:20:00Z",
+  "admitted_by": "fable-throughline-design, session 03e03b3e-0e2e-4706-a992-4444e0026b17, on spec 0.2.0 (the count it named)",
+  "rule": "the count of distinct upstream-edit files the spec names may only fall; slice 2's seam manifest, bound to pinned SHAs and the real diff (K11), replaces this file as the baseline when it exists",
+  "measured_reality": {
+    "fork_edited_stock_files": 210,
+    "merge_base_date": "2026-09-27",
+    "note": "the real fork edits measured by git on Oct 7, 2026; the spec's own count is a different, smaller number and never stands for it"
+  }
+}
