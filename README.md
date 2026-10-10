@@ -1,3 +1,5 @@
+<!-- throughline: fork-owned block --> **ThroughLine** holds Ryan's fork of T3 Code and everything built on it: the apps, the server, the fork-owned packages and the design documents under docs/throughline; it does not hold release builds (they live in the release worktrees' release/ folders), records of runs (they live in the vault component's _meta folder) or the vault. <!-- end fork-owned block -->
+
 # T3 Code
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
