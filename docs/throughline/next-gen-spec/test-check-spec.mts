@@ -462,7 +462,7 @@ for (const c of cases) {
       join(dir, "Spec-Map.html"),
       readFileSync(join(dir, "Spec-Map.html"), "utf8").replace(
         /name="spec-sha256"\s+content="[0-9a-f]{64}"/,
-        `name="spec-sha256"\s+content="${h}"`,
+        `name="spec-sha256" content="${h}"`,
       ),
     );
   }
