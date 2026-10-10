@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off globalDate:off - This synchronous repository CLI emits its machine contract before workspace installation or an Effect runtime.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -12,7 +13,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   bindRepository,
   git,
@@ -27,6 +28,7 @@ import {
   type SeamClass,
   type ForkFile,
 } from "./seam/classify.ts";
+import { historicalMountLines, mountLineViolations } from "./seam/mount-lines.ts";
 
 const FILE = "throughline-seam.json";
 const LEGACY =
@@ -44,6 +46,8 @@ type Counts = {
 type Admission = {
   upstream_edit_count: number;
   fork_added_count: number;
+  uncovered_fork_path_count: number;
+  fork_sha: string;
   admitted_at: string;
   admitted_by: string;
 };
@@ -78,6 +82,10 @@ export interface SeamEntry {
   commits: string[];
   capability?: string;
   legacy_rules: LegacyRule[];
+  relocation?: "planned" | "kept";
+  relocation_reason?: string;
+  mount_lines?: number;
+  mount_measurement?: string;
 }
 export interface SeamManifest {
   schema: "throughline.seam-manifest.v1";
@@ -178,6 +186,12 @@ function generate(root: string, head: string, old?: SeamManifest): SeamManifest 
   const upstream = old?.upstream.sha ?? git(root, "rev-parse", "upstream/main").trim();
   const mergeBase = git(root, "merge-base", head, upstream).trim();
   const files = classifyFork(root, mergeBase, head);
+  const mounts = historicalMountLines(
+    root,
+    mergeBase,
+    head,
+    [...files].filter(([, file]) => file.cls === "upstream-edit").map(([path]) => path),
+  );
   const inputs = migration(root, old);
   const previous = new Map((old?.entries ?? []).map((entry) => [entry.path, entry]));
   const entries = [...files]
@@ -232,6 +246,19 @@ function generate(root: string, head: string, old?: SeamManifest): SeamManifest 
         commits: file.commits,
         ...(protectedBy[0] ? { capability: protectedBy[0].name } : {}),
         legacy_rules: rules,
+        ...(file.cls === "upstream-edit" ? mounts.get(path) : {}),
+        ...(file.cls === "fork-added"
+          ? {
+              relocation:
+                saved?.relocation ??
+                (path === FILE || path.startsWith("scripts/throughline/") ? "kept" : "planned"),
+              relocation_reason:
+                saved?.relocation_reason ??
+                (path === FILE || path.startsWith("scripts/throughline/")
+                  ? "Repository-level seam contract/control script explicitly placed here by T2.01/T2.02."
+                  : "Candidate for namespace relocation at a later merge; verify consumer/tooling paths first. No file move performed by T2.02."),
+            }
+          : {}),
       };
     });
   const forkPaths = new Set(
@@ -281,8 +308,12 @@ function generate(root: string, head: string, old?: SeamManifest): SeamManifest 
 
 function historyFloor(
   root: string,
-): Pick<Admission, "upstream_edit_count" | "fork_added_count"> | undefined {
-  let floor: Pick<Admission, "upstream_edit_count" | "fork_added_count"> | undefined;
+):
+  | Pick<Admission, "upstream_edit_count" | "fork_added_count" | "uncovered_fork_path_count">
+  | undefined {
+  let floor:
+    | Pick<Admission, "upstream_edit_count" | "fork_added_count" | "uncovered_fork_path_count">
+    | undefined;
   for (const sha of git(root, "log", "--format=%H", "HEAD", "--", FILE)
     .trim()
     .split("\n")
@@ -290,9 +321,11 @@ function historyFloor(
     const past = JSON.parse(git(root, "show", `${sha}:${FILE}`)) as SeamManifest;
     if (!past.admitted) continue;
     if (
-      ![past.admitted.upstream_edit_count, past.admitted.fork_added_count].every(
-        (value) => Number.isInteger(value) && value >= 0,
-      )
+      ![
+        past.admitted.upstream_edit_count,
+        past.admitted.fork_added_count,
+        past.admitted.uncovered_fork_path_count,
+      ].every((value) => Number.isInteger(value) && value >= 0)
     )
       throw Error(`INVALID_COMMITTED_ADMISSION: ${sha}`);
     floor = {
@@ -304,9 +337,46 @@ function historyFloor(
         floor?.fork_added_count ?? Infinity,
         past.admitted.fork_added_count,
       ),
+      uncovered_fork_path_count: Math.min(
+        floor?.uncovered_fork_path_count ?? Infinity,
+        past.admitted.uncovered_fork_path_count,
+      ),
     };
   }
   return floor;
+}
+
+function coverageInputs(root: string, manifest: SeamManifest): CapabilityInput[] {
+  const folder = join(root, "docs/throughline/capabilities");
+  if (!existsSync(folder)) return manifest.migration.capabilities;
+  return readdirSync(folder, { withFileTypes: true })
+    .filter((item) => item.isDirectory())
+    .flatMap((item) => {
+      const file = join(folder, item.name, "Capability.json");
+      if (!existsSync(file)) return [];
+      const value = read<CapabilityInput>(file);
+      if (!Array.isArray(value.paths) || value.paths.some((path) => !validPath(path)))
+        throw Error(`INVALID_COVERAGE_CAPABILITY: ${file}`);
+      return [value];
+    });
+}
+
+function uncoveredPaths(root: string, manifest: SeamManifest): string[] {
+  const covered = new Set(coverageInputs(root, manifest).flatMap((capability) => capability.paths));
+  return [
+    ...new Set(manifest.entries.map((entry) => entry.path).filter((path) => !covered.has(path))),
+  ].sort();
+}
+
+function firstAdmissionSha(root: string): string | undefined {
+  for (const commit of git(root, "log", "--reverse", "--format=%H", "HEAD", "--", FILE)
+    .trim()
+    .split("\n")
+    .filter(Boolean)) {
+    const past = JSON.parse(git(root, "show", `${commit}:${FILE}`)) as SeamManifest;
+    if (past.admitted) return past.admitted.fork_sha ?? past.fork.sha;
+  }
+  return undefined;
 }
 
 function admissionViolations(root: string, manifest: SeamManifest): string[] {
@@ -315,12 +385,18 @@ function admissionViolations(root: string, manifest: SeamManifest): string[] {
     !admitted ||
     !text(admitted.admitted_at) ||
     !text(admitted.admitted_by) ||
-    ![admitted.upstream_edit_count, admitted.fork_added_count].every(
-      (value) => Number.isInteger(value) && value >= 0,
-    )
+    ![
+      admitted.upstream_edit_count,
+      admitted.fork_added_count,
+      admitted.uncovered_fork_path_count,
+    ].every((value) => Number.isInteger(value) && value >= 0)
   )
     return [`NOT_ADMITTED: ${FILE}`];
   const violations: string[] = [];
+  if (!SHA.test(admitted.fork_sha ?? "")) violations.push("ADMITTED_FORK_SHA_MISSING");
+  const frozen = firstAdmissionSha(root);
+  if (frozen && frozen !== admitted.fork_sha)
+    violations.push(`ADMITTED_FORK_SHA_CHANGED: ${admitted.fork_sha} != first ${frozen}`);
   if (
     manifest.counts.upstream_edit + manifest.counts.upstream_removed >
     admitted.upstream_edit_count
@@ -332,9 +408,18 @@ function admissionViolations(root: string, manifest: SeamManifest): string[] {
     violations.push(
       `COUNT_EXCEEDS_ADMISSION: fork_added_count ${manifest.counts.fork_added} > ${admitted.fork_added_count}`,
     );
+  const uncovered = uncoveredPaths(root, manifest).length;
+  if (uncovered > admitted.uncovered_fork_path_count)
+    violations.push(
+      `COUNT_EXCEEDS_ADMISSION: uncovered_fork_path_count ${uncovered} > ${admitted.uncovered_fork_path_count}`,
+    );
   const floor = historyFloor(root);
   if (floor)
-    for (const field of ["upstream_edit_count", "fork_added_count"] as const)
+    for (const field of [
+      "upstream_edit_count",
+      "fork_added_count",
+      "uncovered_fork_path_count",
+    ] as const)
       if (admitted[field] > floor[field])
         violations.push(
           `ADMISSION_INCREASE: ${field} ${admitted[field]} > committed ${floor[field]}`,
@@ -355,6 +440,13 @@ function validate(
     git(root, "cat-file", "-e", `${sha}^{commit}`);
   }
   const violations: string[] = [];
+  if (manifest.admitted?.fork_sha) {
+    try {
+      git(root, "merge-base", "--is-ancestor", manifest.admitted.fork_sha, head);
+    } catch {
+      violations.push("ADMITTED_FORK_SHA_NOT_ANCESTOR");
+    }
+  }
   if (
     git(root, "merge-base", manifest.fork.sha, manifest.upstream.sha).trim() !== manifest.merge_base
   )
@@ -513,7 +605,8 @@ function selfTest(
     delete draft.admitted;
     writeFileSync(join(clone, FILE), JSON.stringify(draft, null, 2) + "\n");
     git(clone, "add", "--", FILE);
-    git(clone, "commit", "--quiet", "-m", "self-test: record draft", "--", FILE);
+    if (git(clone, "diff", "--cached", "--name-only", "--", FILE).trim())
+      git(clone, "commit", "--quiet", "-m", "self-test: record draft", "--", FILE);
     for (const mode of ["--write", "--admit"]) {
       const result = run(mode);
       if (result.status !== 0) throw Error(`SELF_TEST_SETUP: ${mode}: ${result.stderr}`);
@@ -562,24 +655,121 @@ function selfTest(
   }
 }
 
-function main(): void {
+function mountSelfTest(root: string, head: string) {
+  const temporary = mkdtempSync(join(tmpdir(), "throughline-mount-self-test-"));
+  const clone = join(temporary, "repo");
+  try {
+    execFileSync("/usr/bin/git", ["clone", "--shared", "--no-checkout", "--quiet", root, clone]);
+    git(clone, "checkout", "--quiet", "--detach", head);
+    git(clone, "remote", "set-url", "origin", ORIGIN_URL);
+    git(clone, "remote", "add", "upstream", UPSTREAM_URL);
+    const source = read<SeamManifest>(join(root, FILE));
+    git(clone, "update-ref", "refs/remotes/upstream/main", source.upstream.sha);
+    git(clone, "config", "user.name", "ThroughLine mount self-test");
+    git(clone, "config", "user.email", "mount-self-test@invalid");
+    git(clone, "config", "commit.gpgsign", "false");
+    const script = join(clone, "scripts/throughline/check-seam.ts");
+    const run = (...args: string[]) =>
+      spawnSync(process.execPath, [script, "--repo", clone, ...args], {
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+      });
+    const draft = { ...source };
+    delete draft.admitted;
+    writeFileSync(join(clone, FILE), JSON.stringify(draft, null, 2) + "\n");
+    git(clone, "add", "--", FILE);
+    if (git(clone, "diff", "--cached", "--name-only", "--", FILE).trim())
+      git(clone, "commit", "--quiet", "-m", "mount fixture draft", "--", FILE);
+    for (const mode of ["--write", "--admit"]) {
+      const result = run(mode);
+      if (result.status !== 0)
+        throw Error(`MOUNT_SELF_TEST_SETUP: ${mode}: ${result.stdout} ${result.stderr}`);
+    }
+    git(clone, "add", "--", FILE);
+    git(clone, "commit", "--quiet", "-m", "mount fixture admission", "--", FILE);
+    const path = "apps/server/src/ws.ts";
+    if (!source.entries.some((entry) => entry.path === path && entry.class === "upstream-edit"))
+      throw Error(`MOUNT_FIXTURE_PATH_NOT_ADMITTED: ${path}`);
+    const original = readFileSync(join(clone, path));
+    appendFileSync(
+      join(clone, path),
+      "\n" +
+        Array.from({ length: 10 }, (_, i) => `export const mountFixture${i} = ${i};\n`).join(""),
+    );
+    git(clone, "add", "--", path);
+    git(clone, "commit", "--quiet", "-m", "mount fixture ten-line edit", "--", path);
+    const bad = run("--mounts", "--json");
+    if (bad.status !== 1 || !(bad.stdout + bad.stderr).includes(`MOUNT_VIOLATION: ${path}`))
+      throw Error(`MOUNT_SELF_TEST_NEGATIVE_FAILED: ${bad.status} ${bad.stdout} ${bad.stderr}`);
+    writeFileSync(join(clone, path), original);
+    appendFileSync(join(clone, path), 'import "./throughline/rewind/claudeTranscriptParent.ts";\n');
+    git(clone, "add", "--", path);
+    git(clone, "commit", "--quiet", "-m", "mount fixture one-line namespace import", "--", path);
+    const good = run("--mounts", "--json");
+    if (good.status !== 0)
+      throw Error(`MOUNT_SELF_TEST_POSITIVE_FAILED: ${good.stdout} ${good.stderr}`);
+    return {
+      result:
+        "self-test-mounts: ten-line upstream edit refused; one-line namespace import admitted",
+      admission_scope: "disposable clone only",
+      negative: { exit_code: bad.status, stdout: bad.stdout, stderr: bad.stderr },
+      positive: { exit_code: good.status, stdout: good.stdout, stderr: good.stderr },
+    };
+  } finally {
+    rmSync(clone, { recursive: true, force: true });
+    rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const value = (flag: string) => {
     const i = args.indexOf(flag);
     return i < 0 ? undefined : args[i + 1];
   };
-  const flags = new Set(["--write", "--admit", "--json", "--self-test"]);
+  const flags = new Set([
+    "--write",
+    "--admit",
+    "--json",
+    "--self-test",
+    "--mounts",
+    "--self-test-mounts",
+  ]);
   for (let i = 0; i < args.length; i++) {
-    if (["--repo", "--upstream-edit-count", "--fork-added-count"].includes(args[i]!)) {
+    if (
+      [
+        "--repo",
+        "--upstream-edit-count",
+        "--fork-added-count",
+        "--uncovered-fork-path-count",
+      ].includes(args[i]!)
+    ) {
       if (!args[++i] || args[i]!.startsWith("--"))
         throw new RepositoryBindingError("Missing option value");
     } else if (!flags.has(args[i]!)) throw new RepositoryBindingError(`Unknown option: ${args[i]}`);
   }
   if (["--write", "--admit", "--self-test"].filter((flag) => args.includes(flag)).length > 1)
     throw new RepositoryBindingError("Choose one of --write, --admit or --self-test");
+  if (args.includes("--self-test-mounts") && !args.includes("--mounts"))
+    throw new RepositoryBindingError("--self-test-mounts requires --mounts");
+  if (
+    args.includes("--mounts") &&
+    ["--write", "--admit", "--self-test"].some((flag) => args.includes(flag))
+  )
+    throw new RepositoryBindingError("Mount checks do not mutate or mix admission modes");
   const { root, head } = bindRepository(value("--repo") ?? "");
   const file = join(root, FILE);
   const old = existsSync(file) ? read<SeamManifest>(file) : undefined;
+  if (args.includes("--self-test-mounts")) {
+    if (!old) throw Error(`MISSING_MANIFEST: ${file}`);
+    const result = mountSelfTest(root, head);
+    if (args.includes("--json")) console.log(JSON.stringify({ root, head, ...result }));
+    else
+      console.log(
+        "self-test-mounts: ten-line upstream edit refused; one-line namespace import admitted (fixture only)",
+      );
+    return;
+  }
   if (args.includes("--self-test")) {
     if (!old) throw Error(`MISSING_MANIFEST: ${file}`);
     const result = selfTest(root, head);
@@ -604,17 +794,40 @@ function main(): void {
           manifest.counts.upstream_edit + manifest.counts.upstream_removed,
       );
       const fork_added_count = Number(value("--fork-added-count") ?? manifest.counts.fork_added);
+      const expectedUncovered = uncoveredPaths(root, manifest);
+      const coverageModule = join(root, "scripts/throughline/capability-coverage.ts");
+      if (existsSync(coverageModule)) {
+        const helper = (await import(pathToFileURL(coverageModule).href)) as {
+          uncoveredForkPaths: (manifest: SeamManifest, capabilities: CapabilityInput[]) => string[];
+        };
+        const observed = helper.uncoveredForkPaths(manifest, coverageInputs(root, manifest));
+        if (JSON.stringify(observed) !== JSON.stringify(expectedUncovered))
+          throw Error("COVERAGE_MEASUREMENT_MISMATCH");
+      }
+      const uncovered_fork_path_count = Number(
+        value("--uncovered-fork-path-count") ?? expectedUncovered.length,
+      );
       if (
         floor &&
         (upstream_edit_count > floor.upstream_edit_count ||
-          fork_added_count > floor.fork_added_count)
+          fork_added_count > floor.fork_added_count ||
+          uncovered_fork_path_count > floor.uncovered_fork_path_count)
       )
         throw Error(
-          `ADMISSION_INCREASE: requested ${upstream_edit_count}/${fork_added_count}, committed ceiling ${floor.upstream_edit_count}/${floor.fork_added_count}`,
+          `ADMISSION_INCREASE: requested ${upstream_edit_count}/${fork_added_count}/${uncovered_fork_path_count}, committed ceiling ${floor.upstream_edit_count}/${floor.fork_added_count}/${floor.uncovered_fork_path_count}`,
         );
+      if (
+        !floor &&
+        (upstream_edit_count !== manifest.counts.upstream_edit + manifest.counts.upstream_removed ||
+          fork_added_count !== manifest.counts.fork_added ||
+          uncovered_fork_path_count !== expectedUncovered.length)
+      )
+        throw Error("FIRST_ADMISSION_MUST_EQUAL_MEASURED_COUNTS");
       manifest.admitted = {
         upstream_edit_count,
         fork_added_count,
+        uncovered_fork_path_count,
+        fork_sha: old?.admitted?.fork_sha ?? firstAdmissionSha(root) ?? head,
         admitted_at: new Date().toISOString(),
         admitted_by: process.env.CODEX_THREAD_ID ?? git(root, "config", "user.name").trim(),
       };
@@ -628,6 +841,10 @@ function main(): void {
     args.includes("--write") && !manifest.admitted
       ? validate(root, head, manifest, false)
       : validate(root, head, manifest);
+  if (args.includes("--mounts") && manifest.admitted && violations.length === 0) {
+    for (const violation of mountLineViolations(root, manifest.admitted.fork_sha, head, manifest))
+      violations.push(`MOUNT_VIOLATION: ${violation.path}: ${JSON.stringify(violation)}`);
+  }
   const result = {
     root,
     head,
@@ -635,6 +852,7 @@ function main(): void {
     upstream: manifest.upstream.sha,
     merge_base: manifest.merge_base,
     counts: manifest.counts,
+    uncovered_fork_path_count: uncoveredPaths(root, manifest).length,
     admitted: manifest.admitted ?? null,
     violations,
     ok: violations.length === 0,
@@ -660,7 +878,7 @@ const invoked = (() => {
 })();
 if (invoked) {
   try {
-    main();
+    await main();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (process.argv.includes("--json"))

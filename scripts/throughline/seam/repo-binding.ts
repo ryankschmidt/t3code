@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - The admitted synchronous repository-binding contract uses native git before workspace installation or an Effect runtime.
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
