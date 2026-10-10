@@ -5,9 +5,9 @@
     <title>ThroughLine next-generation implementation spec — map</title>
     <meta
       name="spec-sha256"
-      content="720c7d39b129dad9c8a6457b055795b73d70120f636579fbace3ffe3281893a0"
+      content="5d8ab573b99ed4a48209353784ffec2f21b2d21e7629602de010626b9321c196"
     />
-    <meta name="spec-version" content="0.4.19" />
+    <meta name="spec-version" content="0.4.20" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
@@ -483,9 +483,9 @@
         installed in 24 hours.”
       </p>
       <p class="sub">
-        Machine-readable task graph <code>spec.json</code> version 0.4.19. Original design
+        Machine-readable task graph <code>spec.json</code> version 0.4.20. Original design
         authorship: fable-throughline-design (ThroughLine thread
-        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 6:22 AM PDT by
+        44973766-bbeb-4c80-b506-a4b171273e33). Current generation built Oct 10, 2026, 6:58 AM PDT by
         codex session 01a124c9-641b-79f2-9460-63aa9ccfa238. Bound to ledger sha256 0b260e00b391 (199
         items). Every task names the ledger ids it serves. The technical execution lead,
         lead-execlead-1ad87c0b, works from the JSON; this page is rendered from it.
@@ -3649,7 +3649,13 @@
                   non-inclusion stays explicit; never describe that result as all updates included.
                   Preserve the seam ceilings and run every pinned capability regression. The final
                   install refuses without the same-candidate reconciliation receipt and ancestry or
-                  exhaustive deliberate-non-inclusion proof.
+                  exhaustive deliberate-non-inclusion proof. Browser-preview screenshots are part of
+                  this acceptance: upstream commit ac8e9453ca0948469ccf5651b765086d8d9ecd64 replaces
+                  the native capturePage path with Page.captureScreenshot but is not a proven fix.
+                  After reconciliation, a non-builder runs every source-listed cold capture test on
+                  the built candidate and independently inspects failed-before and passing-after
+                  product screenshots. If upstream does not close it, reopen the same diagnosis with
+                  worker-shotdiag-db00e8d1 before final install.
                 </p>
                 <p>
                   <b>Command changes:</b>
@@ -3749,6 +3755,211 @@
                         </dd>
                         <dt><b>not all updates when exceptions</b></dt>
                         <dd><p>true</p></dd>
+                        <dt><b>browser preview</b></dt>
+                        <dd>
+                          <dl>
+                            <dt><b>owner</b></dt>
+                            <dd><p>T3.07</p></dd>
+                            <dt><b>required</b></dt>
+                            <dd><p>true</p></dd>
+                            <dt><b>receipt</b></dt>
+                            <dd><p>{evidence}/T3.07/browser-preview-cold-capture.json</p></dd>
+                            <dt><b>same candidate required</b></dt>
+                            <dd><p>true</p></dd>
+                            <dt><b>non builder required</b></dt>
+                            <dd><p>true</p></dd>
+                            <dt><b>failed before and passing after required</b></dt>
+                            <dd><p>true</p></dd>
+                            <dt><b>all source tests required</b></dt>
+                            <dd><p>true</p></dd>
+                            <dt><b>on failure</b></dt>
+                            <dd>
+                              <dl>
+                                <dt><b>owner</b></dt>
+                                <dd><p>worker-shotdiag-db00e8d1</p></dd>
+                                <dt><b>action</b></dt>
+                                <dd>
+                                  <p>
+                                    Reopen the same screenshot diagnosis with the same diagnostic
+                                    seat if upstream does not close any cold test or the required
+                                    failed-before/passing-after evidence remains missing.
+                                  </p>
+                                </dd>
+                                <dt><b>before final install</b></dt>
+                                <dd><p>true</p></dd>
+                                <dt><b>may accept failed test</b></dt>
+                                <dd><p>false</p></dd>
+                              </dl>
+                            </dd>
+                          </dl>
+                        </dd>
+                      </dl>
+                    </dd>
+                    <dt><b>browser preview acceptance</b></dt>
+                    <dd>
+                      <dl>
+                        <dt><b>owner</b></dt>
+                        <dd><p>T3.07</p></dd>
+                        <dt><b>source</b></dt>
+                        <dd>
+                          <dl>
+                            <dt><b>path</b></dt>
+                            <dd>
+                              <p>
+                                /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Diagnosis.json
+                              </p>
+                            </dd>
+                            <dt><b>sha256 at intake</b></dt>
+                            <dd>
+                              <p>
+                                ca4ad63000c471176ceafcbabf96dc327f310559cf612c30bb2bf9741928d446
+                              </p>
+                            </dd>
+                            <dt><b>field</b></dt>
+                            <dd>
+                              <p>non_builder_acceptance.tests_to_run_after_candidate_exists</p>
+                            </dd>
+                            <dt><b>tests sha256</b></dt>
+                            <dd>
+                              <p>
+                                aa66266c1a98a2f6c066ebf3a3b9f461937f6d54f8cc19d5d51155e07100fa0f
+                              </p>
+                            </dd>
+                          </dl>
+                        </dd>
+                        <dt><b>fixture</b></dt>
+                        <dd>
+                          <dl>
+                            <dt><b>path</b></dt>
+                            <dd>
+                              <p>
+                                /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Fixture.html
+                              </p>
+                            </dd>
+                            <dt><b>sha256</b></dt>
+                            <dd>
+                              <p>
+                                83916807eb16b64be650b305b28b20fadba996041f4952e53ee76795ba932aeb
+                              </p>
+                            </dd>
+                          </dl>
+                        </dd>
+                        <dt><b>candidate upstream commit</b></dt>
+                        <dd><p>ac8e9453ca0948469ccf5651b765086d8d9ecd64</p></dd>
+                        <dt><b>upstream fix status</b></dt>
+                        <dd><p>UNPROVEN until the built-candidate cold tests pass</p></dd>
+                        <dt><b>tests</b></dt>
+                        <dd>
+                          <ul>
+                            <li>
+                              <p>
+                                Serve the supplied fixture on loopback; open a fresh background tab
+                                and capture without recording warmup.
+                              </p>
+                            </li>
+                            <li>
+                              <p>
+                                Repeat with visible and background tabs; fill, freeform 1280x800 and
+                                iphone-se; short and tall fixture; immediate and later captures.
+                              </p>
+                            </li>
+                            <li>
+                              <p>
+                                Exercise an unavailable capture surface, then evaluate 42 in the
+                                same tab: require bounded truthful failure and released control.
+                              </p>
+                            </li>
+                            <li>
+                              <p>
+                                Run the same cold regression on unchanged source and candidate;
+                                independently inspect actual failed-state and fixed-capture PNGs.
+                              </p>
+                            </li>
+                          </ul>
+                        </dd>
+                        <dt><b>run on</b></dt>
+                        <dd>
+                          <p>
+                            Built ThroughLine candidate after upstream reconciliation; the unchanged
+                            source baseline and candidate run the same cold fixture regression. No
+                            recording warmup or unit-test-only substitute.
+                          </p>
+                        </dd>
+                        <dt><b>non builder required</b></dt>
+                        <dd><p>true</p></dd>
+                        <dt><b>evidence</b></dt>
+                        <dd>
+                          <dl>
+                            <dt><b>receipt</b></dt>
+                            <dd><p>{evidence}/T3.07/browser-preview-cold-capture.json</p></dd>
+                            <dt><b>candidate commit</b></dt>
+                            <dd>
+                              <p>
+                                the full source commit of the built candidate; must match the final
+                                installed source
+                              </p>
+                            </dd>
+                            <dt><b>required</b></dt>
+                            <dd>
+                              <ul>
+                                <li>
+                                  <p>
+                                    failed-before screenshot of the actual failed product state on
+                                    unchanged source
+                                  </p>
+                                </li>
+                                <li><p>passing-after capture PNG from the built candidate</p></li>
+                                <li><p>non-builder inspection of both actual PNGs</p></li>
+                                <li>
+                                  <p>
+                                    one result for every source-listed cold test, including bounded
+                                    failure and released control
+                                  </p>
+                                </li>
+                              </ul>
+                            </dd>
+                            <dt><b>pair required</b></dt>
+                            <dd><p>true</p></dd>
+                            <dt><b>synthetic or warm capture substitutes</b></dt>
+                            <dd><p>false</p></dd>
+                            <dt><b>missing before image is not pass</b></dt>
+                            <dd><p>true</p></dd>
+                          </dl>
+                        </dd>
+                        <dt><b>release rule</b></dt>
+                        <dd>
+                          <p>
+                            Do not accept this report, the 97 baseline tests, or the warm successful
+                            capture as a proven fix.
+                          </p>
+                        </dd>
+                        <dt><b>on failure</b></dt>
+                        <dd>
+                          <dl>
+                            <dt><b>owner</b></dt>
+                            <dd><p>worker-shotdiag-db00e8d1</p></dd>
+                            <dt><b>action</b></dt>
+                            <dd>
+                              <p>
+                                Reopen the same screenshot diagnosis with the same diagnostic seat
+                                if upstream does not close any cold test or the required
+                                failed-before/passing-after evidence remains missing.
+                              </p>
+                            </dd>
+                            <dt><b>before final install</b></dt>
+                            <dd><p>true</p></dd>
+                            <dt><b>may accept failed test</b></dt>
+                            <dd><p>false</p></dd>
+                          </dl>
+                        </dd>
+                        <dt><b>proof limits</b></dt>
+                        <dd>
+                          <p>
+                            The diagnosis is incomplete and the upstream change is only a candidate
+                            repair. Existing 97 tests, the warm capture and the isolated
+                            failure-state image do not prove this product fix.
+                          </p>
+                        </dd>
                       </dl>
                     </dd>
                   </dl>
@@ -3804,6 +4015,29 @@
                         preserve-base
                       </td>
                     </tr>
+                    <tr>
+                      <td>
+                        <code
+                          >/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Diagnosis.json</code
+                        >
+                      </td>
+                      <td><span class="chip vault">vault</span></td>
+                      <td>read</td>
+                      <td>Exact cold acceptance test list and explicit unproven-fix boundary</td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code
+                          >/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Fixture.html</code
+                        >
+                      </td>
+                      <td><span class="chip vault">vault</span></td>
+                      <td>read</td>
+                      <td>
+                        Supplied synthetic loopback fixture, pinned by SHA-256; no historical page
+                        content
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
                 <div class="sig">
@@ -3836,13 +4070,20 @@
                     git merge-base --is-ancestor &lt;pinned-upstream&gt; &lt;candidate&gt;, run the
                     installed seam self-test and every pinned capability regression. Exercise the
                     final-install gate with the valid receipt and all T3.07-neg mutations; no
-                    install is performed by this test.</code
+                    install is performed by this test. Then, on the built candidate, run each
+                    browser_preview_acceptance.tests entry verbatim using its pinned loopback
+                    fixture, followed by independent inspection of both actual failed-before and
+                    passing-after PNGs.</code
                   >
                   <span class="expect"
                     >→ Fresh full upstream SHA and time; exact incoming-change coverage; no
                     unclaimed conflicts; ancestry succeeds or every deliberate non-inclusion has
                     source-backed proof; seam counts do not rise; every capability test executes and
-                    passes; all negative receipts refuse. 0.0.60 remains preserve-base.</span
+                    passes; all negative receipts refuse. 0.0.60 remains preserve-base. Every cold
+                    preview test passes on the built candidate, with source-bound non-builder
+                    evidence and the required failed-before/passing-after pair. Any failed test,
+                    missing pair or unproven repair reopens the same diagnosis with
+                    worker-shotdiag-db00e8d1 and prevents final install.</span
                   >
                 </p>
                 <p class="risk">
@@ -15139,6 +15380,44 @@
                     </dd>
                     <dt><b>not all updates when exceptions</b></dt>
                     <dd><p>true</p></dd>
+                    <dt><b>browser preview</b></dt>
+                    <dd>
+                      <dl>
+                        <dt><b>owner</b></dt>
+                        <dd><p>T3.07</p></dd>
+                        <dt><b>required</b></dt>
+                        <dd><p>true</p></dd>
+                        <dt><b>receipt</b></dt>
+                        <dd><p>{evidence}/T3.07/browser-preview-cold-capture.json</p></dd>
+                        <dt><b>same candidate required</b></dt>
+                        <dd><p>true</p></dd>
+                        <dt><b>non builder required</b></dt>
+                        <dd><p>true</p></dd>
+                        <dt><b>failed before and passing after required</b></dt>
+                        <dd><p>true</p></dd>
+                        <dt><b>all source tests required</b></dt>
+                        <dd><p>true</p></dd>
+                        <dt><b>on failure</b></dt>
+                        <dd>
+                          <dl>
+                            <dt><b>owner</b></dt>
+                            <dd><p>worker-shotdiag-db00e8d1</p></dd>
+                            <dt><b>action</b></dt>
+                            <dd>
+                              <p>
+                                Reopen the same screenshot diagnosis with the same diagnostic seat
+                                if upstream does not close any cold test or the required
+                                failed-before/passing-after evidence remains missing.
+                              </p>
+                            </dd>
+                            <dt><b>before final install</b></dt>
+                            <dd><p>true</p></dd>
+                            <dt><b>may accept failed test</b></dt>
+                            <dd><p>false</p></dd>
+                          </dl>
+                        </dd>
+                      </dl>
+                    </dd>
                   </dl>
                 </details>
                 <details>
@@ -16724,7 +17003,10 @@
                     screenshot path and sha256, and outcome passed; refusals is empty;
                     accept_all_granted is false. The four negative fixtures in planned_checks refuse
                     with their named codes. The same-candidate upstream reconciliation gate passes;
-                    missing, stale or incomplete proof refuses.</span
+                    missing, stale or incomplete proof refuses. Browser-preview cold-capture
+                    acceptance from T3.07 must pass for this exact built/installed candidate, with a
+                    non-builder failed-before/passing-after screenshot pair; otherwise refuse final
+                    install and reopen the same diagnosis.</span
                   >
                 </p>
 
@@ -18453,7 +18735,11 @@
             not the only one. T3.07 is the first Phase 4 task. 0.0.60 stays preserve-base; final
             architecture installation requires a fresh pinned upstream head/time, exhaustive
             dispositions, source-backed conflict decisions, unchanged ceilings, passing capability
-            regressions, and installed-source ancestry or explicit deliberate non-inclusions.
+            regressions, and installed-source ancestry or explicit deliberate non-inclusions. The
+            browser-preview cold-capture test list in Preview-Screenshot-Diagnosis.json is part of
+            T3.07 acceptance on the built candidate; failed-before and passing-after product
+            screenshots must be inspected by a non-builder. An upstream change is not proof; failed
+            or incomplete evidence reopens the same diagnosis before final install.
           </p>
           <p class="sub">
             <b>Tests</b><br />· in a fixture, change an optional protocol field, a provider event
@@ -19102,6 +19388,203 @@
                   <dd><p>all pinned fork capability regressions; all must execute and pass</p></dd>
                   <dt><b>not all updates when exceptions</b></dt>
                   <dd><p>true</p></dd>
+                  <dt><b>browser preview</b></dt>
+                  <dd>
+                    <dl>
+                      <dt><b>owner</b></dt>
+                      <dd><p>T3.07</p></dd>
+                      <dt><b>required</b></dt>
+                      <dd><p>true</p></dd>
+                      <dt><b>receipt</b></dt>
+                      <dd><p>{evidence}/T3.07/browser-preview-cold-capture.json</p></dd>
+                      <dt><b>same candidate required</b></dt>
+                      <dd><p>true</p></dd>
+                      <dt><b>non builder required</b></dt>
+                      <dd><p>true</p></dd>
+                      <dt><b>failed before and passing after required</b></dt>
+                      <dd><p>true</p></dd>
+                      <dt><b>all source tests required</b></dt>
+                      <dd><p>true</p></dd>
+                      <dt><b>on failure</b></dt>
+                      <dd>
+                        <dl>
+                          <dt><b>owner</b></dt>
+                          <dd><p>worker-shotdiag-db00e8d1</p></dd>
+                          <dt><b>action</b></dt>
+                          <dd>
+                            <p>
+                              Reopen the same screenshot diagnosis with the same diagnostic seat if
+                              upstream does not close any cold test or the required
+                              failed-before/passing-after evidence remains missing.
+                            </p>
+                          </dd>
+                          <dt><b>before final install</b></dt>
+                          <dd><p>true</p></dd>
+                          <dt><b>may accept failed test</b></dt>
+                          <dd><p>false</p></dd>
+                        </dl>
+                      </dd>
+                    </dl>
+                  </dd>
+                </dl>
+              </dd>
+              <dt><b>browser preview acceptance</b></dt>
+              <dd>
+                <dl>
+                  <dt><b>owner</b></dt>
+                  <dd><p>T3.07</p></dd>
+                  <dt><b>source</b></dt>
+                  <dd>
+                    <dl>
+                      <dt><b>path</b></dt>
+                      <dd>
+                        <p>
+                          /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Diagnosis.json
+                        </p>
+                      </dd>
+                      <dt><b>sha256 at intake</b></dt>
+                      <dd>
+                        <p>ca4ad63000c471176ceafcbabf96dc327f310559cf612c30bb2bf9741928d446</p>
+                      </dd>
+                      <dt><b>field</b></dt>
+                      <dd><p>non_builder_acceptance.tests_to_run_after_candidate_exists</p></dd>
+                      <dt><b>tests sha256</b></dt>
+                      <dd>
+                        <p>aa66266c1a98a2f6c066ebf3a3b9f461937f6d54f8cc19d5d51155e07100fa0f</p>
+                      </dd>
+                    </dl>
+                  </dd>
+                  <dt><b>fixture</b></dt>
+                  <dd>
+                    <dl>
+                      <dt><b>path</b></dt>
+                      <dd>
+                        <p>
+                          /Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Fixture.html
+                        </p>
+                      </dd>
+                      <dt><b>sha256</b></dt>
+                      <dd>
+                        <p>83916807eb16b64be650b305b28b20fadba996041f4952e53ee76795ba932aeb</p>
+                      </dd>
+                    </dl>
+                  </dd>
+                  <dt><b>candidate upstream commit</b></dt>
+                  <dd><p>ac8e9453ca0948469ccf5651b765086d8d9ecd64</p></dd>
+                  <dt><b>upstream fix status</b></dt>
+                  <dd><p>UNPROVEN until the built-candidate cold tests pass</p></dd>
+                  <dt><b>tests</b></dt>
+                  <dd>
+                    <ul>
+                      <li>
+                        <p>
+                          Serve the supplied fixture on loopback; open a fresh background tab and
+                          capture without recording warmup.
+                        </p>
+                      </li>
+                      <li>
+                        <p>
+                          Repeat with visible and background tabs; fill, freeform 1280x800 and
+                          iphone-se; short and tall fixture; immediate and later captures.
+                        </p>
+                      </li>
+                      <li>
+                        <p>
+                          Exercise an unavailable capture surface, then evaluate 42 in the same tab:
+                          require bounded truthful failure and released control.
+                        </p>
+                      </li>
+                      <li>
+                        <p>
+                          Run the same cold regression on unchanged source and candidate;
+                          independently inspect actual failed-state and fixed-capture PNGs.
+                        </p>
+                      </li>
+                    </ul>
+                  </dd>
+                  <dt><b>run on</b></dt>
+                  <dd>
+                    <p>
+                      Built ThroughLine candidate after upstream reconciliation; the unchanged
+                      source baseline and candidate run the same cold fixture regression. No
+                      recording warmup or unit-test-only substitute.
+                    </p>
+                  </dd>
+                  <dt><b>non builder required</b></dt>
+                  <dd><p>true</p></dd>
+                  <dt><b>evidence</b></dt>
+                  <dd>
+                    <dl>
+                      <dt><b>receipt</b></dt>
+                      <dd><p>{evidence}/T3.07/browser-preview-cold-capture.json</p></dd>
+                      <dt><b>candidate commit</b></dt>
+                      <dd>
+                        <p>
+                          the full source commit of the built candidate; must match the final
+                          installed source
+                        </p>
+                      </dd>
+                      <dt><b>required</b></dt>
+                      <dd>
+                        <ul>
+                          <li>
+                            <p>
+                              failed-before screenshot of the actual failed product state on
+                              unchanged source
+                            </p>
+                          </li>
+                          <li><p>passing-after capture PNG from the built candidate</p></li>
+                          <li><p>non-builder inspection of both actual PNGs</p></li>
+                          <li>
+                            <p>
+                              one result for every source-listed cold test, including bounded
+                              failure and released control
+                            </p>
+                          </li>
+                        </ul>
+                      </dd>
+                      <dt><b>pair required</b></dt>
+                      <dd><p>true</p></dd>
+                      <dt><b>synthetic or warm capture substitutes</b></dt>
+                      <dd><p>false</p></dd>
+                      <dt><b>missing before image is not pass</b></dt>
+                      <dd><p>true</p></dd>
+                    </dl>
+                  </dd>
+                  <dt><b>release rule</b></dt>
+                  <dd>
+                    <p>
+                      Do not accept this report, the 97 baseline tests, or the warm successful
+                      capture as a proven fix.
+                    </p>
+                  </dd>
+                  <dt><b>on failure</b></dt>
+                  <dd>
+                    <dl>
+                      <dt><b>owner</b></dt>
+                      <dd><p>worker-shotdiag-db00e8d1</p></dd>
+                      <dt><b>action</b></dt>
+                      <dd>
+                        <p>
+                          Reopen the same screenshot diagnosis with the same diagnostic seat if
+                          upstream does not close any cold test or the required
+                          failed-before/passing-after evidence remains missing.
+                        </p>
+                      </dd>
+                      <dt><b>before final install</b></dt>
+                      <dd><p>true</p></dd>
+                      <dt><b>may accept failed test</b></dt>
+                      <dd><p>false</p></dd>
+                    </dl>
+                  </dd>
+                  <dt><b>proof limits</b></dt>
+                  <dd>
+                    <p>
+                      The diagnosis is incomplete and the upstream change is only a candidate
+                      repair. Existing 97 tests, the warm capture and the isolated failure-state
+                      image do not prove this product fix.
+                    </p>
+                  </dd>
                 </dl>
               </dd>
             </dl>

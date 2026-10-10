@@ -8781,7 +8781,7 @@ const OUTLINE: Task[] = [
     done_when: {
       command: "ryan throughline ship <release> --retry-step five-device-acceptance --json",
       expect:
-        "owning step outcome passed and hash-bound active-target result receipt; all installed release+commit/readback/screenshot/non-builder/protection comparisons pass; no whole-design acceptance. The receipt lists, for each of mac, twr, ios and android, the readback method, the reported release and commit, the screenshot path and sha256, and outcome passed; refusals is empty; accept_all_granted is false. The four negative fixtures in planned_checks refuse with their named codes. The same-candidate upstream reconciliation gate passes; missing, stale or incomplete proof refuses.",
+        "owning step outcome passed and hash-bound active-target result receipt; all installed release+commit/readback/screenshot/non-builder/protection comparisons pass; no whole-design acceptance. The receipt lists, for each of mac, twr, ios and android, the readback method, the reported release and commit, the screenshot path and sha256, and outcome passed; refusals is empty; accept_all_granted is false. The four negative fixtures in planned_checks refuse with their named codes. The same-candidate upstream reconciliation gate passes; missing, stale or incomplete proof refuses. Browser-preview cold-capture acceptance from T3.07 must pass for this exact built/installed candidate, with a non-builder failed-before/passing-after screenshot pair; otherwise refuse final install and reopen the same diagnosis.",
       judge: "non-builder seat",
     },
     depends_on: ["T13.01", "T13.02", "T13.03", "T12.01", "T12.04", "T3.05", "T3.07"],
@@ -9218,6 +9218,22 @@ const OUTLINE: Task[] = [
       seam_ceilings: "unchanged; counts may only fall",
       capability_tests: "all pinned fork capability regressions; all must execute and pass",
       not_all_updates_when_exceptions: true,
+      browser_preview: {
+        owner: "T3.07",
+        required: true,
+        receipt: "{evidence}/T3.07/browser-preview-cold-capture.json",
+        same_candidate_required: true,
+        non_builder_required: true,
+        failed_before_and_passing_after_required: true,
+        all_source_tests_required: true,
+        on_failure: {
+          owner: "worker-shotdiag-db00e8d1",
+          action:
+            "Reopen the same screenshot diagnosis with the same diagnostic seat if upstream does not close any cold test or the required failed-before/passing-after evidence remains missing.",
+          before_final_install: true,
+          may_accept_failed_test: false,
+        },
+      },
     },
 
     deferred_rpi: {
@@ -11573,7 +11589,7 @@ TASKS.splice(
     title: "First Phase 4 task: reconcile a freshly pinned upstream before new architecture work",
     serves: ["NG-123", "NG-124", "NG-125", "NG-126", "NG-130"],
     detail_state: "detailed",
-    what: "0.0.60 is the preserve-base foundation, not the completed architecture. Before any other Phase 4 task, fetch upstream T3 Code, pin its full commit and fetch time, enumerate every incoming commit and changed path from the prior merge base, and record adopt/retain/replace/defer with source-backed conflict decisions. Integrate the selected changes without losing fork capabilities. Every deliberate non-inclusion stays explicit; never describe that result as all updates included. Preserve the seam ceilings and run every pinned capability regression. The final install refuses without the same-candidate reconciliation receipt and ancestry or exhaustive deliberate-non-inclusion proof.",
+    what: "0.0.60 is the preserve-base foundation, not the completed architecture. Before any other Phase 4 task, fetch upstream T3 Code, pin its full commit and fetch time, enumerate every incoming commit and changed path from the prior merge base, and record adopt/retain/replace/defer with source-backed conflict decisions. Integrate the selected changes without losing fork capabilities. Every deliberate non-inclusion stays explicit; never describe that result as all updates included. Preserve the seam ceilings and run every pinned capability regression. The final install refuses without the same-candidate reconciliation receipt and ancestry or exhaustive deliberate-non-inclusion proof. Browser-preview screenshots are part of this acceptance: upstream commit ac8e9453ca0948469ccf5651b765086d8d9ecd64 replaces the native capturePage path with Page.captureScreenshot but is not a proven fix. After reconciliation, a non-builder runs every source-listed cold capture test on the built candidate and independently inspects failed-before and passing-after product screenshots. If upstream does not close it, reopen the same diagnosis with worker-shotdiag-db00e8d1 before final install.",
     files: [
       {
         path: "docs/throughline/seam/",
@@ -11598,6 +11614,20 @@ TASKS.splice(
         side: "config",
         action: "edit",
         note: "bind reconciliation proof to final architecture release; retain 0.0.60 preserve-base",
+      },
+      {
+        path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Diagnosis.json",
+        side: "vault",
+        action: "read",
+        exists_now: true,
+        note: "Exact cold acceptance test list and explicit unproven-fix boundary",
+      },
+      {
+        path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Fixture.html",
+        side: "vault",
+        action: "read",
+        exists_now: true,
+        note: "Supplied synthetic loopback fixture, pinned by SHA-256; no historical page content",
       },
     ],
     depends_on: ["T1.10", "T2.04"],
@@ -11627,12 +11657,22 @@ TASKS.splice(
         command:
           "Remove one incoming-change disposition, change candidate_commit, drop one capability result and raise a seam count in separate disposable receipts: every mutation must refuse.",
       },
+      {
+        id: "T3.07-preview-cold",
+        command:
+          "All source-listed browser-preview cold tests on unchanged source and built candidate; no recording warmup; preserve the failed-before screenshot and passing-after PNG.",
+      },
+      {
+        id: "T3.07-preview-refusal",
+        command:
+          "Missing failed-before PNG, warm-capture-only proof, a failed cold test or a receipt for another candidate each refuses final install and reopens the same diagnosis.",
+      },
     ],
     done_when: {
       command:
-        "Non-builder: in the repository run git fetch upstream refs/heads/main, record git rev-parse FETCH_HEAD with the actual fetch time, and verify the integrator pinned that exact cut. Walk the complete incoming-change/disposition table, run git merge-base --is-ancestor <pinned-upstream> <candidate>, run the installed seam self-test and every pinned capability regression. Exercise the final-install gate with the valid receipt and all T3.07-neg mutations; no install is performed by this test.",
+        "Non-builder: in the repository run git fetch upstream refs/heads/main, record git rev-parse FETCH_HEAD with the actual fetch time, and verify the integrator pinned that exact cut. Walk the complete incoming-change/disposition table, run git merge-base --is-ancestor <pinned-upstream> <candidate>, run the installed seam self-test and every pinned capability regression. Exercise the final-install gate with the valid receipt and all T3.07-neg mutations; no install is performed by this test. Then, on the built candidate, run each browser_preview_acceptance.tests entry verbatim using its pinned loopback fixture, followed by independent inspection of both actual failed-before and passing-after PNGs.",
       expect:
-        "Fresh full upstream SHA and time; exact incoming-change coverage; no unclaimed conflicts; ancestry succeeds or every deliberate non-inclusion has source-backed proof; seam counts do not rise; every capability test executes and passes; all negative receipts refuse. 0.0.60 remains preserve-base.",
+        "Fresh full upstream SHA and time; exact incoming-change coverage; no unclaimed conflicts; ancestry succeeds or every deliberate non-inclusion has source-backed proof; seam counts do not rise; every capability test executes and passes; all negative receipts refuse. 0.0.60 remains preserve-base. Every cold preview test passes on the built candidate, with source-bound non-builder evidence and the required failed-before/passing-after pair. Any failed test, missing pair or unproven repair reopens the same diagnosis with worker-shotdiag-db00e8d1 and prevents final install.",
     },
     rollback:
       "Keep the pinned source and failed proof history; return to the pre-reconciliation source through the owning integration lane, without overwriting other work.",
@@ -11679,6 +11719,71 @@ TASKS.splice(
         seam_ceilings: "unchanged; counts may only fall",
         capability_tests: "all pinned fork capability regressions; all must execute and pass",
         not_all_updates_when_exceptions: true,
+        browser_preview: {
+          owner: "T3.07",
+          required: true,
+          receipt: "{evidence}/T3.07/browser-preview-cold-capture.json",
+          same_candidate_required: true,
+          non_builder_required: true,
+          failed_before_and_passing_after_required: true,
+          all_source_tests_required: true,
+          on_failure: {
+            owner: "worker-shotdiag-db00e8d1",
+            action:
+              "Reopen the same screenshot diagnosis with the same diagnostic seat if upstream does not close any cold test or the required failed-before/passing-after evidence remains missing.",
+            before_final_install: true,
+            may_accept_failed_test: false,
+          },
+        },
+      },
+      browser_preview_acceptance: {
+        owner: "T3.07",
+        source: {
+          path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Diagnosis.json",
+          sha256_at_intake: "ca4ad63000c471176ceafcbabf96dc327f310559cf612c30bb2bf9741928d446",
+          field: "non_builder_acceptance.tests_to_run_after_candidate_exists",
+          tests_sha256: "aa66266c1a98a2f6c066ebf3a3b9f461937f6d54f8cc19d5d51155e07100fa0f",
+        },
+        fixture: {
+          path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Fixture.html",
+          sha256: "83916807eb16b64be650b305b28b20fadba996041f4952e53ee76795ba932aeb",
+        },
+        candidate_upstream_commit: "ac8e9453ca0948469ccf5651b765086d8d9ecd64",
+        upstream_fix_status: "UNPROVEN until the built-candidate cold tests pass",
+        tests: [
+          "Serve the supplied fixture on loopback; open a fresh background tab and capture without recording warmup.",
+          "Repeat with visible and background tabs; fill, freeform 1280x800 and iphone-se; short and tall fixture; immediate and later captures.",
+          "Exercise an unavailable capture surface, then evaluate 42 in the same tab: require bounded truthful failure and released control.",
+          "Run the same cold regression on unchanged source and candidate; independently inspect actual failed-state and fixed-capture PNGs.",
+        ],
+        run_on:
+          "Built ThroughLine candidate after upstream reconciliation; the unchanged source baseline and candidate run the same cold fixture regression. No recording warmup or unit-test-only substitute.",
+        non_builder_required: true,
+        evidence: {
+          receipt: "{evidence}/T3.07/browser-preview-cold-capture.json",
+          candidate_commit:
+            "the full source commit of the built candidate; must match the final installed source",
+          required: [
+            "failed-before screenshot of the actual failed product state on unchanged source",
+            "passing-after capture PNG from the built candidate",
+            "non-builder inspection of both actual PNGs",
+            "one result for every source-listed cold test, including bounded failure and released control",
+          ],
+          pair_required: true,
+          synthetic_or_warm_capture_substitutes: false,
+          missing_before_image_is_not_pass: true,
+        },
+        release_rule:
+          "Do not accept this report, the 97 baseline tests, or the warm successful capture as a proven fix.",
+        on_failure: {
+          owner: "worker-shotdiag-db00e8d1",
+          action:
+            "Reopen the same screenshot diagnosis with the same diagnostic seat if upstream does not close any cold test or the required failed-before/passing-after evidence remains missing.",
+          before_final_install: true,
+          may_accept_failed_test: false,
+        },
+        proof_limits:
+          "The diagnosis is incomplete and the upstream change is only a candidate repair. Existing 97 tests, the warm capture and the isolated failure-state image do not prove this product fix.",
       },
     },
     command_grammar: "IC-002",
@@ -11821,5 +11926,105 @@ Object.assign(INSTRUCTION_COVERAGE, {
     final_acceptance:
       "ACCEPT-ALL requires every supported provider on each active execution host; a missing cell is not a pass; unsupported/observe-only behavior cannot be advertised as bound",
     central_owner: "T9.01",
+  },
+});
+
+Object.assign(INSTRUCTION_COVERAGE.upstream_reconciliation, {
+  owner: "T3.07",
+  phase: 4,
+  first: true,
+  foundation: {
+    release: "0.0.60",
+    mode: "preserve-base",
+    not_final_architecture: true,
+  },
+  pin: {
+    fields: ["remote", "ref", "commit", "fetched_at", "previous_merge_base", "candidate_commit"],
+    fresh_fetch_required: true,
+  },
+  dispositions: {
+    coverage: "every incoming commit and changed path",
+    choices: ["adopt", "retain", "replace", "defer"],
+    requires: [
+      "source citation",
+      "reason",
+      "conflict decision",
+      "resulting path or deliberate non-inclusion",
+    ],
+    unclaimed_conflict: "refuse; never blanket take-upstream",
+  },
+  final_install: {
+    owner: "T13.04",
+    receipt: "{evidence}/upstream-reconciliation.json",
+    same_candidate_required: true,
+    gate: "pinned upstream head is an ancestor of the effective installed source OR every non-included incoming change has a deliberate source-backed disposition; no missing rows, unclaimed conflicts or stale candidate receipt",
+    seam_ceilings: "unchanged; counts may only fall",
+    capability_tests: "all pinned fork capability regressions; all must execute and pass",
+    not_all_updates_when_exceptions: true,
+    browser_preview: {
+      owner: "T3.07",
+      required: true,
+      receipt: "{evidence}/T3.07/browser-preview-cold-capture.json",
+      same_candidate_required: true,
+      non_builder_required: true,
+      failed_before_and_passing_after_required: true,
+      all_source_tests_required: true,
+      on_failure: {
+        owner: "worker-shotdiag-db00e8d1",
+        action:
+          "Reopen the same screenshot diagnosis with the same diagnostic seat if upstream does not close any cold test or the required failed-before/passing-after evidence remains missing.",
+        before_final_install: true,
+        may_accept_failed_test: false,
+      },
+    },
+  },
+  browser_preview_acceptance: {
+    owner: "T3.07",
+    source: {
+      path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Diagnosis.json",
+      sha256_at_intake: "ca4ad63000c471176ceafcbabf96dc327f310559cf612c30bb2bf9741928d446",
+      field: "non_builder_acceptance.tests_to_run_after_candidate_exists",
+      tests_sha256: "aa66266c1a98a2f6c066ebf3a3b9f461937f6d54f8cc19d5d51155e07100fa0f",
+    },
+    fixture: {
+      path: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Fixture.html",
+      sha256: "83916807eb16b64be650b305b28b20fadba996041f4952e53ee76795ba932aeb",
+    },
+    candidate_upstream_commit: "ac8e9453ca0948469ccf5651b765086d8d9ecd64",
+    upstream_fix_status: "UNPROVEN until the built-candidate cold tests pass",
+    tests: [
+      "Serve the supplied fixture on loopback; open a fresh background tab and capture without recording warmup.",
+      "Repeat with visible and background tabs; fill, freeform 1280x800 and iphone-se; short and tall fixture; immediate and later captures.",
+      "Exercise an unavailable capture surface, then evaluate 42 in the same tab: require bounded truthful failure and released control.",
+      "Run the same cold regression on unchanged source and candidate; independently inspect actual failed-state and fixed-capture PNGs.",
+    ],
+    run_on:
+      "Built ThroughLine candidate after upstream reconciliation; the unchanged source baseline and candidate run the same cold fixture regression. No recording warmup or unit-test-only substitute.",
+    non_builder_required: true,
+    evidence: {
+      receipt: "{evidence}/T3.07/browser-preview-cold-capture.json",
+      candidate_commit:
+        "the full source commit of the built candidate; must match the final installed source",
+      required: [
+        "failed-before screenshot of the actual failed product state on unchanged source",
+        "passing-after capture PNG from the built candidate",
+        "non-builder inspection of both actual PNGs",
+        "one result for every source-listed cold test, including bounded failure and released control",
+      ],
+      pair_required: true,
+      synthetic_or_warm_capture_substitutes: false,
+      missing_before_image_is_not_pass: true,
+    },
+    release_rule:
+      "Do not accept this report, the 97 baseline tests, or the warm successful capture as a proven fix.",
+    on_failure: {
+      owner: "worker-shotdiag-db00e8d1",
+      action:
+        "Reopen the same screenshot diagnosis with the same diagnostic seat if upstream does not close any cold test or the required failed-before/passing-after evidence remains missing.",
+      before_final_install: true,
+      may_accept_failed_test: false,
+    },
+    proof_limits:
+      "The diagnosis is incomplete and the upstream change is only a candidate repair. Existing 97 tests, the warm capture and the isolated failure-state image do not prove this product fix.",
   },
 });

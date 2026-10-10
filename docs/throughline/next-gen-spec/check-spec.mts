@@ -1499,6 +1499,92 @@ check(
   },
 );
 
+check(
+  "X26",
+  "upstream acceptance requires cold built-candidate browser captures and failed-before/passing-after proof",
+  () => {
+    const f: Fail[] = [];
+    const t = spec.tasks.find((t: any) => t.id === "T3.07"),
+      a = t?.upstream_reconciliation?.browser_preview_acceptance;
+    const source =
+      spec.repository.spec_home_until_then +
+      "/execution/lead-transfer/Preview-Screenshot-Diagnosis.json";
+    if (!a || a.source?.path !== source || !existsSync(source))
+      return ["browser-preview acceptance source missing"];
+    const diagnosis = JSON.parse(readFileSync(source, "utf8"));
+    const tests = diagnosis.non_builder_acceptance?.tests_to_run_after_candidate_exists;
+    const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+    if (
+      !Array.isArray(tests) ||
+      tests.length === 0 ||
+      !same(a.tests, tests) ||
+      a.source.field !== "non_builder_acceptance.tests_to_run_after_candidate_exists" ||
+      a.source.tests_sha256 !== createHash("sha256").update(JSON.stringify(tests)).digest("hex")
+    )
+      f.push("cold preview tests differ from the diagnostic source");
+    const fixture = diagnosis.artifacts?.find((x: any) =>
+      x.path.endsWith("/Preview-Screenshot-Fixture.html"),
+    );
+    if (
+      !fixture ||
+      a.fixture?.path !== fixture.path ||
+      a.fixture.sha256 !== fixture.sha256 ||
+      !existsSync(fixture.path) ||
+      createHash("sha256").update(readFileSync(fixture.path)).digest("hex") !== fixture.sha256
+    )
+      f.push("supplied loopback fixture binding changed");
+    if (
+      a.owner !== "T3.07" ||
+      a.non_builder_required !== true ||
+      a.candidate_upstream_commit !== diagnosis.upstream.relevant_commit ||
+      a.upstream_fix_status !== "UNPROVEN until the built-candidate cold tests pass" ||
+      a.release_rule !== diagnosis.non_builder_acceptance.release_rule
+    )
+      f.push("preview evidence promoted to a proven fix or lost non-builder authority");
+    if (
+      a.evidence?.pair_required !== true ||
+      a.evidence.synthetic_or_warm_capture_substitutes !== false ||
+      a.evidence.missing_before_image_is_not_pass !== true ||
+      !same(a.evidence.required, [
+        "failed-before screenshot of the actual failed product state on unchanged source",
+        "passing-after capture PNG from the built candidate",
+        "non-builder inspection of both actual PNGs",
+        "one result for every source-listed cold test, including bounded failure and released control",
+      ])
+    )
+      f.push("actual failed-before/passing-after screenshot pair or cold coverage is optional");
+    if (
+      a.on_failure?.owner !== "worker-shotdiag-db00e8d1" ||
+      a.on_failure.before_final_install !== true ||
+      a.on_failure.may_accept_failed_test !== false ||
+      !a.on_failure.action.includes("same diagnostic seat")
+    )
+      f.push("failed capture does not reopen the same diagnosis before final install");
+    const final = spec.tasks.find((t: any) => t.id === "T13.04"),
+      gate = final?.upstream_reconciliation?.browser_preview;
+    if (
+      !gate ||
+      gate.owner !== "T3.07" ||
+      gate.required !== true ||
+      gate.same_candidate_required !== true ||
+      gate.non_builder_required !== true ||
+      gate.failed_before_and_passing_after_required !== true ||
+      gate.all_source_tests_required !== true ||
+      gate.receipt !== a.evidence?.receipt ||
+      !same(gate.on_failure, a.on_failure) ||
+      !same(gate, t.upstream_reconciliation.final_install.browser_preview)
+    )
+      f.push("final-install browser-preview gate is incomplete or not candidate-bound");
+    if (
+      !t.done_when.command.includes("browser_preview_acceptance.tests") ||
+      !t.done_when.expect.includes("prevents final install") ||
+      !final?.done_when.expect.includes("Browser-preview cold-capture acceptance")
+    )
+      f.push("browser-preview tests are metadata only, not task/install acceptance");
+    return f;
+  },
+);
+
 let green = 0;
 for (const r of results) {
   if (r.fails.length === 0) {

@@ -874,6 +874,64 @@ for (const [name, mutate] of [
   ],
 ] as Array<[string, (s: any) => void]>)
   cases.push({ name, expect: "FAIL", checks: ["X21"], mutate });
+for (const [name, mutate] of [
+  [
+    "preview cold test list cannot be shortened",
+    (s: any) => {
+      s.tasks
+        .find((t: any) => t.id === "T3.07")
+        .upstream_reconciliation.browser_preview_acceptance.tests.pop();
+    },
+  ],
+  [
+    "preview acceptance requires a non-builder",
+    (s: any) => {
+      s.tasks.find(
+        (t: any) => t.id === "T3.07",
+      ).upstream_reconciliation.browser_preview_acceptance.non_builder_required = false;
+    },
+  ],
+  [
+    "preview acceptance requires the failed-before pair",
+    (s: any) => {
+      s.tasks.find(
+        (t: any) => t.id === "T3.07",
+      ).upstream_reconciliation.browser_preview_acceptance.evidence.pair_required = false;
+    },
+  ],
+  [
+    "warm preview capture is not repair proof",
+    (s: any) => {
+      s.tasks.find(
+        (t: any) => t.id === "T3.07",
+      ).upstream_reconciliation.browser_preview_acceptance.evidence.synthetic_or_warm_capture_substitutes =
+        true;
+    },
+  ],
+  [
+    "failed preview test reopens the same diagnosis",
+    (s: any) => {
+      s.tasks.find(
+        (t: any) => t.id === "T3.07",
+      ).upstream_reconciliation.browser_preview_acceptance.on_failure.owner = "unassigned";
+    },
+  ],
+  [
+    "preview proof must block final install",
+    (s: any) => {
+      delete s.tasks.find((t: any) => t.id === "T13.04").upstream_reconciliation.browser_preview;
+    },
+  ],
+  [
+    "preview proof must bind the installed candidate",
+    (s: any) => {
+      s.tasks.find(
+        (t: any) => t.id === "T13.04",
+      ).upstream_reconciliation.browser_preview.same_candidate_required = false;
+    },
+  ],
+] as Array<[string, (s: any) => void]>)
+  cases.push({ name, expect: "FAIL", checks: ["X26"], mutate });
 let bad = 0;
 for (const c of cases) {
   const dir = mkdtempSync(join(tmpdir(), "ngspec-check-"));

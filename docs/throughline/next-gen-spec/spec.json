@@ -1,6 +1,6 @@
 {
   "schema": "throughline.next-gen-spec.v1",
-  "version": "0.4.19",
+  "version": "0.4.20",
   "instruction_coverage": {
     "source": {
       "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Ryan-Instruction-Coverage.json",
@@ -127,7 +127,66 @@
         "gate": "pinned upstream head is an ancestor of the effective installed source OR every non-included incoming change has a deliberate source-backed disposition; no missing rows, unclaimed conflicts or stale candidate receipt",
         "seam_ceilings": "unchanged; counts may only fall",
         "capability_tests": "all pinned fork capability regressions; all must execute and pass",
-        "not_all_updates_when_exceptions": true
+        "not_all_updates_when_exceptions": true,
+        "browser_preview": {
+          "owner": "T3.07",
+          "required": true,
+          "receipt": "{evidence}/T3.07/browser-preview-cold-capture.json",
+          "same_candidate_required": true,
+          "non_builder_required": true,
+          "failed_before_and_passing_after_required": true,
+          "all_source_tests_required": true,
+          "on_failure": {
+            "owner": "worker-shotdiag-db00e8d1",
+            "action": "Reopen the same screenshot diagnosis with the same diagnostic seat if upstream does not close any cold test or the required failed-before/passing-after evidence remains missing.",
+            "before_final_install": true,
+            "may_accept_failed_test": false
+          }
+        }
+      },
+      "browser_preview_acceptance": {
+        "owner": "T3.07",
+        "source": {
+          "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Diagnosis.json",
+          "sha256_at_intake": "ca4ad63000c471176ceafcbabf96dc327f310559cf612c30bb2bf9741928d446",
+          "field": "non_builder_acceptance.tests_to_run_after_candidate_exists",
+          "tests_sha256": "aa66266c1a98a2f6c066ebf3a3b9f461937f6d54f8cc19d5d51155e07100fa0f"
+        },
+        "fixture": {
+          "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Fixture.html",
+          "sha256": "83916807eb16b64be650b305b28b20fadba996041f4952e53ee76795ba932aeb"
+        },
+        "candidate_upstream_commit": "ac8e9453ca0948469ccf5651b765086d8d9ecd64",
+        "upstream_fix_status": "UNPROVEN until the built-candidate cold tests pass",
+        "tests": [
+          "Serve the supplied fixture on loopback; open a fresh background tab and capture without recording warmup.",
+          "Repeat with visible and background tabs; fill, freeform 1280x800 and iphone-se; short and tall fixture; immediate and later captures.",
+          "Exercise an unavailable capture surface, then evaluate 42 in the same tab: require bounded truthful failure and released control.",
+          "Run the same cold regression on unchanged source and candidate; independently inspect actual failed-state and fixed-capture PNGs."
+        ],
+        "run_on": "Built ThroughLine candidate after upstream reconciliation; the unchanged source baseline and candidate run the same cold fixture regression. No recording warmup or unit-test-only substitute.",
+        "non_builder_required": true,
+        "evidence": {
+          "receipt": "{evidence}/T3.07/browser-preview-cold-capture.json",
+          "candidate_commit": "the full source commit of the built candidate; must match the final installed source",
+          "required": [
+            "failed-before screenshot of the actual failed product state on unchanged source",
+            "passing-after capture PNG from the built candidate",
+            "non-builder inspection of both actual PNGs",
+            "one result for every source-listed cold test, including bounded failure and released control"
+          ],
+          "pair_required": true,
+          "synthetic_or_warm_capture_substitutes": false,
+          "missing_before_image_is_not_pass": true
+        },
+        "release_rule": "Do not accept this report, the 97 baseline tests, or the warm successful capture as a proven fix.",
+        "on_failure": {
+          "owner": "worker-shotdiag-db00e8d1",
+          "action": "Reopen the same screenshot diagnosis with the same diagnostic seat if upstream does not close any cold test or the required failed-before/passing-after evidence remains missing.",
+          "before_final_install": true,
+          "may_accept_failed_test": false
+        },
+        "proof_limits": "The diagnosis is incomplete and the upstream change is only a candidate repair. Existing 97 tests, the warm capture and the isolated failure-state image do not prove this product fix."
       }
     },
     "target_interface": {
@@ -254,8 +313,8 @@
     ]
   },
   "revision": {
-    "from": "0.4.18",
-    "reason": "Current 0.4.19: apply the final R2 state-scoped rehearsal probe and rehearsal-only twr grant; preserve production-unit isolation, before/after receipts and every prior fixture. Prior unlanded 0.4.18: apply Ryan instruction coverage IC-049/052/056/002/008: Phase 4 upstream reconciliation first, installed target-ID-only succession after provider adapters, one target API for Claude/Codex/Pi, command grammar and caller preservation, and Raspberry Pi pause with archive/watcher exceptions. Also incorporate R2 source follow-through. Prior unlanded 0.4.17: Apply corrected watcher/server/reboot design delta: locked server and record accounts, the Raspberry Pi responder recovery island and provider route, explicit tiered incidents, encrypted-disk reboot constraints and a non-install unlock proposal. Source decisions remain pinned; no runtime change is claimed. 0.4.16 was: Fixture path consolidation preserves every case inside the admitted slice-1 checker and removes the separate fixture paths without changing seam ceilings or the self-test. S1-C05 ports the approved deferred.rpi contract from frozen 0.4.12; S1-C13 follows the same explicit deferral instead of demanding a paused-device install receipt. T1.10 carries the original pause declaration; hardware and pipeline remain untouched. 0.4.15 was: Disposition proof correction for independent review F1 (Review-Spec-Archive-Readers-de292cef67.json): annotated and unannotated preserved entries share the same real-target existence, collection-containment and all-five-fingerprint proof. The failed head and its evidence remain preserved. 0.4.14 was: Reader-only repair: S1-C06 consumes archive annotations, pre-copy addenda and dropped third-party record rows; S1-C09 recognizes bound frozen-worktree dispositions and detached freezes and validates archive annotation shapes. Existing rebase custody and retained-link checks are unchanged; frozen witnesses stay read-only. 0.4.13 was: Three approved repository-spec changes, preserving the required old-home compatibility link while moved and its removal at closure: append-only reviewed rebase rows (including the prerequisite worktree annotation contract from the frozen 0.4.12 record); preserved release targets follow move annotations and archived staging links retain exact ledger proof; done_when commands preserve their intended folders. Repository baseline was 0.4.7; unrelated frozen-record amendments are not imported. 0.4.7 was: T1.05 record retention (execution/phase-03/delivery-2026-10-09/Move-Remainder-Receipt.json, question records-inside-build-output): each build container is archived whole with its frozen fingerprint; its records are first copied to retained-records under the evidence root with sanitized names and a manifest; S1-C06 checks no build-named directory, a passing ledger row per container, and every record at its new path with its SHA-256. 0.4.6 was: Rename on Ryan's direction: the vendored relay is @ryan/agent-mcp-relay at apps/server/vendor/agent-mcp-relay-0.3.0.tgz (was @ryan/coms-net at apps/server/vendor/ryan-coms-net-0.3.0-legacy-mcp-relay.tgz); T1.04 and T7.04, including the T7.04 gone-check, use the new names. 0.4.5 was: Release tool literal (execution/phase-03/Delivery-State.json): Ship Warden binds one payload per version, so T1.04 and S1-C05 accept throughline-ship 0.4.1 or later instead of 0.4.0. 0.4.4 was: Path correction (execution/phase-03/delivery-2026-10-09/Order-Coms-Net-Vendor.txt): the vendored relay tarball and its README live under apps/server/vendor/, where pnpm resolves file:vendor/...; every path in T1.04 and T7.04, including the T7.04 gone-check, now names apps/server/vendor/. 0.4.3 was: @ryan/coms-net (the legacy MCP relay, not ComsNet) is a frozen tarball in the repository, decision D3 (execution/phase-03/delivery-2026-10-09/D3-Coms-Net-Decision.json): T1.04 drops the rpi-coms-net.tar transfer and the tower coms-net presence check; T7.04 deletes the tarball, vendor/README.md and the dependency line and checks they are gone. 0.4.2 was: GitHub repository renamed ryankschmidt/t3code to ryankschmidt/throughline on Oct 9, 2026 under Ryan's order (execution/phase-03/repo-home-2026-10-09/Repo-Home-Receipt.json): origin and the publish-docs source_repository literal, R02 carried out, S1-C01 and S1-C09 accept the pre-rename frozen origin, S1-C04 and S1-C09 compare tags by target type, T1.04 records the Mac node 24.13.1 selection. 0.4.1 was: Exit-check corrections, Oct 9, 2026 (execution/phase-02/closeout-2026-10-09/P2-Exit-Check-0.4.0.json defects P2-01, P2-02, P2-03): T3.06 deferred outside the first-install graph on K03, the T10.04 edge removed and the first-install acceptance limited to live input unavailable on the Mac; T6.02 no longer waits on slice 13 and depends on T1.10, provider evidence stays with its owners; T3.01 refuses HTTP turn starts at the decorator through the unchanged http.ts with a behavioral test and checks non-increase against the real stock-file set. 0.4.0 was: Phase 2 close-out, Oct 9, 2026, single design writer (thread a96357c8): G2 five-target acceptance contract (T13.04, X20), G3 one Codex provider and no auto-compaction for Claude, Codex and Pi (T8.02, T10.10, T11.02), G4 map wording, G5 real starting state and release 0.0.60 (T1.01, T1.04, T1.10, fork_state), G6 provider enforcement folds, G1 second-look folds, and Fable-Delta-Enforcement.json and Fable-Delta-Hosts.json applied verbatim (new outline task T3.06); record in execution/phase-02/closeout-2026-10-09/Writer-Changes-0.4.0.json. 0.3.0 was: second pass, Oct 8, 2026: every item of the fidelity review (F01-F13), the architecture review (A01-A14), its addenda (A15-A18), the slice-1 judge round 2 and the overlapping shape-alignment items carries a disposition; seventeen cross-cutting contracts settle the consequential choices; every ledger item has a disposition; the five-device matrix, the decision source roles and the whole-design acceptance node are added; the checker gains closed enums and unique ids, the combined task-slice-precondition graph, a baseline non-increase and rendered-generation binding",
+    "from": "0.4.19",
+    "reason": "Current 0.4.20: bind B1 built-candidate browser-preview cold capture tests, mandatory failed-before/passing-after screenshot pair and same-diagnosis reopen before final install; no screenshot fix claimed. Prior unlanded 0.4.19: apply the final R2 state-scoped rehearsal probe and rehearsal-only twr grant; preserve production-unit isolation, before/after receipts and every prior fixture. Prior unlanded 0.4.18: apply Ryan instruction coverage IC-049/052/056/002/008: Phase 4 upstream reconciliation first, installed target-ID-only succession after provider adapters, one target API for Claude/Codex/Pi, command grammar and caller preservation, and Raspberry Pi pause with archive/watcher exceptions. Also incorporate R2 source follow-through. Prior unlanded 0.4.17: Apply corrected watcher/server/reboot design delta: locked server and record accounts, the Raspberry Pi responder recovery island and provider route, explicit tiered incidents, encrypted-disk reboot constraints and a non-install unlock proposal. Source decisions remain pinned; no runtime change is claimed. 0.4.16 was: Fixture path consolidation preserves every case inside the admitted slice-1 checker and removes the separate fixture paths without changing seam ceilings or the self-test. S1-C05 ports the approved deferred.rpi contract from frozen 0.4.12; S1-C13 follows the same explicit deferral instead of demanding a paused-device install receipt. T1.10 carries the original pause declaration; hardware and pipeline remain untouched. 0.4.15 was: Disposition proof correction for independent review F1 (Review-Spec-Archive-Readers-de292cef67.json): annotated and unannotated preserved entries share the same real-target existence, collection-containment and all-five-fingerprint proof. The failed head and its evidence remain preserved. 0.4.14 was: Reader-only repair: S1-C06 consumes archive annotations, pre-copy addenda and dropped third-party record rows; S1-C09 recognizes bound frozen-worktree dispositions and detached freezes and validates archive annotation shapes. Existing rebase custody and retained-link checks are unchanged; frozen witnesses stay read-only. 0.4.13 was: Three approved repository-spec changes, preserving the required old-home compatibility link while moved and its removal at closure: append-only reviewed rebase rows (including the prerequisite worktree annotation contract from the frozen 0.4.12 record); preserved release targets follow move annotations and archived staging links retain exact ledger proof; done_when commands preserve their intended folders. Repository baseline was 0.4.7; unrelated frozen-record amendments are not imported. 0.4.7 was: T1.05 record retention (execution/phase-03/delivery-2026-10-09/Move-Remainder-Receipt.json, question records-inside-build-output): each build container is archived whole with its frozen fingerprint; its records are first copied to retained-records under the evidence root with sanitized names and a manifest; S1-C06 checks no build-named directory, a passing ledger row per container, and every record at its new path with its SHA-256. 0.4.6 was: Rename on Ryan's direction: the vendored relay is @ryan/agent-mcp-relay at apps/server/vendor/agent-mcp-relay-0.3.0.tgz (was @ryan/coms-net at apps/server/vendor/ryan-coms-net-0.3.0-legacy-mcp-relay.tgz); T1.04 and T7.04, including the T7.04 gone-check, use the new names. 0.4.5 was: Release tool literal (execution/phase-03/Delivery-State.json): Ship Warden binds one payload per version, so T1.04 and S1-C05 accept throughline-ship 0.4.1 or later instead of 0.4.0. 0.4.4 was: Path correction (execution/phase-03/delivery-2026-10-09/Order-Coms-Net-Vendor.txt): the vendored relay tarball and its README live under apps/server/vendor/, where pnpm resolves file:vendor/...; every path in T1.04 and T7.04, including the T7.04 gone-check, now names apps/server/vendor/. 0.4.3 was: @ryan/coms-net (the legacy MCP relay, not ComsNet) is a frozen tarball in the repository, decision D3 (execution/phase-03/delivery-2026-10-09/D3-Coms-Net-Decision.json): T1.04 drops the rpi-coms-net.tar transfer and the tower coms-net presence check; T7.04 deletes the tarball, vendor/README.md and the dependency line and checks they are gone. 0.4.2 was: GitHub repository renamed ryankschmidt/t3code to ryankschmidt/throughline on Oct 9, 2026 under Ryan's order (execution/phase-03/repo-home-2026-10-09/Repo-Home-Receipt.json): origin and the publish-docs source_repository literal, R02 carried out, S1-C01 and S1-C09 accept the pre-rename frozen origin, S1-C04 and S1-C09 compare tags by target type, T1.04 records the Mac node 24.13.1 selection. 0.4.1 was: Exit-check corrections, Oct 9, 2026 (execution/phase-02/closeout-2026-10-09/P2-Exit-Check-0.4.0.json defects P2-01, P2-02, P2-03): T3.06 deferred outside the first-install graph on K03, the T10.04 edge removed and the first-install acceptance limited to live input unavailable on the Mac; T6.02 no longer waits on slice 13 and depends on T1.10, provider evidence stays with its owners; T3.01 refuses HTTP turn starts at the decorator through the unchanged http.ts with a behavioral test and checks non-increase against the real stock-file set. 0.4.0 was: Phase 2 close-out, Oct 9, 2026, single design writer (thread a96357c8): G2 five-target acceptance contract (T13.04, X20), G3 one Codex provider and no auto-compaction for Claude, Codex and Pi (T8.02, T10.10, T11.02), G4 map wording, G5 real starting state and release 0.0.60 (T1.01, T1.04, T1.10, fork_state), G6 provider enforcement folds, G1 second-look folds, and Fable-Delta-Enforcement.json and Fable-Delta-Hosts.json applied verbatim (new outline task T3.06); record in execution/phase-02/closeout-2026-10-09/Writer-Changes-0.4.0.json. 0.3.0 was: second pass, Oct 8, 2026: every item of the fidelity review (F01-F13), the architecture review (A01-A14), its addenda (A15-A18), the slice-1 judge round 2 and the overlapping shape-alignment items carries a disposition; seventeen cross-cutting contracts settle the consequential choices; every ledger item has a disposition; the five-device matrix, the decision source roles and the whole-design acceptance node are added; the checker gains closed enums and unique ids, the combined task-slice-precondition graph, a baseline non-increase and rendered-generation binding",
     "audits": [
       "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/_meta/fidelity-review-01a11989/Initial-Findings.json",
       "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/_meta/architecture-review-01a1198a/Initial-Findings.json",
@@ -271,7 +330,7 @@
       "outcome": "round-2 verdict FAIL on 0.2.0; its findings are disposed as J2 in audit_dispositions"
     }
   },
-  "generated_at": "2026-10-10T13:22:41.124Z",
+  "generated_at": "2026-10-10T13:58:33.819Z",
   "generated_by": {
     "note": "the seat that ran the builder, read from its environment at build time; the design author is authored_by",
     "runtime": "codex",
@@ -280,15 +339,15 @@
     "source_files": [
       {
         "path": "./spec-data.mts",
-        "sha256": "f163a51885fcfc0e0f4ba055488d28a2a4225823603519cb70faeef13b9e49b2"
+        "sha256": "62a4971b6025f0aecb3ec51d49965dfd73dbe1ec8524fc03671d13bc9bc61959"
       },
       {
         "path": "./contracts-data.mts",
-        "sha256": "ddeb00003eb80057165b42abbab692d12b4bb6030c291570c64331734f381093"
+        "sha256": "10a2d381beb606e63e59be73f5f737abaa82c66a7fc6be25cb98d61dc83b057d"
       },
       {
         "path": "./build-spec.mts",
-        "sha256": "bddcadd0552e6212ef76b0a882a26fb34549c1986dd564b6c9dd3bdf51893fa2"
+        "sha256": "4a14d2a375df7faa8792c3df61dc2cb004c89b615239801eb015efbc71e68d91"
       }
     ]
   },
@@ -2652,7 +2711,7 @@
       "title": "First Phase 4 task: reconcile a freshly pinned upstream before new architecture work",
       "serves": ["NG-123", "NG-124", "NG-125", "NG-126", "NG-130"],
       "detail_state": "detailed",
-      "what": "0.0.60 is the preserve-base foundation, not the completed architecture. Before any other Phase 4 task, fetch upstream T3 Code, pin its full commit and fetch time, enumerate every incoming commit and changed path from the prior merge base, and record adopt/retain/replace/defer with source-backed conflict decisions. Integrate the selected changes without losing fork capabilities. Every deliberate non-inclusion stays explicit; never describe that result as all updates included. Preserve the seam ceilings and run every pinned capability regression. The final install refuses without the same-candidate reconciliation receipt and ancestry or exhaustive deliberate-non-inclusion proof.",
+      "what": "0.0.60 is the preserve-base foundation, not the completed architecture. Before any other Phase 4 task, fetch upstream T3 Code, pin its full commit and fetch time, enumerate every incoming commit and changed path from the prior merge base, and record adopt/retain/replace/defer with source-backed conflict decisions. Integrate the selected changes without losing fork capabilities. Every deliberate non-inclusion stays explicit; never describe that result as all updates included. Preserve the seam ceilings and run every pinned capability regression. The final install refuses without the same-candidate reconciliation receipt and ancestry or exhaustive deliberate-non-inclusion proof. Browser-preview screenshots are part of this acceptance: upstream commit ac8e9453ca0948469ccf5651b765086d8d9ecd64 replaces the native capturePage path with Page.captureScreenshot but is not a proven fix. After reconciliation, a non-builder runs every source-listed cold capture test on the built candidate and independently inspects failed-before and passing-after product screenshots. If upstream does not close it, reopen the same diagnosis with worker-shotdiag-db00e8d1 before final install.",
       "files": [
         {
           "path": "docs/throughline/seam/",
@@ -2677,6 +2736,20 @@
           "side": "config",
           "action": "edit",
           "note": "bind reconciliation proof to final architecture release; retain 0.0.60 preserve-base"
+        },
+        {
+          "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Diagnosis.json",
+          "side": "vault",
+          "action": "read",
+          "exists_now": true,
+          "note": "Exact cold acceptance test list and explicit unproven-fix boundary"
+        },
+        {
+          "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Fixture.html",
+          "side": "vault",
+          "action": "read",
+          "exists_now": true,
+          "note": "Supplied synthetic loopback fixture, pinned by SHA-256; no historical page content"
         }
       ],
       "depends_on": ["T1.10", "T2.04"],
@@ -2703,11 +2776,19 @@
         {
           "id": "T3.07-neg",
           "command": "Remove one incoming-change disposition, change candidate_commit, drop one capability result and raise a seam count in separate disposable receipts: every mutation must refuse."
+        },
+        {
+          "id": "T3.07-preview-cold",
+          "command": "All source-listed browser-preview cold tests on unchanged source and built candidate; no recording warmup; preserve the failed-before screenshot and passing-after PNG."
+        },
+        {
+          "id": "T3.07-preview-refusal",
+          "command": "Missing failed-before PNG, warm-capture-only proof, a failed cold test or a receipt for another candidate each refuses final install and reopens the same diagnosis."
         }
       ],
       "done_when": {
-        "command": "Non-builder: in the repository run git fetch upstream refs/heads/main, record git rev-parse FETCH_HEAD with the actual fetch time, and verify the integrator pinned that exact cut. Walk the complete incoming-change/disposition table, run git merge-base --is-ancestor <pinned-upstream> <candidate>, run the installed seam self-test and every pinned capability regression. Exercise the final-install gate with the valid receipt and all T3.07-neg mutations; no install is performed by this test.",
-        "expect": "Fresh full upstream SHA and time; exact incoming-change coverage; no unclaimed conflicts; ancestry succeeds or every deliberate non-inclusion has source-backed proof; seam counts do not rise; every capability test executes and passes; all negative receipts refuse. 0.0.60 remains preserve-base."
+        "command": "Non-builder: in the repository run git fetch upstream refs/heads/main, record git rev-parse FETCH_HEAD with the actual fetch time, and verify the integrator pinned that exact cut. Walk the complete incoming-change/disposition table, run git merge-base --is-ancestor <pinned-upstream> <candidate>, run the installed seam self-test and every pinned capability regression. Exercise the final-install gate with the valid receipt and all T3.07-neg mutations; no install is performed by this test. Then, on the built candidate, run each browser_preview_acceptance.tests entry verbatim using its pinned loopback fixture, followed by independent inspection of both actual failed-before and passing-after PNGs.",
+        "expect": "Fresh full upstream SHA and time; exact incoming-change coverage; no unclaimed conflicts; ancestry succeeds or every deliberate non-inclusion has source-backed proof; seam counts do not rise; every capability test executes and passes; all negative receipts refuse. 0.0.60 remains preserve-base. Every cold preview test passes on the built candidate, with source-bound non-builder evidence and the required failed-before/passing-after pair. Any failed test, missing pair or unproven repair reopens the same diagnosis with worker-shotdiag-db00e8d1 and prevents final install."
       },
       "rollback": "Keep the pinned source and failed proof history; return to the pre-reconciliation source through the owning integration lane, without overwriting other work.",
       "risk": [
@@ -2752,7 +2833,66 @@
           "gate": "pinned upstream head is an ancestor of the effective installed source OR every non-included incoming change has a deliberate source-backed disposition; no missing rows, unclaimed conflicts or stale candidate receipt",
           "seam_ceilings": "unchanged; counts may only fall",
           "capability_tests": "all pinned fork capability regressions; all must execute and pass",
-          "not_all_updates_when_exceptions": true
+          "not_all_updates_when_exceptions": true,
+          "browser_preview": {
+            "owner": "T3.07",
+            "required": true,
+            "receipt": "{evidence}/T3.07/browser-preview-cold-capture.json",
+            "same_candidate_required": true,
+            "non_builder_required": true,
+            "failed_before_and_passing_after_required": true,
+            "all_source_tests_required": true,
+            "on_failure": {
+              "owner": "worker-shotdiag-db00e8d1",
+              "action": "Reopen the same screenshot diagnosis with the same diagnostic seat if upstream does not close any cold test or the required failed-before/passing-after evidence remains missing.",
+              "before_final_install": true,
+              "may_accept_failed_test": false
+            }
+          }
+        },
+        "browser_preview_acceptance": {
+          "owner": "T3.07",
+          "source": {
+            "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Diagnosis.json",
+            "sha256_at_intake": "ca4ad63000c471176ceafcbabf96dc327f310559cf612c30bb2bf9741928d446",
+            "field": "non_builder_acceptance.tests_to_run_after_candidate_exists",
+            "tests_sha256": "aa66266c1a98a2f6c066ebf3a3b9f461937f6d54f8cc19d5d51155e07100fa0f"
+          },
+          "fixture": {
+            "path": "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/execution/lead-transfer/Preview-Screenshot-Fixture.html",
+            "sha256": "83916807eb16b64be650b305b28b20fadba996041f4952e53ee76795ba932aeb"
+          },
+          "candidate_upstream_commit": "ac8e9453ca0948469ccf5651b765086d8d9ecd64",
+          "upstream_fix_status": "UNPROVEN until the built-candidate cold tests pass",
+          "tests": [
+            "Serve the supplied fixture on loopback; open a fresh background tab and capture without recording warmup.",
+            "Repeat with visible and background tabs; fill, freeform 1280x800 and iphone-se; short and tall fixture; immediate and later captures.",
+            "Exercise an unavailable capture surface, then evaluate 42 in the same tab: require bounded truthful failure and released control.",
+            "Run the same cold regression on unchanged source and candidate; independently inspect actual failed-state and fixed-capture PNGs."
+          ],
+          "run_on": "Built ThroughLine candidate after upstream reconciliation; the unchanged source baseline and candidate run the same cold fixture regression. No recording warmup or unit-test-only substitute.",
+          "non_builder_required": true,
+          "evidence": {
+            "receipt": "{evidence}/T3.07/browser-preview-cold-capture.json",
+            "candidate_commit": "the full source commit of the built candidate; must match the final installed source",
+            "required": [
+              "failed-before screenshot of the actual failed product state on unchanged source",
+              "passing-after capture PNG from the built candidate",
+              "non-builder inspection of both actual PNGs",
+              "one result for every source-listed cold test, including bounded failure and released control"
+            ],
+            "pair_required": true,
+            "synthetic_or_warm_capture_substitutes": false,
+            "missing_before_image_is_not_pass": true
+          },
+          "release_rule": "Do not accept this report, the 97 baseline tests, or the warm successful capture as a proven fix.",
+          "on_failure": {
+            "owner": "worker-shotdiag-db00e8d1",
+            "action": "Reopen the same screenshot diagnosis with the same diagnostic seat if upstream does not close any cold test or the required failed-before/passing-after evidence remains missing.",
+            "before_final_install": true,
+            "may_accept_failed_test": false
+          },
+          "proof_limits": "The diagnosis is incomplete and the upstream change is only a candidate repair. Existing 97 tests, the warm capture and the isolated failure-state image do not prove this product fix."
         }
       },
       "command_grammar": "IC-002"
@@ -8796,7 +8936,7 @@
       ],
       "done_when": {
         "command": "ryan throughline ship <release> --retry-step five-device-acceptance --json",
-        "expect": "owning step outcome passed and hash-bound active-target result receipt; all installed release+commit/readback/screenshot/non-builder/protection comparisons pass; no whole-design acceptance. The receipt lists, for each of mac, twr, ios and android, the readback method, the reported release and commit, the screenshot path and sha256, and outcome passed; refusals is empty; accept_all_granted is false. The four negative fixtures in planned_checks refuse with their named codes. The same-candidate upstream reconciliation gate passes; missing, stale or incomplete proof refuses.",
+        "expect": "owning step outcome passed and hash-bound active-target result receipt; all installed release+commit/readback/screenshot/non-builder/protection comparisons pass; no whole-design acceptance. The receipt lists, for each of mac, twr, ios and android, the readback method, the reported release and commit, the screenshot path and sha256, and outcome passed; refusals is empty; accept_all_granted is false. The four negative fixtures in planned_checks refuse with their named codes. The same-candidate upstream reconciliation gate passes; missing, stale or incomplete proof refuses. Browser-preview cold-capture acceptance from T3.07 must pass for this exact built/installed candidate, with a non-builder failed-before/passing-after screenshot pair; otherwise refuse final install and reopen the same diagnosis.",
         "judge": "non-builder seat"
       },
       "depends_on": ["T13.01", "T13.02", "T13.03", "T12.01", "T12.04", "T3.05", "T3.07"],
@@ -9196,7 +9336,22 @@
         "gate": "pinned upstream head is an ancestor of the effective installed source OR every non-included incoming change has a deliberate source-backed disposition; no missing rows, unclaimed conflicts or stale candidate receipt",
         "seam_ceilings": "unchanged; counts may only fall",
         "capability_tests": "all pinned fork capability regressions; all must execute and pass",
-        "not_all_updates_when_exceptions": true
+        "not_all_updates_when_exceptions": true,
+        "browser_preview": {
+          "owner": "T3.07",
+          "required": true,
+          "receipt": "{evidence}/T3.07/browser-preview-cold-capture.json",
+          "same_candidate_required": true,
+          "non_builder_required": true,
+          "failed_before_and_passing_after_required": true,
+          "all_source_tests_required": true,
+          "on_failure": {
+            "owner": "worker-shotdiag-db00e8d1",
+            "action": "Reopen the same screenshot diagnosis with the same diagnostic seat if upstream does not close any cold test or the required failed-before/passing-after evidence remains missing.",
+            "before_final_install": true,
+            "may_accept_failed_test": false
+          }
+        }
       },
       "deferred_rpi": {
         "state": "deferred",
@@ -11480,7 +11635,7 @@
       "title": "Upstream maintenance is measured by contract coverage, not file count alone",
       "serves": ["NG-123", "NG-124", "NG-125", "NG-126", "NG-130"],
       "binds_slices": ["slice-2"],
-      "statement": "The seam manifest binds to pinned upstream and fork SHAs and to the real diff; it records, per upstream edit, its reason, its seam side, the private symbols it imports and the schema assumption it makes. Each fork feature keeps a pinned behavioral test (the rewind capability manifest stays); a sync is admitted only when every pinned test is green. An adopt/retain/replace/defer table is kept per upstream change; the unclaimed-conflict rule is never take-upstream for a path under a capability manifest. The edited-upstream count still only falls (Ryan's control); it is one of the measures, not the only one. T3.07 is the first Phase 4 task. 0.0.60 stays preserve-base; final architecture installation requires a fresh pinned upstream head/time, exhaustive dispositions, source-backed conflict decisions, unchanged ceilings, passing capability regressions, and installed-source ancestry or explicit deliberate non-inclusions.",
+      "statement": "The seam manifest binds to pinned upstream and fork SHAs and to the real diff; it records, per upstream edit, its reason, its seam side, the private symbols it imports and the schema assumption it makes. Each fork feature keeps a pinned behavioral test (the rewind capability manifest stays); a sync is admitted only when every pinned test is green. An adopt/retain/replace/defer table is kept per upstream change; the unclaimed-conflict rule is never take-upstream for a path under a capability manifest. The edited-upstream count still only falls (Ryan's control); it is one of the measures, not the only one. T3.07 is the first Phase 4 task. 0.0.60 stays preserve-base; final architecture installation requires a fresh pinned upstream head/time, exhaustive dispositions, source-backed conflict decisions, unchanged ceilings, passing capability regressions, and installed-source ancestry or explicit deliberate non-inclusions. The browser-preview cold-capture test list in Preview-Screenshot-Diagnosis.json is part of T3.07 acceptance on the built candidate; failed-before and passing-after product screenshots must be inspected by a non-builder. An upstream change is not proof; failed or incomplete evidence reopens the same diagnosis before final install.",
       "tests": [
         "in a fixture, change an optional protocol field, a provider event shape, an upstream component prop and a scope enum: every adapter fails explicitly or stays compatible, and every kept fork capability test runs"
       ],
