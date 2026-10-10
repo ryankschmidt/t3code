@@ -16,7 +16,7 @@ import {
   resolveReviewHighlighterEngine,
   resolveReviewHighlighterEnginePreference,
 } from "./reviewHighlighterEngine";
-import { createIncrementalSnippet } from "./incrementalSnippet";
+import { createIncrementalSnippet, REVIEW_TOKENIZE_TIME_LIMIT } from "./incrementalSnippet";
 import type { ReviewRenderableLineRow } from "./reviewModel";
 import { applyDiffRangesToTokens, computeWordAltDiffRanges } from "./reviewWordDiffs";
 
@@ -523,6 +523,7 @@ async function highlightLines(
     const tokenLines = highlighter.codeToTokensBase(shortLineBatch.join("\n"), {
       lang: language,
       theme,
+      tokenizeTimeLimit: REVIEW_TOKENIZE_TIME_LIMIT,
     });
     highlightedLines.push(...normalizeHighlightedLines(tokenLines));
     shortLineBatch.length = 0;
