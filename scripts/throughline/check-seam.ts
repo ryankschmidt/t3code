@@ -693,14 +693,22 @@ function mountSelfTest(root: string, head: string) {
     const original = readFileSync(join(clone, path));
     appendFileSync(
       join(clone, path),
-      "\n" +
-        Array.from({ length: 10 }, (_, i) => `export const mountFixture${i} = ${i};\n`).join(""),
+      Array.from({ length: 10 }, (_, i) => `export const mountFixture${i} = ${i};\n`).join(""),
     );
     git(clone, "add", "--", path);
     git(clone, "commit", "--quiet", "-m", "mount fixture ten-line edit", "--", path);
     const bad = run("--mounts", "--json");
     if (bad.status !== 1 || !(bad.stdout + bad.stderr).includes(`MOUNT_VIOLATION: ${path}`))
       throw Error(`MOUNT_SELF_TEST_NEGATIVE_FAILED: ${bad.status} ${bad.stdout} ${bad.stderr}`);
+    const fixture = read<SeamManifest>(join(clone, FILE));
+    const negative = mountLineViolations(
+      clone,
+      fixture.admitted!.fork_sha,
+      git(clone, "rev-parse", "HEAD").trim(),
+      fixture,
+    );
+    if (negative.length !== 1 || negative[0]?.path !== path || negative[0].addedLines !== 10)
+      throw Error(`MOUNT_SELF_TEST_NOT_TEN_LINES: ${JSON.stringify(negative)}`);
     writeFileSync(join(clone, path), original);
     appendFileSync(join(clone, path), 'import "./throughline/rewind/claudeTranscriptParent.ts";\n');
     git(clone, "add", "--", path);
@@ -708,10 +716,23 @@ function mountSelfTest(root: string, head: string) {
     const good = run("--mounts", "--json");
     if (good.status !== 0)
       throw Error(`MOUNT_SELF_TEST_POSITIVE_FAILED: ${good.stdout} ${good.stderr}`);
+    const positiveDiff = git(
+      clone,
+      "diff",
+      "--numstat",
+      fixture.admitted!.fork_sha,
+      "HEAD",
+      "--",
+      path,
+    ).trim();
+    if (positiveDiff !== `1\t0\t${path}`)
+      throw Error(`MOUNT_SELF_TEST_NOT_ONE_LINE: ${positiveDiff}`);
     return {
       result:
         "self-test-mounts: ten-line upstream edit refused; one-line namespace import admitted",
       admission_scope: "disposable clone only",
+      measured_negative_added_lines: negative[0].addedLines,
+      measured_positive_added_lines: 1,
       negative: { exit_code: bad.status, stdout: bad.stdout, stderr: bad.stderr },
       positive: { exit_code: good.status, stdout: good.stdout, stderr: good.stderr },
     };
