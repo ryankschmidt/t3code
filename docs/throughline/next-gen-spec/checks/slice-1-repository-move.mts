@@ -1434,7 +1434,7 @@ export async function runSliceChecks() {
     return f;
   });
 
-  await check("S1-C13", () => {
+  await check("S1-C13", async () => {
     const f: Fail[] = [],
       version = installedVersion();
     if (version !== NEXT_RELEASE)
@@ -1443,23 +1443,40 @@ export async function runSliceChecks() {
     if (!existsSync(run)) return ["release evidence absent"];
     const pipeline = readJson(PIPELINE);
     f.push(...rpiPipelineFindings(pipeline));
+    const wt = join(WORKTREES, version);
+    // Ruling-Release-Closure-Contract.txt item 2: the run's source identity comes only from the release tool's
+    // admitted source-revision resolver. Its effective commit binds the worktree, every step and the closure;
+    // the original commit is source-commit.json's and heads the admitted chain. The run id is run-binding.json's.
+    let source: { commit: string; original_commit: string; admitted_repair: boolean };
+    try {
+      const { resolveRunSource } = await import(
+        pathToFileURL(SHIP_TOOL_INSTALLED + "/dist/source-revision.js").href
+      );
+      source = resolveRunSource(pipeline, run, wt, version);
+    } catch (e: any) {
+      return [...f, `admitted source-revision resolver refuses the run: ${e?.message ?? e}`];
+    }
+    if (!existsSync(join(run, "run-binding.json"))) return [...f, "run binding absent"];
     const sc = readJson(join(run, "source-commit.json")),
-      commit = sc.commit,
+      binding = readJson(join(run, "run-binding.json")),
+      commit = source.commit,
+      chain = source.admitted_repair ? [source.original_commit, commit] : [commit],
       closure = readJson(join(run, "Release-Closure.json"));
+    if (!SHA40.test(commit) || chain[0] !== sc.commit || chain[chain.length - 1] !== commit)
+      f.push("original commit does not head the admitted revision chain");
     if (
-      !SHA40.test(commit) ||
       closure.release !== version ||
       closure.source_commit !== commit ||
-      closure.run_id !== sc.run_id ||
+      closure.original_commit !== sc.commit ||
+      closure.run_id !== binding.run_id ||
       closure.outcome !== "passed"
     )
       f.push("owning closure/release/run/source identity mismatch");
-    const wt = join(WORKTREES, version);
     if (
       tryGit(wt, "rev-parse", "HEAD") !== commit ||
       tryGit(wt, "branch", "--show-current") !== `release/${version}`
     )
-      f.push("release worktree not exactly the frozen source");
+      f.push("release worktree is not the effective source");
     for (const step of [
       "vault-clean",
       "install-tower",
@@ -1470,12 +1487,13 @@ export async function runSliceChecks() {
       "publish-docs",
       "rewind-live-proof",
     ]) {
-      const a = latestAttempt(run, step);
+      // The release tool writes each attempt's bindings in its row, where the resolver reads them.
+      const row = latestAttempt(run, step)?.row;
       if (
-        a?.row?.outcome !== "passed" ||
-        a.source_commit !== commit ||
-        a.release !== version ||
-        a.run_id !== closure.run_id
+        row?.outcome !== "passed" ||
+        row.source_commit !== commit ||
+        row.release !== version ||
+        row.run_id !== binding.run_id
       )
         f.push(`step does not bind current release/source/run: ${step}`);
     }
@@ -2671,6 +2689,7 @@ async function runDeferredRpiFixtures(): Promise<void> {
   const { default: assert } = await import("node:assert/strict");
   const {
     chmodSync,
+    copyFileSync,
     lstatSync,
     mkdirSync,
     mkdtempSync,
@@ -2683,7 +2702,7 @@ async function runDeferredRpiFixtures(): Promise<void> {
   } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { dirname, join } = await import("node:path");
-  const { fileURLToPath } = await import("node:url");
+  const { fileURLToPath, pathToFileURL } = await import("node:url");
   const { createHash } = await import("node:crypto");
   const { execFileSync, spawnSync } = await import("node:child_process");
   const { expectedStep } = await import("./slice-1-contracts.mts");
@@ -2711,6 +2730,17 @@ async function runDeferredRpiFixtures(): Promise<void> {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     }).trim();
+  // The installed release tool's resolver and repair admission, used as the real run uses them.
+  const TOOL_DIST = join(original.repository.monorepo, "src/tools/throughline-ship/dist");
+  const RESOLVER_FILES = [
+    "source-revision.js",
+    "evidence-guard.js",
+    "core.js",
+    "release-source.js",
+  ];
+  const { sourceRevision } = await import(
+    pathToFileURL(join(TOOL_DIST, "source-revision.js")).href
+  );
   let sequence = 0;
   const fixture = () => {
     const d = join(root, String(++sequence)),
@@ -2751,6 +2781,7 @@ async function runDeferredRpiFixtures(): Promise<void> {
     };
     const p: any = {
       checkout: R.home,
+      seam_file: "{checkout}/throughline-seam.json",
       source: {
         worktrees_root: R.worktrees,
         release_checkout: R.worktrees + "/{release}",
@@ -2816,7 +2847,12 @@ async function runDeferredRpiFixtures(): Promise<void> {
       assert.match(r.stdout, new RegExp(`^${expected === 0 ? "PASS" : "FAIL"}  ${id} `, "m"));
       if (reason) assert.ok(r.stdout.includes(reason), r.stdout);
     };
-    const release = (includeRpiReceipt = false) => {
+    // A passed run as the release tool writes it. With repair, the tests gate fails on the frozen commit, a seam-owned
+    // repair is committed, the release tool's own sourceRevision admits it, and every later record names the repair.
+    const release = (includeRpiReceipt = false, repair = false) => {
+      const version = R.next_release;
+      for (const name of RESOLVER_FILES)
+        copyFileSync(join(TOOL_DIST, name), join(installed, "dist", name));
       mkdirSync(R.home);
       mkdirSync(R.worktrees);
       git(R.home, "init", "-q", "-b", "main");
@@ -2827,27 +2863,86 @@ async function runDeferredRpiFixtures(): Promise<void> {
         R.spec_home_in_repository + "/spec.json",
       ];
       for (const source of sources) file(join(R.home, source), "fixture source\n");
-      git(R.home, "add", "--", ...sources);
+      file(join(R.home, "package.json"), JSON.stringify({ version }));
+      file(
+        join(R.home, "apps/mobile/app.config.ts"),
+        `export default { version: "${version}" };\n`,
+      );
+      file(
+        join(R.home, "throughline-seam.json"),
+        JSON.stringify({
+          rules: [{ pattern: "apps/server/src/vcs/**", rule: "fork", inferred: false }],
+        }),
+      );
+      file(join(R.home, ".gitignore"), "release/\n");
+      git(
+        R.home,
+        "add",
+        "--",
+        ...sources,
+        "package.json",
+        "apps/mobile/app.config.ts",
+        "throughline-seam.json",
+        ".gitignore",
+      );
       git(R.home, "commit", "-qm", "disposable release fixture");
-      const commit = git(R.home, "rev-parse", "HEAD"),
-        wt = join(R.worktrees, "0.0.60"),
+      const frozen = git(R.home, "rev-parse", "HEAD"),
+        wt = join(R.worktrees, version),
         runId = "fixture-release",
-        runDir = join(R.evidence_root, "release-0-0-60");
-      git(R.home, "worktree", "add", "-qb", "release/0.0.60", wt);
-      json(join(runDir, "source-commit.json"), { commit, run_id: runId });
+        runDir = join(R.evidence_root, "release-" + version.replaceAll(".", "-"));
+      git(R.home, "worktree", "add", "-qb", "release/" + version, wt);
+      json(join(runDir, "source-commit.json"), { commit: frozen, release: version, checkout: wt });
+      json(join(runDir, "run-binding.json"), { release: version, run_id: runId });
+      const attempt = (step: string, n: number, outcome: string, at: string) =>
+        json(join(runDir, `${step}.attempt-${n}.json`), {
+          row: { outcome, step_id: step, source_commit: at, release: version, run_id: runId },
+        });
+      let commit = frozen;
+      if (repair) {
+        p.source.version_surfaces = ["package.json"];
+        p.source.mobile_config = "apps/mobile/app.config.ts";
+        p.steps.unshift(
+          { id: "tests", action: "execute", platform: "fork", privilege: "none" },
+          {
+            id: "build-mac",
+            kind: "signed-build",
+            action: "execute",
+            platform: "mac",
+            privilege: "none",
+          },
+        );
+        attempt("tests", 1, "failed", frozen);
+        file(join(wt, "apps/server/src/vcs/GitVcsDriverCore.ts"), "repaired fixture source\n");
+        git(wt, "commit", "-qam", "source repair inside the seam");
+        commit = git(wt, "rev-parse", "HEAD");
+        json(join(runDir, "source-sync/sync-state.json"), {
+          status: "passed",
+          seam_sha256: sha(join(wt, "throughline-seam.json")),
+        });
+        sourceRevision(
+          { ...p, seam_file: p.seam_file.replaceAll("{checkout}", wt) },
+          runDir,
+          wt,
+          version,
+          true,
+        );
+        attempt("tests", 2, "passed", commit);
+        attempt("build-mac", 1, "passed", commit);
+      }
       const artifact = join(wt, "release/fixture.dmg"),
         readback = join(runDir, "readback.json");
       file(artifact, "fixture installer bytes\n");
       json(readback, { fixture: true });
       json(join(runDir, "Release-Closure.json"), {
-        release: "0.0.60",
+        release: version,
         source_commit: commit,
+        original_commit: frozen,
         run_id: runId,
         outcome: "passed",
         artifacts: [{ path: artifact, sha256: sha(artifact) }],
         installed_readbacks: [
           {
-            release: "0.0.60",
+            release: version,
             source_commit: commit,
             payload_sha256: sha(artifact),
             receipt_path: readback,
@@ -2855,7 +2950,12 @@ async function runDeferredRpiFixtures(): Promise<void> {
           },
         ],
         shipped_source_hashes: Object.fromEntries(
-          sources.map((source) => [source, sha(join(R.home, source))]),
+          sources.map((source) => [
+            source,
+            createHash("sha256")
+              .update(execFileSync("/usr/bin/git", ["-C", R.home, "show", commit + ":" + source]))
+              .digest("hex"),
+          ]),
         ),
       });
       const steps = [
@@ -2868,14 +2968,9 @@ async function runDeferredRpiFixtures(): Promise<void> {
         "rewind-live-proof",
         ...(includeRpiReceipt ? ["install-rpi-headless"] : []),
       ];
-      for (const step of steps)
-        json(join(runDir, step + ".attempt-1.json"), {
-          row: { outcome: "passed" },
-          source_commit: commit,
-          release: "0.0.60",
-          run_id: runId,
-        });
-      json(join(R.vault_copy.destination, "repository.json"), { commit, release: "0.0.60" });
+      for (const step of steps) attempt(step, 1, "passed", commit);
+      json(join(R.vault_copy.destination, "repository.json"), { commit, release: version });
+      return { frozen, commit, wt, runDir, runId };
     };
     return { spec, p, deferred, run, release };
   };
@@ -2962,6 +3057,70 @@ async function runDeferredRpiFixtures(): Promise<void> {
     const f = fixture();
     [f.p.required_steps[2], f.p.required_steps[3]] = [f.p.required_steps[3], f.p.required_steps[2]];
     f.run("S1-C05", 1, "install order");
+  });
+  const editJson = (path: string, change: (value: any) => void) => {
+    const value = JSON.parse(readFileSync(path, "utf8"));
+    change(value);
+    writeFileSync(path, JSON.stringify(value));
+  };
+  // Ruling-Release-Closure-Contract.txt item 2: every reader goes through the admitted source-revision resolver.
+  test("S1-C13 an admitted source repair binds the worktree, steps and closure to the effective commit", () => {
+    const f = fixture();
+    const r = f.release(false, true);
+    assert.notEqual(r.commit, r.frozen);
+    f.run("S1-C13", 0);
+  });
+  test("S1-C13 a closure naming the original commit after a repair refuses", () => {
+    const f = fixture();
+    const r = f.release(false, true);
+    editJson(join(r.runDir, "Release-Closure.json"), (c) => (c.source_commit = r.frozen));
+    f.run("S1-C13", 1, "closure/release/run/source identity mismatch");
+  });
+  test("S1-C13 a closure without the original commit refuses", () => {
+    const f = fixture();
+    const r = f.release(false, true);
+    editJson(join(r.runDir, "Release-Closure.json"), (c) => delete c.original_commit);
+    f.run("S1-C13", 1, "closure/release/run/source identity mismatch");
+  });
+  test("S1-C13 a step bound to the original commit after a repair refuses", () => {
+    const f = fixture();
+    const r = f.release(false, true);
+    editJson(join(r.runDir, "install-mac.attempt-1.json"), (a) => (a.row.source_commit = r.frozen));
+    f.run("S1-C13", 1, "step does not bind current release/source/run: install-mac");
+  });
+  test("S1-C13 a changed repair receipt refuses through the resolver", () => {
+    const f = fixture();
+    const r = f.release(false, true);
+    editJson(join(r.runDir, "source-revision.json"), (x) => (x.changed_paths = []));
+    f.run("S1-C13", 1, "admitted source-revision resolver refuses the run");
+  });
+  test("S1-C13 a worktree moved off the effective commit refuses through the resolver", () => {
+    const f = fixture();
+    const r = f.release(false, true);
+    git(r.wt, "commit", "-q", "--allow-empty", "-m", "drift");
+    f.run("S1-C13", 1, "admitted source-revision resolver refuses the run");
+  });
+  test("S1-C13 step bindings outside the attempt row refuse", () => {
+    const f = fixture();
+    const r = f.release();
+    editJson(join(r.runDir, "publish-docs.attempt-1.json"), (a) => {
+      const { source_commit, release, run_id } = a.row;
+      a.row = { outcome: "passed", step_id: "publish-docs" };
+      Object.assign(a, { source_commit, release, run_id });
+    });
+    f.run("S1-C13", 1, "step does not bind current release/source/run: publish-docs");
+  });
+  test("S1-C13 the run id comes from run-binding.json", () => {
+    const f = fixture();
+    const r = f.release();
+    editJson(join(r.runDir, "Release-Closure.json"), (c) => (c.run_id = "another-run"));
+    f.run("S1-C13", 1, "closure/release/run/source identity mismatch");
+  });
+  test("S1-C13 a run without run-binding.json refuses", () => {
+    const f = fixture();
+    const r = f.release();
+    unlinkSync(join(r.runDir, "run-binding.json"));
+    f.run("S1-C13", 1, "run binding absent");
   });
   test("S1-C13 paused hardware needs no fabricated Raspberry Pi installation receipt", () => {
     const f = fixture();

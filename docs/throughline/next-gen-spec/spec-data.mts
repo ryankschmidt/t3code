@@ -359,7 +359,7 @@ export const CHECKS: Check[] = [
     id: "S1-C13",
     slice: "slice-1",
     title:
-      "The pinned acceptance release binds owning run, exact frozen source, real artifacts and installed readbacks",
+      "The pinned acceptance release binds owning run, the admitted effective source, real artifacts and installed readbacks",
     kind: "real-disk",
     file: "/Users/Admin/core-root/vault/01_Projects/workbench/infra/throughline/plans/next-gen-spec-2026-10-07/checks/slice-1-repository-move.mts",
     expected_today: "FAIL",
